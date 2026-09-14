@@ -1,6 +1,5 @@
 # Dependencias
 node_modules/
-
 .pnp
 .pnp.js
 
@@ -35,9 +34,10 @@ pnpm-debug.log*
 *.sln
 *.sw?
 
+# Herramientas AI y temporales
+CLAUDE.md
+.claude/
+
 # Archivos temporales del SO
 .DS_Store
 Thumbs.db
-
-CLAUDE.md
-.claude
