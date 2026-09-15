@@ -1,95 +1,141 @@
-# Pasaporte NFC & Fidelización Gamificada 🎟️📱
+# Pasaporte NFC — Plataforma de Fidelización y Experiencias 🎫
 
-Plataforma integral de fidelización, gamificación y red social basada en tecnología **NFC** y fallback por **Código QR**, con arquitectura desacoplada: **Frontend React PWA + Vite** y **Backend Node.js + Express + PostgreSQL + Cloudflare R2**.
+WebApp (PWA) + API REST para conectar usuarios con establecimientos aliados mediante tarjeta NFC física, acumulación de sellos/puntos, recompensas y comunidad de experiencias.
+
+Stack: **React + TypeScript + Tailwind + Vite** (frontend) · **Node.js + Express + PostgreSQL + JWT** (backend) · **Cloudflare R2** (multimedia, opcional).
 
 ---
 
-## 🏗️ Arquitectura del Repositorio
+## Estructura
 
-```bash
-pasaporte-nfc-project/
-├── .github/workflows/deploy.yml   # Automatización CI/CD
-├── docs/                          # Esquema SQL y Diagrama ERD
-├── frontend/                      # Aplicación PWA React (Vite, Tailwind, TypeScript)
-└── backend/                       # API REST Express (PostgreSQL, Cloudflare R2, JWT)
+```
+pasaporte_digital_nfc-main/
+├── docs/
+│   └── init_database.sql      # Esquema completo + seeds (roles, niveles, categorías)
+├── backend/                   # API REST
+└── frontend/                  # PWA React
 ```
 
 ---
 
-## 🚀 Requisitos Previos
+## Requisitos
 
-- **Node.js**: v18 o superior (v20+ recomendado)
-- **PostgreSQL**: v14 o superior
-- **Cuenta Cloudflare R2**: (Para almacenamiento S3 de clips multimedia)
-
----
-
-## ⚙️ Configuración del Backend
-
-1. Entra a la carpeta de backend:
-   ```bash
-   cd backend
-   npm install
-   ```
-
-2. Configura las variables de entorno en `.env`:
-   ```env
-   PORT=5000
-   NODE_ENV=development
-   DATABASE_URL=postgresql://postgres:password@localhost:5432/pasaporte_nfc_db
-   JWT_SECRET=tu_clave_secreta_super_segura
-   JWT_EXPIRES_IN=7d
-
-   # Cloudflare R2 / AWS S3
-   R2_ACCOUNT_ID=tu_account_id
-   R2_ACCESS_KEY_ID=tu_access_key
-   R2_SECRET_ACCESS_KEY=tu_secret_key
-   R2_BUCKET_NAME=pasaporte-media
-   R2_PUBLIC_URL=https://media.tudominio.com
-   ```
-
-3. Inicializa la base de datos ejecutando `docs/init_database.sql` en tu servidor PostgreSQL.
-
-4. Inicia el servidor de desarrollo:
-   ```bash
-   npm run dev
-   ```
-   El servidor responderá en: `http://localhost:5000`
+- Node.js 18+ (recomendado 20)
+- PostgreSQL 14+
+- (Opcional) Cuenta Cloudflare R2
 
 ---
 
-## 📱 Configuración del Frontend (PWA)
+## 1. Base de datos
 
-1. Entra a la carpeta del frontend:
-   ```bash
-   cd frontend
-   npm install
-   ```
+```bash
+# Crear la base
+createdb pasaporte_nfc_db
 
-2. Verifica las variables de entorno en `.env`:
-   ```env
-   VITE_API_URL=http://localhost:5000/api
-   ```
+# Ejecutar el esquema
+psql -d pasaporte_nfc_db -f docs/init_database.sql
+```
 
-3. Inicia la aplicación en modo desarrollo:
-   ```bash
-   npm run dev
-   ```
-   Accede a la app en: `http://localhost:5173`
+El script crea tablas, índices, niveles (Bronce/Plata/Oro/Diamante), roles (ADMIN, CLIENTE, COMERCIO) y categorías de establecimientos.
 
 ---
 
-## 🛡️ Características Principales
+## 2. Backend
 
-- **Web NFC API**: Lectura directa de tags NFC desde navegadores móviles compatibles (Chrome Android).
-- **QR Code Fallback**: Si el dispositivo no cuenta con hardware NFC, permite escanear el QR del comercio.
-- **Motor Antifraude**:
-  - Restricción de tiempo configurable entre visitas al mismo establecimiento.
-  - Validación de geolocalización por radio de proximidad.
-  - Huella de dispositivo e IP.
-- **Red Social de Experiencias**:
-  - Micro-videos de 5 a 7 segundos optimizados y subidos a Cloudflare R2.
-  - Feed interactivo con likes y comentarios.
-- **Gamificación**:
-  - Puntos por visita, niveles de usuario (Bronce, Plata, Oro, Diamante).
-  - Catálogo de recompensas y cupones canjeables.
+```bash
+cd backend
+cp .env.example .env
+# Edita DATABASE_URL, JWT_SECRET, etc.
+
+npm install
+npm run dev
+```
+
+API en `http://localhost:5000`  
+Health: `GET /health`
+
+### Endpoints principales
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | /api/auth/register | Registro |
+| POST | /api/auth/login | Login |
+| GET | /api/auth/profile | Perfil (JWT) |
+| POST | /api/nfc/asignar-tarjeta | Vincular UID NFC al usuario |
+| GET | /api/nfc/historial | Historial de sellos |
+| POST | /api/nfc/validar-nfc | Validar visita por NFC (COMERCIO/ADMIN) |
+| POST | /api/nfc/validar | Validación manual |
+| GET | /api/social/feed | Feed comunidad |
+| POST | /api/social/publicaciones | Crear publicación |
+| GET | /api/rewards | Catálogo de recompensas |
+| POST | /api/rewards/canjear | Canjear puntos |
+
+---
+
+## 3. Frontend
+
+```bash
+cd frontend
+cp .env.example .env
+# VITE_API_URL=http://localhost:5000/api
+
+npm install
+npm run dev
+```
+
+App en `http://localhost:5173`
+
+### Pantallas
+
+- **Auth**: Login / Registro / Recuperar
+- **Usuario**: Pasaporte (wallet + historial + vincular NFC), Feed, Recompensas
+- **Comercio**: Validar visitas por UID NFC
+- **Admin**: Panel base (extensible)
+
+---
+
+## Flujo de prueba rápido
+
+1. Registrar un usuario (rol CLIENTE por defecto).
+2. En el pasaporte, vincular un UID de prueba (ej. `04:TEST:UID:01`).
+3. Crear un establecimiento y una regla de sellos en PostgreSQL (o vía admin futuro).
+4. Registrar un segundo usuario con rol `COMERCIO` (o cambiar el rol en BD).
+5. Desde el panel Comercio, validar el UID del cliente + ID del establecimiento.
+6. Ver sellos y puntos actualizados en el pasaporte del cliente.
+
+### Ejemplo SQL para un local de prueba
+
+```sql
+INSERT INTO establecimientos (categoria_id, ruc, razon_social, direccion)
+SELECT id, '20100000001', 'Café Demo NFC', 'Av. Ejemplo 123'
+FROM categorias_establecimiento WHERE nombre = 'Café y Postres' LIMIT 1;
+
+INSERT INTO reglas_sellos (establecimiento_id, nombre_accion, valor_puntos_por_sello, limite_diario_por_usuario)
+SELECT id, 'Consumo en local', 15, 2 FROM establecimientos WHERE ruc = '20100000001';
+```
+
+---
+
+## Seguridad (resumen del informe)
+
+- La tarjeta solo lleva UID; puntos y datos viven en el servidor.
+- Validación siempre requiere acción del comercio (no basta el tap).
+- Límites diarios por usuario/local (anti-fraude).
+- JWT con expiración, roles, HTTPS en producción.
+- Cumplimiento orientado a Ley 29733 (Perú): consentimiento, contraseñas hasheadas, moderación.
+
+---
+
+## Despliegue sugerido (MVP)
+
+- **Alfa**: Render / Railway (gratis) o localhost + Docker.
+- **Beta**: VPS Hetzner / DigitalOcean (~S/15–55/mes).
+- **Media**: Cloudflare R2 (10 GB gratis, sin egress).
+
+Ver informe completo (`Informe_Pasaporte_NF.docx`) para presupuesto, cronograma y comparativas.
+
+---
+
+## Licencia
+
+Proyecto privado — uso según acuerdos del equipo.

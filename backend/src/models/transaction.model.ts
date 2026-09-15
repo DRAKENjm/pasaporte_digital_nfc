@@ -1,81 +1,92 @@
 import { query } from '../config/database';
 
 export const TransactionModel = {
-  // 1. Identificar al usuario escaneando su pasaporte (NFC o QR de respaldo)
-  async findTarjeta(identificador: string, tipo: 'NFC' | 'QR') {
-    const campo = tipo === 'NFC' ? 'uid_nfc' : 'qr_respaldo';
+  async registrarVisita(data: {
+    usuario_id: string;
+    establecimiento_id: string;
+    personal_validador_id?: string | null;
+    regla_sello_id?: string | null;
+    puntos_ganados: number;
+    metodo_validacion: 'NFC' | 'QR' | 'MANUAL_DASHBOARD';
+    ip_registro?: string | null;
+  }) {
     const res = await query(
-      `SELECT t.*, u.id as usuario_id 
-       FROM tarjetas_nfc t
-       JOIN usuarios u ON t.usuario_id = u.id
-       WHERE t.${campo} = $1 AND t.estado = 'ASIGNADA'`,
-      [identificador]
+      `INSERT INTO historial_visitas_sellos
+         (usuario_id, establecimiento_id, personal_validador_id, regla_sello_id,
+          puntos_ganados, metodo_validacion, ip_registro)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        data.usuario_id,
+        data.establecimiento_id,
+        data.personal_validador_id || null,
+        data.regla_sello_id || null,
+        data.puntos_ganados,
+        data.metodo_validacion,
+        data.ip_registro || null,
+      ]
     );
-    return res.rows[0] || null;
+    return res.rows[0];
   },
 
-  // 2. Obtener la regla activa del comercio para saber cuántos puntos dar
+  async contarVisitasHoy(usuarioId: string, establecimientoId: string) {
+    const res = await query(
+      `SELECT COUNT(*)::int AS total
+       FROM historial_visitas_sellos
+       WHERE usuario_id = $1
+         AND establecimiento_id = $2
+         AND fecha_hora >= CURRENT_DATE`,
+      [usuarioId, establecimientoId]
+    );
+    return res.rows[0].total as number;
+  },
+
+  async historialUsuario(usuarioId: string, limit = 50) {
+    const res = await query(
+      `SELECT h.*, e.razon_social AS establecimiento_nombre
+       FROM historial_visitas_sellos h
+       JOIN establecimientos e ON e.id = h.establecimiento_id
+       WHERE h.usuario_id = $1
+       ORDER BY h.fecha_hora DESC
+       LIMIT $2`,
+      [usuarioId, limit]
+    );
+    return res.rows;
+  },
+
   async getReglaActiva(establecimientoId: string) {
     const res = await query(
-      `SELECT * FROM reglas_sellos 
-       WHERE establecimiento_id = $1 AND estado = 'ACTIVA' LIMIT 1`,
+      `SELECT * FROM reglas_sellos
+       WHERE establecimiento_id = $1 AND estado = 'ACTIVA'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [establecimientoId]
     );
     return res.rows[0] || null;
   },
 
-  // 3. Control antifraude: Contar visitas de hoy para ese usuario en ese local
-  async contarVisitasHoy(usuarioId: string, establecimientoId: string) {
+  async findTarjetaByUid(uid: string) {
     const res = await query(
-      `SELECT COUNT(*) as conteo 
-       FROM historial_visitas_sellos 
-       WHERE usuario_id = $1 
-         AND establecimiento_id = $2 
-         AND DATE(fecha_hora) = CURRENT_DATE`,
-      [usuarioId, establecimientoId]
+      `SELECT t.*, u.nombres, u.apellidos, u.email, u.total_sellos, u.puntos_globales
+       FROM tarjetas_nfc t
+       LEFT JOIN usuarios u ON u.id = t.usuario_id
+       WHERE t.uid_nfc = $1`,
+      [uid]
     );
-    return parseInt(res.rows[0].conteo, 10);
+    return res.rows[0] || null;
   },
 
-  // 4. Registrar la visita y sumar los puntos al usuario
-  async procesarValidacion(
-    usuarioId: string, 
-    establecimientoId: string, 
-    personalId: string,
-    reglaId: string,
-    puntosGanados: number,
-    metodo: string
-  ) {
-    // A) Registramos el historial de la visita con el validador
-    const insertRes = await query(
-      `INSERT INTO historial_visitas_sellos 
-        (usuario_id, establecimiento_id, personal_validador_id, regla_sello_id, puntos_ganados, metodo_validacion)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, fecha_hora`,
-      [usuarioId, establecimientoId, personalId, reglaId, puntosGanados, metodo]
-    );
-
-    // B) Sumamos 1 sello y los puntos correspondientes a la billetera integrada del usuario
-    await query(
-      `UPDATE usuarios 
-       SET total_sellos = total_sellos + 1, 
-           puntos_globales = puntos_globales + $1
-       WHERE id = $2`,
-      [puntosGanados, usuarioId]
-    );
-
-    return insertRes.rows[0];
-  },
-
-  // 5. Obtener el historial de un usuario
-  async getHistorialUsuario(usuarioId: string) {
+  async asignarTarjeta(uid: string, usuarioId: string, qrRespaldo: string) {
     const res = await query(
-      `SELECT h.id, h.fecha_hora, h.puntos_ganados, e.razon_social as comercio
-       FROM historial_visitas_sellos h
-       JOIN establecimientos e ON h.establecimiento_id = e.id
-       WHERE h.usuario_id = $1
-       ORDER BY h.fecha_hora DESC`,
-      [usuarioId]
+      `INSERT INTO tarjetas_nfc (usuario_id, uid_nfc, qr_respaldo, estado, fecha_asignacion)
+       VALUES ($1, $2, $3, 'ASIGNADA', CURRENT_TIMESTAMP)
+       ON CONFLICT (uid_nfc) DO UPDATE
+         SET usuario_id = EXCLUDED.usuario_id,
+             estado = 'ASIGNADA',
+             fecha_asignacion = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [usuarioId, uid, qrRespaldo]
     );
-    return res.rows;
-  }
+    return res.rows[0];
+  },
 };

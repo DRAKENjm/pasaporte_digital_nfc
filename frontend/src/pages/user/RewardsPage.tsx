@@ -1,58 +1,88 @@
-import React from 'react';
-import { Reward } from '../../types';
-import { formatPoints } from '../../utils/formatters';
+import React, { useEffect, useState } from 'react';
+import api from '../../services/api';
+import { Recompensa } from '../../types';
+import { useAuth } from '../../hooks/useAuth';
+import { useUI } from '../../hooks/useUI';
+import { Button } from '../../components/common/Button';
+import { Spinner } from '../../components/common/Spinner';
 
 export const RewardsPage: React.FC = () => {
-  const rewards: Reward[] = [
-    {
-      id: 'r1',
-      title: 'Café de Especialidad Gratis',
-      description: 'Válido en cualquier sucursal adherida a la red.',
-      pointsCost: 200,
-      stock: 15,
-      isActive: true,
-    },
-    {
-      id: 'r2',
-      title: 'Descuento 30% en Hamburguesas',
-      description: 'Aplica a combos seleccionados de lunes a jueves.',
-      pointsCost: 400,
-      stock: 8,
-      isActive: true,
-    },
-    {
-      id: 'r3',
-      title: 'Pase VIP Evento Gastronómico',
-      description: 'Acceso exclusivo y degustación con chefs locales.',
-      pointsCost: 1000,
-      stock: 2,
-      isActive: true,
+  const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [canjeando, setCanjeando] = useState<string | null>(null);
+  const { user, refreshProfile } = useAuth();
+  const { showToast } = useUI();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get('/rewards');
+        setRecompensas(data.data);
+      } catch {
+        showToast('No se pudo cargar el catálogo', 'error');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [showToast]);
+
+  const canjear = async (id: string) => {
+    setCanjeando(id);
+    try {
+      await api.post('/rewards/canjear', { recompensa_id: id });
+      showToast('¡Canje exitoso!', 'success');
+      await refreshProfile();
+    } catch (err: any) {
+      showToast(err.response?.data?.message || 'Error al canjear', 'error');
+    } finally {
+      setCanjeando(null);
     }
-  ];
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner size={32} />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-bold text-white">Catálogo de Premios</h2>
-        <p className="text-xs text-slate-400">Canjea tus puntos acumulados por experiencias</p>
+    <div className="p-4 max-w-lg mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">Recompensas</h1>
+        <span className="text-sm text-indigo-400 font-medium">{user?.puntos_globales ?? 0} pts</span>
       </div>
 
-      <div className="grid gap-3">
-        {rewards.map((reward) => (
-          <div key={reward.id} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center">
-            <div>
-              <h4 className="font-bold text-white text-sm">{reward.title}</h4>
-              <p className="text-xs text-slate-400 mt-0.5">{reward.description}</p>
-              <span className="inline-block mt-2 text-xs font-black text-amber-400">
-                {formatPoints(reward.pointsCost)} PTS
-              </span>
+      {recompensas.length === 0 ? (
+        <p className="text-slate-500 text-sm">No hay recompensas activas por ahora.</p>
+      ) : (
+        <div className="space-y-3">
+          {recompensas.map((r) => (
+            <div
+              key={r.id}
+              className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-4 items-center"
+            >
+              <div className="w-16 h-16 rounded-xl bg-indigo-500/20 flex items-center justify-center text-2xl shrink-0">
+                🎁
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold truncate">{r.nombre_recompensa}</h3>
+                <p className="text-xs text-slate-400 line-clamp-2">{r.descripcion}</p>
+                <p className="text-sm text-indigo-300 mt-1 font-medium">{r.costo_puntos_globales} pts</p>
+              </div>
+              <Button
+                onClick={() => canjear(r.id)}
+                loading={canjeando === r.id}
+                disabled={(user?.puntos_globales ?? 0) < r.costo_puntos_globales}
+                className="shrink-0"
+              >
+                Canjear
+              </Button>
             </div>
-            <button className="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition">
-              Canjear
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

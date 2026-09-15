@@ -1,23 +1,72 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { nfcService } from '../../services/nfcService';
+import { useUI } from '../../hooks/useUI';
+import { Input } from '../../components/common/Input';
+import { Button } from '../../components/common/Button';
 
 export const CommerceDashboard: React.FC = () => {
+  const [uid, setUid] = useState('');
+  const [establecimientoId, setEstablecimientoId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [lastResult, setLastResult] = useState<any>(null);
+  const { showToast } = useUI();
+
+  const validar = async () => {
+    if (!uid || !establecimientoId) {
+      showToast('Completa UID y ID de establecimiento', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await nfcService.validarNfc(uid, establecimientoId);
+      setLastResult(result);
+      showToast('¡Sello acreditado!', 'success');
+      setUid('');
+    } catch (err: any) {
+      showToast(err.response?.data?.message || 'Error en validación', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="p-6 bg-slate-900 border border-slate-800 rounded-3xl">
-        <h2 className="text-lg font-bold text-white mb-1">Panel del Comercio</h2>
-        <p className="text-xs text-slate-400">Administra tus tags NFC, valida visitas y revisa tus métricas.</p>
+    <div className="p-4 max-w-lg mx-auto space-y-6">
+      <h1 className="text-xl font-bold">Panel Comercio</h1>
+      <p className="text-sm text-slate-400">
+        Valida visitas de clientes acercando su tarjeta NFC o ingresando el UID.
+      </p>
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
+        <Input
+          label="ID del establecimiento"
+          value={establecimientoId}
+          onChange={(e) => setEstablecimientoId(e.target.value)}
+          placeholder="UUID del local"
+        />
+        <Input
+          label="UID de la tarjeta NFC"
+          value={uid}
+          onChange={(e) => setUid(e.target.value)}
+          placeholder="Ej: 04:A1:B2:C3:D4:E5:F6"
+        />
+        <Button onClick={validar} loading={loading} className="w-full">
+          Validar visita
+        </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl text-center">
-          <span className="text-2xl font-black text-sky-400">142</span>
-          <p className="text-xs text-slate-400 mt-1">Visitas del Mes</p>
+      {lastResult && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 text-sm">
+          <p className="font-semibold text-emerald-400">Validación exitosa</p>
+          <p className="mt-1">Puntos: +{lastResult.puntos_acreditados}</p>
+          <p>
+            Cliente: {lastResult.usuario?.nombres} {lastResult.usuario?.apellidos}
+          </p>
+          <p>
+            Total sellos: {lastResult.usuario?.total_sellos} · Puntos:{' '}
+            {lastResult.usuario?.puntos_globales}
+          </p>
         </div>
-        <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl text-center">
-          <span className="text-2xl font-black text-emerald-400">7.100</span>
-          <p className="text-xs text-slate-400 mt-1">Puntos Emitidos</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -18,11 +18,17 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Si la petición era hacia el login o register, dejar que el formulario maneje el error
+    const url = error.config?.url || '';
+    if (url.includes('/auth/login') || url.includes('/auth/register')) {
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      if (!window.location.pathname.includes('/auth/login')) {
+        window.location.href = '/auth/login';
       }
     }
     return Promise.reject(error);

@@ -1,57 +1,32 @@
 import React, { createContext, useState } from 'react';
 
-interface Toast {
-  id: string;
-  message: string;
-  type: 'success' | 'error' | 'info';
-}
-
 interface UIContextType {
-  isDarkMode: boolean;
-  toggleDarkMode: () => void;
-  toasts: Toast[];
+  toast: { message: string; type: 'success' | 'error' | 'info' } | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
-  removeToast: (id: string) => void;
+  clearToast: () => void;
 }
 
-export const UIContext = createContext<UIContextType>({} as UIContextType);
+export const UIContext = createContext<UIContextType | undefined>(undefined);
 
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const toggleDarkMode = () => setIsDarkMode((prev) => !prev);
+  const [toast, setToast] = useState<UIContextType['toast']>(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => removeToast(id), 4000);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
   };
 
   return (
-    <UIContext.Provider value={{ isDarkMode, toggleDarkMode, toasts, showToast, removeToast }}>
+    <UIContext.Provider value={{ toast, showToast, clearToast: () => setToast(null) }}>
       {children}
-      {/* Toast container */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto p-4 rounded-xl shadow-lg border backdrop-blur-md transition-all ${
-              toast.type === 'success'
-                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
-                : toast.type === 'error'
-                ? 'bg-rose-950/80 border-rose-500/50 text-rose-200'
-                : 'bg-slate-800/90 border-slate-600 text-slate-100'
-            }`}
-          >
-            <p className="text-sm font-medium">{toast.message}</p>
-          </div>
-        ))}
-      </div>
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-lg text-white text-sm font-medium
+            ${toast.type === 'success' ? 'bg-emerald-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-slate-800'}`}
+        >
+          {toast.message}
+        </div>
+      )}
     </UIContext.Provider>
   );
 };

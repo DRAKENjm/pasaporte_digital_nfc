@@ -8,11 +8,12 @@ export class ApiError extends Error {
   constructor(statusCode: number, message: string) {
     super(message);
     this.statusCode = statusCode;
+    this.name = 'ApiError';
   }
 }
 
 export const hashPassword = async (password: string): Promise<string> => {
-  const salt = await bcrypt.genSalt(10);
+  const salt = await bcrypt.genSalt(12);
   return bcrypt.hash(password, salt);
 };
 
@@ -22,13 +23,24 @@ export const comparePassword = async (password: string, hash: string): Promise<b
 
 export const generateToken = (user: AuthUser): string => {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role, fullName: user.fullName },
-    process.env.JWT_SECRET || 'fallback_secret',
-    { expiresIn: '7d' }
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      nombres: user.nombres,
+      apellidos: user.apellidos,
+    },
+    process.env.JWT_SECRET || 'pasaporte_nfc_dev_secret_change_in_production',
+    { expiresIn: (process.env.JWT_EXPIRES_IN as any) || '7d' }
   );
 };
 
-export const sendResponse = (res: Response, statusCode: number, data: any, message: string = 'OK') => {
+export const sendResponse = (
+  res: Response,
+  statusCode: number,
+  data: any = null,
+  message: string = 'OK'
+) => {
   return res.status(statusCode).json({
     success: statusCode >= 200 && statusCode < 300,
     message,

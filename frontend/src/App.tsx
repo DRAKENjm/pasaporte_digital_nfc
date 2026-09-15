@@ -13,9 +13,21 @@ import { RewardsPage } from './pages/user/RewardsPage';
 import { CommerceDashboard } from './pages/commerce/CommerceDashboard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { useAuth } from './hooks/useAuth';
+import { Spinner } from './components/common/Spinner';
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({ children, allowedRoles }) => {
-  const { isAuthenticated, role } = useAuth();
+const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
+  children,
+  allowedRoles,
+}) => {
+  const { isAuthenticated, role, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <Spinner size={36} />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/auth/login" replace />;
@@ -34,7 +46,6 @@ export const App: React.FC = () => {
       <UIProvider>
         <BrowserRouter>
           <Routes>
-            {/* Rutas Públicas de Autenticación */}
             <Route path="/auth" element={<AuthLayout />}>
               <Route path="login" element={<Login />} />
               <Route path="register" element={<Register />} />
@@ -42,23 +53,24 @@ export const App: React.FC = () => {
               <Route index element={<Navigate to="/auth/login" replace />} />
             </Route>
 
-            {/* Rutas Principales Protegidas */}
-            <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
+            <Route
+              element={
+                <ProtectedRoute>
+                  <MainLayout />
+                </ProtectedRoute>
+              }
+            >
               <Route path="/user/feed" element={<FeedPage />} />
               <Route path="/user/wallet" element={<WalletPage />} />
               <Route path="/user/rewards" element={<RewardsPage />} />
-
-              {/* Panel de Comercio */}
               <Route
                 path="/commerce"
                 element={
-                  <ProtectedRoute allowedRoles={['COMMERCE', 'ADMIN']}>
+                  <ProtectedRoute allowedRoles={['COMERCIO', 'ADMIN']}>
                     <CommerceDashboard />
                   </ProtectedRoute>
                 }
               />
-
-              {/* Panel de SuperAdmin */}
               <Route
                 path="/admin"
                 element={
@@ -69,7 +81,6 @@ export const App: React.FC = () => {
               />
             </Route>
 
-            {/* Redirección por defecto */}
             <Route path="*" element={<Navigate to="/auth/login" replace />} />
           </Routes>
         </BrowserRouter>

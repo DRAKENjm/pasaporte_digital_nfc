@@ -51,7 +51,7 @@ export const MainLayout: React.FC = () => {
           <span>🎁</span>
           <span>Premios</span>
         </NavLink>
-        {user?.role === 'COMMERCE' && (
+        {(user?.role === 'COMERCIO' || user?.role === 'COMMERCE') && (
           <NavLink
             to="/commerce"
             className={({ isActive }) => `flex flex-col items-center gap-1 text-xs font-medium ${isActive ? 'text-amber-400' : 'text-slate-500'}`}
@@ -60,7 +60,7 @@ export const MainLayout: React.FC = () => {
             <span>Local</span>
           </NavLink>
         )}
-        {user?.role === 'ADMIN' && (
+        {(user?.role === 'ADMIN' || user?.role === 'ADMINISTRADOR') && (
           <NavLink
             to="/admin"
             className={({ isActive }) => `flex flex-col items-center gap-1 text-xs font-medium ${isActive ? 'text-purple-400' : 'text-slate-500'}`}

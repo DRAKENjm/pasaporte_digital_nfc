@@ -1,40 +1,81 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import api from '../../services/api';
+import { Publicacion } from '../../types';
+import { Spinner } from '../../components/common/Spinner';
 import { PostCard } from '../../components/social/PostCard';
-import { Post } from '../../types';
+import { useUI } from '../../hooks/useUI';
+import { Button } from '../../components/common/Button';
 
 export const FeedPage: React.FC = () => {
-  const demoPosts: Post[] = [
-    {
-      id: '1',
-      userId: 'u1',
-      userName: 'Café de Especialidad',
-      content: '¡Nuevo sello desbloqueado! Disfruta nuestro café filtrado de origen.',
-      mediaUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800',
-      mediaType: 'image',
-      likesCount: 24,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: '2',
-      userId: 'u2',
-      userName: 'Burger Bar 90s',
-      content: 'Momentos únicos sellando el pasaporte con la promo 2x1.',
-      mediaUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800',
-      mediaType: 'image',
-      likesCount: 42,
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
+  const [posts, setPosts] = useState<Publicacion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [texto, setTexto] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const { showToast } = useUI();
+
+  const load = async () => {
+    try {
+      const { data } = await api.get('/social/feed');
+      setPosts(data.data);
+    } catch {
+      showToast('Error al cargar el feed', 'error');
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const publicar = async () => {
+    if (!texto.trim()) return;
+    setPublishing(true);
+    try {
+      await api.post('/social/publicaciones', { texto_contenido: texto, visibilidad: 'PUBLICA' });
+      setTexto('');
+      showToast('Publicación creada', 'success');
+      await load();
+    } catch (err: any) {
+      showToast(err.response?.data?.message || 'Error al publicar', 'error');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner size={32} />
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="mb-4">
-        <h2 className="text-lg font-bold text-white">Comunidad</h2>
-        <p className="text-xs text-slate-400">Descubre los momentos compartidos en cada visita</p>
+    <div className="p-4 max-w-lg mx-auto space-y-4">
+      <h1 className="text-xl font-bold">Comunidad</h1>
+
+      {/* Composer */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+        <textarea
+          className="w-full bg-transparent text-sm resize-none focus:outline-none placeholder:text-slate-500"
+          rows={3}
+          placeholder="Comparte tu experiencia..."
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+        />
+        <div className="flex justify-end">
+          <Button onClick={publicar} loading={publishing} disabled={!texto.trim()}>
+            Publicar
+          </Button>
+        </div>
       </div>
-      {demoPosts.map((post) => (
-        <PostCard key={post.id} post={post} onLike={() => {}} />
-      ))}
+
+      {posts.length === 0 ? (
+        <p className="text-slate-500 text-sm text-center py-8">Sé el primero en compartir una experiencia.</p>
+      ) : (
+        posts.map((p) => <PostCard key={p.id} post={p} />)
+      )}
     </div>
   );
 };

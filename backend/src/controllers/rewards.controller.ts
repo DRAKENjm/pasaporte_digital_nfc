@@ -1,55 +1,100 @@
 import { Response, NextFunction } from 'express';
-import { AuthenticatedRequest } from '../types';
 import { query } from '../config/database';
-import { sendResponse, ApiError } from '../utils';
+import { ApiError, sendResponse } from '../utils';
+import { AuthenticatedRequest } from '../types';
 
 export const RewardsController = {
-  async listRewards(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  async listar(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const resDb = await query('SELECT * FROM rewards WHERE is_active = true ORDER BY points_cost ASC');
-      sendResponse(res, 200, resDb.rows);
+      const result = await query(
+        `SELECT * FROM recompensas_plataforma
+         WHERE estado = 'ACTIVA'
+           AND (fecha_fin IS NULL OR fecha_fin > CURRENT_TIMESTAMP)
+         ORDER BY costo_puntos_globales ASC`
+      );
+      sendResponse(res, 200, result.rows, 'Catálogo de recompensas');
     } catch (error) {
       next(error);
     }
   },
 
-  async redeemReward(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  async canjear(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { rewardId } = req.body;
-      const userId = req.user!.id;
+      if (!req.user) throw new ApiError(401, 'No autenticado');
+      const { recompensa_id } = req.body;
+      if (!recompensa_id) throw new ApiError(400, 'recompensa_id es obligatorio');
 
-      const rewardRes = await query('SELECT * FROM rewards WHERE id = $1 AND is_active = true', [rewardId]);
-      const reward = rewardRes.rows[0];
-      if (!reward) throw new ApiError(404, 'Recompensa no encontrada');
-      if (reward.stock <= 0) throw new ApiError(400, 'Recompensa agotada');
+      // Transacción simple
+      const client = await (await import('../config/database')).pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      const walletRes = await query('SELECT * FROM wallets WHERE user_id = $1', [userId]);
-      const wallet = walletRes.rows[0];
+        const rec = await client.query(
+          `SELECT * FROM recompensas_plataforma WHERE id = $1 FOR UPDATE`,
+          [recompensa_id]
+        );
+        if (!rec.rows[0] || rec.rows[0].estado !== 'ACTIVA') {
+          throw new ApiError(404, 'Recompensa no disponible');
+        }
+        const recompensa = rec.rows[0];
 
-      if (wallet.balance < reward.points_cost) {
-        throw new ApiError(400, 'Saldo de puntos insuficiente');
+        if (recompensa.stock_disponible !== null && recompensa.stock_disponible <= 0) {
+          throw new ApiError(400, 'Sin stock disponible');
+        }
+
+        const user = await client.query(
+          `SELECT puntos_globales FROM usuarios WHERE id = $1 FOR UPDATE`,
+          [req.user.id]
+        );
+        if (user.rows[0].puntos_globales < recompensa.costo_puntos_globales) {
+          throw new ApiError(400, 'Puntos insuficientes');
+        }
+
+        await client.query(
+          `UPDATE usuarios SET puntos_globales = puntos_globales - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+          [recompensa.costo_puntos_globales, req.user.id]
+        );
+
+        if (recompensa.stock_disponible !== null) {
+          await client.query(
+            `UPDATE recompensas_plataforma SET stock_disponible = stock_disponible - 1 WHERE id = $1`,
+            [recompensa_id]
+          );
+        }
+
+        const canje = await client.query(
+          `INSERT INTO historial_canjes (usuario_id, recompensa_id, puntos_gastados)
+           VALUES ($1, $2, $3) RETURNING *`,
+          [req.user.id, recompensa_id, recompensa.costo_puntos_globales]
+        );
+
+        await client.query('COMMIT');
+        sendResponse(res, 200, canje.rows[0], 'Canje realizado con éxito');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
       }
-
-      // Descontar puntos y reducir stock
-      const redemptionCode = 'REDEEM-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-
-      await query(
-        `INSERT INTO redemptions (user_id, reward_id, points_spent, redemption_code)
-         VALUES ($1, $2, $3, $4)`,
-        [userId, reward.id, reward.points_cost, redemptionCode]
-      );
-
-      await query(
-        `INSERT INTO point_transactions (wallet_id, amount, type, description, reference_id)
-         VALUES ($1, $2, 'REWARD_REDEEM', $3, $4)`,
-        [wallet.id, -reward.points_cost, `Canje de ${reward.title}`, reward.id]
-      );
-
-      await query('UPDATE rewards SET stock = stock - 1 WHERE id = $1', [reward.id]);
-
-      sendResponse(res, 200, { redemptionCode, rewardTitle: reward.title }, '¡Recompensa canjeada con éxito!');
     } catch (error) {
       next(error);
     }
-  }
+  },
+
+  async misCanjes(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new ApiError(401, 'No autenticado');
+      const result = await query(
+        `SELECT c.*, r.nombre_recompensa, r.imagen_url, r.tipo_entrega
+         FROM historial_canjes c
+         JOIN recompensas_plataforma r ON r.id = c.recompensa_id
+         WHERE c.usuario_id = $1
+         ORDER BY c.fecha_canje DESC`,
+        [req.user.id]
+      );
+      sendResponse(res, 200, result.rows, 'Historial de canjes');
+    } catch (error) {
+      next(error);
+    }
+  },
 };

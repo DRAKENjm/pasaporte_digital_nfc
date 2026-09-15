@@ -1,17 +1,15 @@
 import { Response, NextFunction } from 'express';
-import { AuthenticatedRequest, UserRole } from '../types';
+import { AuthenticatedRequest } from '../types';
 import { ApiError } from '../utils';
 
-export const requireRole = (...allowedRoles: UserRole[]) => {
+export const requireRoles = (...roles: string[]) => {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return next(new ApiError(401, 'No autenticado.'));
+      return next(new ApiError(401, 'No autenticado'));
     }
-
-    if (!allowedRoles.includes(req.user.role)) {
-      return next(new ApiError(403, 'Permisos insuficientes para realizar esta acción.'));
+    if (!roles.includes(req.user.role)) {
+      return next(new ApiError(403, 'No tienes permisos para esta acción'));
     }
-
     next();
   };
 };

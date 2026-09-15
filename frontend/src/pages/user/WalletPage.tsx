@@ -1,54 +1,118 @@
-import React, { useState } from 'react';
-import { NFCScanner } from '../../components/nfc/NFCScanner';
-import { QRScanner } from '../../components/nfc/QRScanner';
-import { ValidationAnimation } from '../../components/nfc/ValidationAnimation';
-import { formatPoints, getRankBadgeColor } from '../../utils/formatters';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../hooks/useAuth';
+import { nfcService } from '../../services/nfcService';
+import { VisitaHistorial } from '../../types';
+import { Spinner } from '../../components/common/Spinner';
+import { Button } from '../../components/common/Button';
+import { useUI } from '../../hooks/useUI';
 
 export const WalletPage: React.FC = () => {
-  const [balance, setBalance] = useState(350);
-  const [level] = useState('Plata');
-  const [showAnimation, setShowAnimation] = useState(false);
-  const [lastValidated, setLastValidated] = useState<{ points: number; commerce: string } | null>(null);
+  const { user, refreshProfile } = useAuth();
+  const { showToast } = useUI();
+  const [historial, setHistorial] = useState<VisitaHistorial[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uid, setUid] = useState('');
 
-  const handleValidation = (tagOrCode: string) => {
-    // Simulación de validación exitosa
-    const pointsEarned = 50;
-    setBalance((prev) => prev + pointsEarned);
-    setLastValidated({ points: pointsEarned, commerce: 'Café Central NFC' });
-    setShowAnimation(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        await refreshProfile();
+        const data = await nfcService.historial();
+        setHistorial(data);
+      } catch {
+        // silencioso
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [refreshProfile]);
+
+  const vincularTarjeta = async () => {
+    if (!uid.trim()) return;
+    try {
+      await nfcService.asignarTarjeta(uid.trim());
+      showToast('Tarjeta NFC vinculada', 'success');
+      setUid('');
+    } catch (err: any) {
+      showToast(err.response?.data?.message || 'Error al vincular', 'error');
+    }
   };
 
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner size={32} />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      {/* Wallet Card */}
-      <div className="p-6 rounded-3xl bg-gradient-to-br from-sky-900 via-indigo-950 to-slate-950 border border-sky-500/30 shadow-2xl relative overflow-hidden">
-        <div className="flex justify-between items-start mb-6">
+    <div className="p-4 max-w-lg mx-auto space-y-6">
+      {/* Card pasaporte */}
+      <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-700 p-6 shadow-xl relative overflow-hidden">
+        <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full" />
+        <p className="text-indigo-200 text-sm mb-1">Tu Pasaporte</p>
+        <h1 className="text-2xl font-bold">
+          {user?.nombres} {user?.apellidos}
+        </h1>
+        <p className="text-indigo-200 text-sm mt-1">{user?.email}</p>
+        <div className="mt-6 flex gap-6">
           <div>
-            <span className="text-xs text-sky-300 font-semibold tracking-wider uppercase">Saldo Global</span>
-            <h2 className="text-4xl font-black text-white mt-1">{formatPoints(balance)} <span className="text-lg font-bold text-sky-400">PTS</span></h2>
+            <div className="text-3xl font-bold">{user?.total_sellos ?? 0}</div>
+            <div className="text-indigo-200 text-xs">Sellos</div>
           </div>
-          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getRankBadgeColor(level)}`}>
-            Rango {level}
-          </span>
+          <div>
+            <div className="text-3xl font-bold">{user?.puntos_globales ?? 0}</div>
+            <div className="text-indigo-200 text-xs">Puntos</div>
+          </div>
+          <div>
+            <div className="text-lg font-semibold">{user?.nivel_nombre || user?.nivel || 'Bronce'}</div>
+            <div className="text-indigo-200 text-xs">Nivel</div>
+          </div>
         </div>
-        <div className="w-full bg-slate-900/60 rounded-full h-2.5 mb-2 overflow-hidden border border-white/5">
-          <div className="bg-gradient-to-r from-sky-500 to-amber-400 h-2.5 rounded-full w-[65%]" />
-        </div>
-        <p className="text-[11px] text-slate-400 text-right">150 pts para Nivel Oro</p>
       </div>
 
-      {/* NFC & QR Readers */}
-      <NFCScanner onScanSuccess={handleValidation} />
-      <QRScanner onScanCode={handleValidation} />
+      {/* Vincular NFC */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+        <h2 className="font-semibold">Vincular tarjeta NFC</h2>
+        <p className="text-xs text-slate-400">
+          Acerca tu tarjeta o introduce el UID del chip NTAG.
+        </p>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm"
+            placeholder="UID NFC"
+            value={uid}
+            onChange={(e) => setUid(e.target.value)}
+          />
+          <Button onClick={vincularTarjeta}>Vincular</Button>
+        </div>
+      </div>
 
-      {/* Success Modal */}
-      {showAnimation && lastValidated && (
-        <ValidationAnimation
-          points={lastValidated.points}
-          commerceName={lastValidated.commerce}
-          onDone={() => setShowAnimation(false)}
-        />
-      )}
+      {/* Historial */}
+      <div>
+        <h2 className="font-semibold mb-3">Últimas visitas</h2>
+        {historial.length === 0 ? (
+          <p className="text-slate-500 text-sm">Aún no tienes sellos. ¡Visita un local aliado!</p>
+        ) : (
+          <ul className="space-y-2">
+            {historial.map((v) => (
+              <li
+                key={v.id}
+                className="bg-white/5 border border-white/5 rounded-xl px-4 py-3 flex justify-between items-center"
+              >
+                <div>
+                  <div className="font-medium text-sm">{v.establecimiento_nombre}</div>
+                  <div className="text-xs text-slate-400">
+                    {new Date(v.fecha_hora).toLocaleString('es-PE')} · {v.metodo_validacion}
+                  </div>
+                </div>
+                <div className="text-emerald-400 font-semibold text-sm">+{v.puntos_ganados} pts</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 };

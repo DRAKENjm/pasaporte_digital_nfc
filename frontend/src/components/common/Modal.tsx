@@ -1,22 +1,21 @@
 import React from 'react';
 
-interface ModalProps {
-  isOpen: boolean;
+interface Props {
+  open: boolean;
   onClose: () => void;
-  title: string;
+  title?: string;
   children: React.ReactNode;
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
-  if (!isOpen) return null;
-
+export const Modal: React.FC<Props> = ({ open, onClose, title, children }) => {
+  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-fade-in">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-white">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {title && <h3 className="text-lg font-semibold mb-4">{title}</h3>}
         {children}
       </div>
     </div>

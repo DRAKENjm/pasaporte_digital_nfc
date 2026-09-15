@@ -1,81 +1,86 @@
 import { Response, NextFunction } from 'express';
-import { AuthenticatedRequest } from '../types';
+import { PointsService } from '../services/points.service';
 import { TransactionModel } from '../models/transaction.model';
-import { UserModel } from '../models/user.model';
-import { sendResponse, ApiError } from '../utils';
+import { ApiError, sendResponse } from '../utils';
+import { AuthenticatedRequest } from '../types';
 
 export const PointsController = {
-  // Acción ejecutada por el empleado/comercio al escanear la tarjeta del usuario
-  async validateVisit(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  /** Comercio o admin valida una visita (NFC / QR / manual) */
+  async validarVisita(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      // 1. El usuario logueado que envía la petición es el personal del comercio
-      const personalValidadorId = req.user!.id;
-      
-      // 2. Extraemos los datos que nos envía la app (el escaneo)
-      // identificador: El UID de la tarjeta o el texto del QR
-      // metodo: 'NFC' o 'QR'
-      // establecimiento_id: El local donde se está validando
-      const { identificador, metodo, establecimiento_id } = req.body; 
+      if (!req.user) throw new ApiError(401, 'No autenticado');
 
-      if (!identificador || !metodo || !establecimiento_id) {
-         throw new ApiError(400, 'Faltan datos obligatorios para la validación (identificador, metodo, establecimiento_id)');
+      const { usuario_id, establecimiento_id, metodo = 'MANUAL_DASHBOARD' } = req.body;
+
+      if (!usuario_id || !establecimiento_id) {
+        throw new ApiError(400, 'usuario_id y establecimiento_id son obligatorios');
       }
 
-      // 3. Buscar a qué usuario le pertenece esa tarjeta física
-      const tarjeta = await TransactionModel.findTarjeta(identificador, metodo);
-      if (!tarjeta) {
-        throw new ApiError(404, 'Tarjeta inválida, inactiva o no asignada a ningún usuario');
-      }
-
-      // 4. Buscar la regla de sellos activa para ese establecimiento
-      const regla = await TransactionModel.getReglaActiva(establecimiento_id);
-      if (!regla) {
-        throw new ApiError(400, 'Este establecimiento no tiene reglas de sellos configuradas o activas');
-      }
-
-      // 5. Motor Antifraude: Verificar el límite diario del usuario en este local
-      const visitasHoy = await TransactionModel.contarVisitasHoy(tarjeta.usuario_id, establecimiento_id);
-      if (visitasHoy >= regla.limite_diario_por_usuario) {
-        throw new ApiError(429, `Fraude prevenido: El usuario ya alcanzó el límite diario de ${regla.limite_diario_por_usuario} visita(s) en este local.`);
-      }
-
-      // 6. Si todo es correcto, procesar la acreditación en la base de datos
-      const resultado = await TransactionModel.procesarValidacion(
-        tarjeta.usuario_id,
-        establecimiento_id,
-        personalValidadorId,
-        regla.id,
-        regla.valor_puntos_por_sello,
-        metodo
-      );
-
-      sendResponse(res, 200, resultado, `¡Validación exitosa! Se sumaron ${regla.valor_puntos_por_sello} puntos al usuario.`);
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  // Obtener el balance general del usuario autenticado (para la vista "Mi Pasaporte")
-  async getWallet(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-    try {
-      const usuario = await UserModel.findById(req.user!.id);
-      if (!usuario) throw new ApiError(404, 'Usuario no encontrado');
-      
-      // Enviamos solo la información relevante a su balance de pasaporte
-      sendResponse(res, 200, {
-          total_sellos: usuario.total_sellos,
-          puntos_globales: usuario.puntos_globales
+      const result = await PointsService.validarYAcreditar({
+        usuarioId: usuario_id,
+        establecimientoId: establecimiento_id,
+        personalValidadorId: req.user.id,
+        metodo: metodo as any,
+        ip: req.ip,
       });
+
+      sendResponse(res, 200, result, 'Sello acreditado correctamente');
     } catch (error) {
       next(error);
     }
   },
 
-  // Obtener la lista de comercios visitados por el usuario
-  async getHistory(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  /** Usuario presenta su tarjeta NFC / QR y el comercio confirma */
+  async validarPorNfc(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const historial = await TransactionModel.getHistorialUsuario(req.user!.id);
-      sendResponse(res, 200, { historial }, 'Historial de visitas recuperado');
+      if (!req.user) throw new ApiError(401, 'No autenticado');
+
+      const { uid_nfc, establecimiento_id } = req.body;
+      if (!uid_nfc || !establecimiento_id) {
+        throw new ApiError(400, 'uid_nfc y establecimiento_id son obligatorios');
+      }
+
+      const tarjeta = await TransactionModel.findTarjetaByUid(uid_nfc);
+      if (!tarjeta || !tarjeta.usuario_id) {
+        throw new ApiError(404, 'Tarjeta no encontrada o no asignada a un usuario');
+      }
+      if (tarjeta.estado === 'BLOQUEADA' || tarjeta.estado === 'EXTRAVIADA') {
+        throw new ApiError(403, 'Tarjeta bloqueada o extraviada');
+      }
+
+      const result = await PointsService.validarYAcreditar({
+        usuarioId: tarjeta.usuario_id,
+        establecimientoId: establecimiento_id,
+        personalValidadorId: req.user.id,
+        metodo: 'NFC',
+        ip: req.ip,
+      });
+
+      sendResponse(res, 200, result, 'Visita validada por NFC');
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async historial(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new ApiError(401, 'No autenticado');
+      const rows = await TransactionModel.historialUsuario(req.user.id);
+      sendResponse(res, 200, rows, 'Historial de sellos');
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async asignarTarjeta(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new ApiError(401, 'No autenticado');
+      const { uid_nfc, qr_respaldo } = req.body;
+      if (!uid_nfc) throw new ApiError(400, 'uid_nfc es obligatorio');
+
+      const qr = qr_respaldo || `https://pasaporte.nfc/r/${uid_nfc}`;
+      const tarjeta = await TransactionModel.asignarTarjeta(uid_nfc, req.user.id, qr);
+      sendResponse(res, 200, tarjeta, 'Tarjeta NFC vinculada');
     } catch (error) {
       next(error);
     }

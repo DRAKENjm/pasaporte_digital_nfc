@@ -1,22 +1,41 @@
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { r2Client, R2_BUCKET, R2_PUBLIC_URL } from '../config/cloudflareR2';
-import crypto from 'crypto';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { randomUUID } from 'crypto';
+
+const r2 = new S3Client({
+  region: 'auto',
+  endpoint: process.env.R2_ACCOUNT_ID
+    ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+    : undefined,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  },
+});
 
 export const MediaService = {
-  async uploadMedia(file: Express.Multer.File, folder = 'posts'): Promise<string> {
-    const fileExt = file.originalname.split('.').pop() || 'mp4';
-    const randomHash = crypto.randomBytes(16).toString('hex');
-    const key = `${folder}/${Date.now()}-${randomHash}.${fileExt}`;
+  async getUploadUrl(filename: string, contentType: string) {
+    if (!process.env.R2_BUCKET_NAME) {
+      // Fallback local mock for development without R2
+      const mockKey = `dev/${randomUUID()}-${filename}`;
+      return {
+        uploadUrl: null,
+        publicUrl: `https://placehold.co/600x400?text=${encodeURIComponent(filename)}`,
+        key: mockKey,
+        mock: true,
+      };
+    }
 
+    const key = `media/${randomUUID()}-${filename}`;
     const command = new PutObjectCommand({
-      Bucket: R2_BUCKET,
+      Bucket: process.env.R2_BUCKET_NAME,
       Key: key,
-      Body: file.buffer,
-      ContentType: file.mimetype,
+      ContentType: contentType,
     });
 
-    await r2Client.send(command);
+    const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 300 });
+    const publicUrl = `${process.env.R2_PUBLIC_URL || ''}/${key}`;
 
-    return `${R2_PUBLIC_URL}/${key}`;
+    return { uploadUrl, publicUrl, key, mock: false };
   },
 };
