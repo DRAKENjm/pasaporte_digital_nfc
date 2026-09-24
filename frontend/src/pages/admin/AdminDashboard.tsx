@@ -136,16 +136,23 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-3">
         {[
-          ["Usuarios", stats?.usuarios],
-          ["Locales", stats?.establecimientos_activos],
-          ["Visitas", stats?.visitas_totales],
-          ["Canjes", stats?.canjes_totales],
-        ].map(([label, val]) => (
-          <div key={String(label)} className="card !py-3">
-            <p className="text-[11px] text-muted">{label}</p>
-            <p className="text-xl font-bold tabular-nums">{val ?? "—"}</p>
+          ["Usuarios", stats?.usuarios, "border-teal-500/20 bg-teal-50/30 dark:bg-teal-500/5 text-teal-700 dark:text-teal-300"],
+          ["Locales", stats?.establecimientos_activos, "border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"],
+          ["Visitas", stats?.visitas_totales, "border-amber-500/20 bg-amber-50/30 dark:bg-amber-500/5 text-amber-700 dark:text-amber-300"],
+          ["Canjes", stats?.canjes_totales, "border-purple-500/20 bg-purple-50/30 dark:bg-purple-500/5 text-purple-700 dark:text-purple-300"],
+        ].map(([label, val, style]) => (
+          <div
+            key={String(label)}
+            className={`p-4 rounded-2xl border-2 bg-white dark:bg-slate-900 shadow-xs flex flex-col justify-between ${style}`}
+          >
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              {label}
+            </p>
+            <p className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tabular-nums font-mono mt-1">
+              {typeof val === "number" ? val.toLocaleString("es-PE") : (val ?? "—")}
+            </p>
           </div>
         ))}
       </div>

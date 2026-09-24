@@ -1,304 +1,162 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import api from "../../services/api";
-import { Spinner } from "../../components/common/Spinner";
+import { adminService } from "../../services/adminService";
+import { AdminDashboardData } from "../../types/admin";
+import { ProgressBarLoader } from "../../components/common/ProgressBarLoader";
+import { AdminKpiCard } from "./components/AdminKpiCard";
+import { AdminActivityChart } from "./components/AdminActivityChart";
+import { AdminEcosystemDonut } from "./components/AdminEcosystemDonut";
+import { AdminBottomRow } from "./components/AdminBottomRow";
 import {
   Users,
   Building2,
   Award,
-  Gift,
   CreditCard,
+  Gift,
   FileText,
-  ArrowRight,
-  Clock,
-  Nfc,
-  QrCode,
-  ShieldCheck,
-  ChevronRight,
+  RotateCw,
+  Plus,
 } from "lucide-react";
 
-interface ActividadItem {
-  id: string;
-  usuario_nombre: string;
-  establecimiento_nombre: string;
-  puntos_ganados: number;
-  metodo_validacion: string;
-  fecha_hora: string;
-}
-
-interface DashboardStats {
-  usuarios?: number;
-  establecimientos_activos?: number;
-  visitas_totales?: number;
-  visitas_hoy?: number;
-  canjes_totales?: number;
-  publicaciones?: number;
-  tarjetas_nfc?: number;
-  tarjetas_stock?: number;
-  reclamaciones_pendientes?: number;
-  actividad_reciente?: ActividadItem[];
-}
-
 export const AdminHome: React.FC = () => {
-  const [stats, setStats] = useState<DashboardStats>({});
+  const [data, setData] = useState<AdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadData = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    try {
+      const res = await adminService.getDashboard();
+      setData(res);
+    } catch (error) {
+      console.error("Error al cargar dashboard admin:", error);
+    } finally {
+      setLoading(false);
+      if (isManual) setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get("/admin/dashboard");
-        setStats(data?.data ?? data ?? {});
-      } catch {
-        /* opcional */
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    loadData();
+  }, [loadData]);
 
   if (loading) {
     return (
-      <div className="flex justify-center py-16">
-        <Spinner size={32} />
-      </div>
+      <ProgressBarLoader text="Conectando al Panel Administrativo..." />
     );
   }
 
-  const metricCards = [
-    {
-      label: "Usuarios Totales",
-      value: stats.usuarios ?? 0,
-      subtext: "Clientes, Comercios y Administradores",
-      icon: Users,
-      to: "/admin/usuarios",
-    },
-    {
-      label: "Locales Aliados",
-      value: stats.establecimientos_activos ?? 0,
-      subtext: "Establecimientos activos en red",
-      icon: Building2,
-      to: "/admin/locales",
-    },
-    {
-      label: "Sellos Validados",
-      value: stats.visitas_totales ?? 0,
-      subtext: `${stats.visitas_hoy ?? 0} validados hoy`,
-      icon: Award,
-      to: "/admin/reglas",
-    },
-    {
-      label: "Canjes Realizados",
-      value: stats.canjes_totales ?? 0,
-      subtext: "Premios y beneficios entregados",
-      icon: Gift,
-      to: "/admin/recompensas",
-    },
-    {
-      label: "Tarjetas NFC Físicas",
-      value: stats.tarjetas_nfc ?? 0,
-      subtext: `${stats.tarjetas_stock ?? 0} disponibles en stock`,
-      icon: CreditCard,
-      to: "/admin/tarjetas",
-    },
-    {
-      label: "Reclamaciones",
-      value: stats.reclamaciones_pendientes ?? 0,
-      subtext:
-        (stats.reclamaciones_pendientes ?? 0) === 0
-          ? "Sin expedientes pendientes"
-          : `${stats.reclamaciones_pendientes} casos por resolver`,
-      icon: FileText,
-      to: "/admin/reclamaciones",
-    },
-  ];
-
-  const modulosGestion = [
-    {
-      title: "Locales y Puntos de Emisión",
-      description: "Alta de sedes comerciales, datos fiscales RUC, geolocalización y asignación de personal de caja/POS.",
-      to: "/admin/locales",
-      icon: Building2,
-      tag: "Infraestructura",
-    },
-    {
-      title: "Reglas de Sellos y Puntuación",
-      description: "Parametrización de valor en puntos por sello, límites de frecuencia diaria y campañas de temporada.",
-      to: "/admin/reglas",
-      icon: Award,
-      tag: "Fidelización",
-    },
-    {
-      title: "Inventario de Tarjetas NFC",
-      description: "Importación en lote de chips NTAG213/NTAG215, control de almacén y bloqueos de seguridad.",
-      to: "/admin/tarjetas",
-      icon: CreditCard,
-      tag: "Hardware",
-    },
-    {
-      title: "Catálogo de Recompensas",
-      description: "Gestión de catálogo de premios, costo en puntos globales, control de stock y modalidades de canje.",
-      to: "/admin/recompensas",
-      icon: Gift,
-      tag: "Beneficios",
-    },
-    {
-      title: "Libro de Reclamaciones",
-      description: "Auditoría y resolución legal de quejas y reclamos de clientes con código de expediente INDECOPI.",
-      to: "/admin/reclamaciones",
-      icon: FileText,
-      tag: "Gobernanza",
-    },
-    {
-      title: "Usuarios y Permisos de Acceso",
-      description: "Administración del padrón de usuarios, roles de seguridad y suspensión de accesos.",
-      to: "/admin/usuarios",
-      icon: Users,
-      tag: "Seguridad",
-    },
-  ];
-
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Encabezado Formal */}
-      <div className="border-b border-[rgb(var(--app-border))] pb-4">
-        <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-          Panel de Administración Central
-        </h1>
-        <p className="text-xs text-muted mt-0.5">
-          Control operativo, analítica transaccional y gobernanza de la red Pasaporte NFC
-        </p>
-      </div>
-
-      {/* Grid de Indicadores Clave */}
-      <div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
-          {metricCards.map((c) => (
-            <Link
-              key={c.label}
-              to={c.to}
-              className="p-4 bg-[rgb(var(--app-surface))] border border-[rgb(var(--app-border))] rounded-2xl hover:border-slate-400 dark:hover:border-slate-600 transition shadow-xs flex flex-col justify-between group"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-900 dark:text-white group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition">
-                  <c.icon className="w-4 h-4" />
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition" />
-              </div>
-
-              <div>
-                <p className="text-2xl font-bold tracking-tight tabular-nums text-slate-900 dark:text-white">
-                  {c.value.toLocaleString()}
-                </p>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                  {c.label}
-                </p>
-                <p className="text-[11px] text-muted truncate mt-0.5">
-                  {c.subtext}
-                </p>
-              </div>
-            </Link>
-          ))}
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* 1. Encabezado del Dashboard con Título y Acciones */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pb-2">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
+            Panel Administrativo
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Gestiona y monitorea el ecosistema de Pasaporte NFC
+          </p>
         </div>
-      </div>
 
-      {/* Registro de Auditoría / Actividad Reciente */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-bold text-muted uppercase tracking-wider">
-            Últimas Validaciones en POS (Auditoría)
-          </h2>
-          <Link
-            to="/admin/reglas"
-            className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:underline flex items-center gap-1"
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => loadData(true)}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition shadow-2xs disabled:opacity-60"
           >
-            Ver reglas <ArrowRight className="w-3 h-3" />
+            <RotateCw
+              className={`w-3.5 h-3.5 text-slate-500 ${refreshing ? "animate-spin text-teal-600" : ""}`}
+            />
+            <span>Actualizar</span>
+          </button>
+
+          <Link
+            to="/admin/tarjetas"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-[#132A38] hover:bg-[#1A384A] text-teal-300 border border-teal-500/30 transition shadow-xs"
+          >
+            <Plus className="w-4 h-4 text-teal-400" />
+            <span>Nuevo lote NFC</span>
           </Link>
         </div>
-
-        {stats.actividad_reciente && stats.actividad_reciente.length > 0 ? (
-          <div className="bg-[rgb(var(--app-surface))] border border-[rgb(var(--app-border))] rounded-2xl overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-[rgb(var(--app-border))] bg-slate-50 dark:bg-slate-900/50 text-muted font-bold uppercase">
-                    <th className="p-3">Fecha y Hora</th>
-                    <th className="p-3">Cliente</th>
-                    <th className="p-3">Establecimiento</th>
-                    <th className="p-3">Método</th>
-                    <th className="p-3 text-right">Puntos Otorgados</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[rgb(var(--app-border))]">
-                  {stats.actividad_reciente.map((act) => (
-                    <tr key={act.id} className="hover:bg-slate-500/5 transition">
-                      <td className="p-3 font-mono text-[11px] text-muted">
-                        {new Date(act.fecha_hora).toLocaleDateString()} {new Date(act.fecha_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="p-3 font-semibold text-slate-900 dark:text-white">
-                        {act.usuario_nombre}
-                      </td>
-                      <td className="p-3 text-muted">
-                        {act.establecimiento_nombre}
-                      </td>
-                      <td className="p-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          {act.metodo_validacion === "NFC" ? (
-                            <Nfc className="w-3 h-3" />
-                          ) : (
-                            <QrCode className="w-3 h-3" />
-                          )}
-                          {act.metodo_validacion}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                        +{act.puntos_ganados} pts
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : (
-          <div className="p-6 text-center border border-[rgb(var(--app-border))] rounded-2xl bg-[rgb(var(--app-surface))] text-xs text-muted">
-            No hay registros recientes de validación en terminales.
-          </div>
-        )}
       </div>
 
-      {/* Módulos de Gestión */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">
-          Módulos de Configuración y Gestión
-        </h2>
+      {/* 2. Grid de 6 Tarjetas KPI (3 columnas x 2 filas) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <AdminKpiCard
+          title="Usuarios"
+          value={data?.usuarios ?? 0}
+          icon={Users}
+          to="/admin/usuarios"
+          type="curve"
+          colorScheme="teal"
+          badgeText="Comunidad"
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {modulosGestion.map((m) => (
-            <Link
-              key={m.title}
-              to={m.to}
-              className="p-4 bg-[rgb(var(--app-surface))] border border-[rgb(var(--app-border))] rounded-2xl hover:border-slate-400 dark:hover:border-slate-600 transition shadow-xs flex items-start gap-3.5 group"
-            >
-              <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0 mt-0.5">
-                <m.icon className="w-4 h-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-bold text-slate-900 dark:text-white">
-                    {m.title}
-                  </p>
-                  <span className="text-[10px] font-semibold text-muted bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full shrink-0">
-                    {m.tag}
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted mt-1 leading-relaxed">
-                  {m.description}
-                </p>
-              </div>
-            </Link>
-          ))}
+        <AdminKpiCard
+          title="Locales Aliados"
+          value={data?.establecimientos_totales ?? 0}
+          icon={Building2}
+          to="/admin/locales"
+          type="bars-green"
+          colorScheme="emerald"
+          badgeText={`${data?.establecimientos_activos ?? 0} Activos`}
+        />
+
+        <AdminKpiCard
+          title="Sellos Validados"
+          value={data?.visitas_totales ?? 0}
+          icon={Award}
+          to="/admin/reglas"
+          type="bars-amber"
+          colorScheme="amber"
+          badgeText="Pasaporte"
+        />
+
+        <AdminKpiCard
+          title="Tarjetas NFC"
+          value={data?.tarjetas_nfc ?? 0}
+          icon={CreditCard}
+          to="/admin/tarjetas"
+          type="curve"
+          colorScheme="indigo"
+          badgeText="Hardware"
+        />
+
+        <AdminKpiCard
+          title="Recompensas"
+          value={data?.canjes_totales ?? 0}
+          icon={Gift}
+          to="/admin/recompensas"
+          type="bars-purple"
+          colorScheme="purple"
+          badgeText="Premios"
+        />
+
+        <AdminKpiCard
+          title="Reclamaciones"
+          value={data?.reclamaciones_pendientes ?? 0}
+          icon={FileText}
+          to="/admin/reclamaciones"
+          type="curve"
+          colorScheme="rose"
+          badgeText={Number(data?.reclamaciones_pendientes ?? 0) > 0 ? "Pendientes" : "Al día"}
+        />
+      </div>
+
+      {/* 3. Fila de Gráficos (Actividad de Sellos + Distribución del Ecosistema) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2">
+          <AdminActivityChart data={data?.tendencia_7_dias ?? []} />
+        </div>
+        <div className="lg:col-span-1">
+          <AdminEcosystemDonut data={data} />
         </div>
       </div>
+
+      {/* 4. Fila Inferior (Estado Red NFC + Recompensas y Canjes + Top Locales) */}
+      <AdminBottomRow data={data} />
     </div>
   );
 };

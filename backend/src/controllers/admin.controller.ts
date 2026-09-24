@@ -11,27 +11,25 @@ export const AdminController = {
     next: NextFunction,
   ) {
     try {
-      const [
-        usuarios,
-        locales,
-        visitas,
-        visitasHoy,
-        canjes,
-        publicaciones,
-        tarjetas,
-        tarjetasStock,
-        reclamaciones,
-        actividadReciente,
-      ] = await Promise.all([
+      // Execute queries in two batches to avoid hitting Supabase pool limits (max 15)
+      const batch1 = await Promise.all([
         query(`SELECT COUNT(*)::int AS total FROM usuarios`),
         query(
-          `SELECT COUNT(*)::int AS total FROM establecimientos WHERE estado = 'ACTIVO'`,
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(CASE WHEN estado = 'ACTIVO' THEN 1 END)::int AS activos,
+                  COUNT(CASE WHEN estado = 'INACTIVO' THEN 1 END)::int AS inactivos
+           FROM establecimientos`,
         ),
         query(`SELECT COUNT(*)::int AS total FROM historial_visitas_sellos`),
         query(
-          `SELECT COUNT(*)::int AS total FROM historial_visitas_sellos WHERE fecha_hora >= CURRENT_DATE`,
+          `SELECT COUNT(*)::int AS total, COALESCE(SUM(puntos_ganados), 0)::int AS puntos_hoy 
+           FROM historial_visitas_sellos WHERE fecha_hora >= CURRENT_DATE`,
         ),
-        query(`SELECT COUNT(*)::int AS total FROM historial_canjes`),
+        query(
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(CASE WHEN estado_entrega = 'PENDIENTE_RECOJO' THEN 1 END)::int AS pendientes
+           FROM historial_canjes`,
+        ),
         query(
           `SELECT COUNT(*)::int AS total FROM publicaciones WHERE estado_moderacion = 'APROBADA'`,
         ),
@@ -42,36 +40,140 @@ export const AdminController = {
         query(
           `SELECT COUNT(*)::int AS total FROM libro_reclamaciones WHERE estado = 'PENDIENTE'`,
         ),
+      ]);
+
+      const batch2 = await Promise.all([
+        query(
+          `SELECT COUNT(*)::int AS total FROM denuncias_moderacion WHERE estado_revision = 'PENDIENTE'`,
+        ),
         query(
           `SELECT h.id, h.puntos_ganados, h.metodo_validacion, h.fecha_hora,
                   u.nombres || ' ' || COALESCE(u.apellidos, '') AS usuario_nombre,
+                  u.avatar_url AS usuario_avatar,
                   e.nombre AS establecimiento_nombre
            FROM historial_visitas_sellos h
            JOIN usuarios u ON u.id = h.usuario_id
            JOIN establecimientos e ON e.id = h.establecimiento_id
            ORDER BY h.fecha_hora DESC
+           LIMIT 8`,
+        ),
+        query(
+          `SELECT 
+             TO_CHAR(d.fecha, 'YYYY-MM-DD') AS fecha,
+             TO_CHAR(d.fecha, 'Dy') AS dia_nombre,
+             COUNT(u.id)::int AS nuevos_clientes
+           FROM generate_series(
+             DATE_TRUNC('week', CURRENT_DATE)::date,
+             (DATE_TRUNC('week', CURRENT_DATE) + INTERVAL '6 days')::date,
+             '1 day'::interval
+           ) d(fecha)
+           LEFT JOIN usuarios u ON DATE(u.created_at) = DATE(d.fecha) 
+           AND u.rol_id = (SELECT id FROM roles WHERE nombre = 'CLIENTE' LIMIT 1)
+           GROUP BY d.fecha
+           ORDER BY d.fecha ASC`,
+        ),
+        query(
+          `SELECT r.nombre AS rol, COUNT(u.id)::int AS total
+           FROM roles r
+           LEFT JOIN usuarios u ON u.rol_id = r.id
+           GROUP BY r.nombre`,
+        ),
+        query(
+          `SELECT n.nombre_rango AS nivel, n.color_hex, COUNT(u.id)::int AS total
+           FROM niveles_pasaporte n
+           LEFT JOIN usuarios u ON u.nivel_id = n.id
+           GROUP BY n.id, n.nombre_rango, n.color_hex, n.sellos_requeridos
+           ORDER BY n.sellos_requeridos ASC`,
+        ),
+        query(
+          `SELECT 
+             COALESCE(metodo_validacion, 'NFC') AS metodo,
+             COUNT(*)::int AS total
+           FROM historial_visitas_sellos
+           GROUP BY metodo_validacion`,
+        ),
+        query(
+          `SELECT 
+             e.id, 
+             e.nombre, 
+             e.imagen_url,
+             COUNT(h.id)::int AS total_sellos,
+             COALESCE(SUM(h.puntos_ganados), 0)::int AS total_puntos
+           FROM establecimientos e
+           JOIN historial_visitas_sellos h ON h.establecimiento_id = e.id
+           GROUP BY e.id, e.nombre, e.imagen_url
+           ORDER BY total_sellos DESC
            LIMIT 5`,
         ),
+        query(
+          `SELECT 
+             COUNT(*)::int AS total,
+             COUNT(CASE WHEN estado = 'EN_STOCK' THEN 1 END)::int AS en_stock,
+             COUNT(CASE WHEN estado = 'ASIGNADA' THEN 1 END)::int AS asignadas,
+             COUNT(CASE WHEN estado = 'EXTRAVIADA' THEN 1 END)::int AS extraviadas,
+             COUNT(CASE WHEN estado = 'BLOQUEADA' THEN 1 END)::int AS bloqueadas
+           FROM tarjetas_nfc`,
+        ),
       ]);
+
+      const [
+        usuarios,
+        locales,
+        visitas,
+        visitasHoy,
+        canjes,
+        publicaciones,
+        tarjetas,
+        tarjetasStock,
+        reclamaciones,
+      ] = batch1;
+
+      const [
+        denuncias,
+        actividadReciente,
+        tendencia7Dias,
+        distribucionRoles,
+        distribucionNiveles,
+        distribucionMetodos,
+        topEstablecimientos,
+        resumenNfc,
+      ] = batch2;
 
       sendResponse(
         res,
         200,
         {
-          usuarios: usuarios.rows[0].total,
-          establecimientos_activos: locales.rows[0].total,
-          visitas_totales: visitas.rows[0].total,
-          visitas_hoy: visitasHoy.rows[0].total,
-          canjes_totales: canjes.rows[0].total,
-          publicaciones: publicaciones.rows[0].total,
-          tarjetas_nfc: tarjetas.rows[0].total,
-          tarjetas_stock: tarjetasStock.rows[0].total,
-          reclamaciones_pendientes: reclamaciones.rows[0].total,
-          actividad_reciente: actividadReciente.rows,
+          usuarios: usuarios.rows[0]?.total ?? 0,
+          establecimientos_activos: locales.rows[0]?.activos ?? 0,
+          establecimientos_totales: locales.rows[0]?.total ?? 0,
+          visitas_totales: visitas.rows[0]?.total ?? 0,
+          visitas_hoy: visitasHoy.rows[0]?.total ?? 0,
+          puntos_hoy: visitasHoy.rows[0]?.puntos_hoy ?? 0,
+          canjes_totales: canjes.rows[0]?.total ?? 0,
+          canjes_pendientes: canjes.rows[0]?.pendientes ?? 0,
+          publicaciones: publicaciones.rows[0]?.total ?? 0,
+          tarjetas_nfc: tarjetas.rows[0]?.total ?? 0,
+          tarjetas_stock: tarjetasStock.rows[0]?.total ?? 0,
+          reclamaciones_pendientes: reclamaciones.rows[0]?.total ?? 0,
+          denuncias_pendientes: denuncias.rows[0]?.total ?? 0,
+          actividad_reciente: actividadReciente.rows ?? [],
+          tendencia_7_dias: tendencia7Dias.rows ?? [],
+          distribucion_roles: distribucionRoles.rows ?? [],
+          distribucion_niveles: distribucionNiveles.rows ?? [],
+          distribucion_metodos: distribucionMetodos.rows ?? [],
+          top_establecimientos: topEstablecimientos.rows ?? [],
+          resumen_nfc: resumenNfc.rows[0] ?? {
+            total: 0,
+            en_stock: 0,
+            asignadas: 0,
+            extraviadas: 0,
+            bloqueadas: 0,
+          },
         },
-        "Dashboard admin",
+        "Dashboard admin analítico",
       );
     } catch (error) {
+      console.error("DASHBOARD ERROR:", error);
       next(error);
     }
   },
@@ -85,7 +187,7 @@ export const AdminController = {
     try {
       const { rol, estado, q } = req.query;
       let sql = `
-        SELECT u.id, u.nombres, u.apellidos, u.email, u.total_sellos, u.puntos_globales,
+        SELECT u.id, u.nombres, u.apellidos, u.email, u.avatar_url, u.total_sellos, u.puntos_globales,
                u.estado, u.created_at, r.nombre AS rol_nombre, n.nombre_rango AS nivel_nombre
         FROM usuarios u
         JOIN roles r ON r.id = u.rol_id
@@ -115,55 +217,79 @@ export const AdminController = {
     }
   },
 
-  /** Cambiar estado de usuario (ACTIVO / INACTIVO / BLOQUEADO) */
-  async cambiarEstadoUsuario(
+  /** Actualizar usuario (nombres, apellidos, email, rol, estado) */
+  async actualizarUsuario(
     req: AuthenticatedRequest,
     res: Response,
     next: NextFunction,
   ) {
     try {
       const { id } = req.params;
-      const { estado } = req.body;
-      if (!["ACTIVO", "INACTIVO", "BLOQUEADO"].includes(estado)) {
-        throw new ApiError(400, "Estado inválido");
+      const { nombres, apellidos, email, rol, estado } = req.body;
+
+      let sql = `UPDATE usuarios SET updated_at = CURRENT_TIMESTAMP`;
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (nombres !== undefined) {
+        params.push(nombres);
+        sql += `, nombres = $${paramIndex++}`;
+      }
+      if (apellidos !== undefined) {
+        params.push(apellidos);
+        sql += `, apellidos = $${paramIndex++}`;
+      }
+      if (email !== undefined) {
+        params.push(email);
+        sql += `, email = $${paramIndex++}`;
+      }
+      if (estado !== undefined) {
+        if (!["ACTIVO", "INACTIVO", "BLOQUEADO"].includes(estado)) {
+          throw new ApiError(400, "Estado inválido");
+        }
+        params.push(estado);
+        sql += `, estado = $${paramIndex++}`;
+      }
+      if (rol !== undefined) {
+        const roleRes = await query(`SELECT id FROM roles WHERE nombre = $1`, [rol]);
+        if (!roleRes.rows[0]) throw new ApiError(400, "Rol no existe");
+        params.push(roleRes.rows[0].id);
+        sql += `, rol_id = $${paramIndex++}`;
       }
 
-      const result = await query(
-        `UPDATE usuarios SET estado = $2, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1
-         RETURNING id, email, nombres, apellidos, estado`,
-        [id, estado],
-      );
+      sql += ` WHERE id = $${paramIndex} RETURNING id`;
+      params.push(id);
+
+      const result = await query(sql, params);
       if (!result.rows[0]) throw new ApiError(404, "Usuario no encontrado");
-      sendResponse(res, 200, result.rows[0], "Estado actualizado");
+
+      sendResponse(res, 200, result.rows[0], "Usuario actualizado");
     } catch (error) {
       next(error);
     }
   },
 
-  /** Cambiar rol de usuario */
-  async cambiarRolUsuario(
+  /** Eliminar usuario */
+  async eliminarUsuario(
     req: AuthenticatedRequest,
     res: Response,
     next: NextFunction,
   ) {
     try {
       const { id } = req.params;
-      const { rol } = req.body; // ADMIN | CLIENTE | COMERCIO
 
-      const roleRes = await query(`SELECT id FROM roles WHERE nombre = $1`, [
-        rol,
-      ]);
-      if (!roleRes.rows[0]) throw new ApiError(400, "Rol no existe");
-
-      const result = await query(
-        `UPDATE usuarios SET rol_id = $2, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1
-         RETURNING id, email`,
-        [id, roleRes.rows[0].id],
+      // Prevent deleting the main admin
+      const checkRes = await query(
+        `SELECT u.email, r.nombre as rol_nombre FROM usuarios u JOIN roles r ON u.rol_id = r.id WHERE u.id = $1`,
+        [id]
       );
-      if (!result.rows[0]) throw new ApiError(404, "Usuario no encontrado");
-      sendResponse(res, 200, { ...result.rows[0], rol }, "Rol actualizado");
+      if (!checkRes.rows[0]) throw new ApiError(404, "Usuario no encontrado");
+      if (checkRes.rows[0].rol_nombre === "ADMIN") {
+        throw new ApiError(403, "No se puede eliminar a un administrador");
+      }
+
+      await query(`DELETE FROM usuarios WHERE id = $1`, [id]);
+      sendResponse(res, 200, null, "Usuario eliminado permanentemente");
     } catch (error) {
       next(error);
     }
@@ -640,6 +766,305 @@ export const AdminController = {
 
       if (!result.rows[0]) throw new ApiError(404, "Regla no encontrada");
       sendResponse(res, 200, result.rows[0], "Regla actualizada");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async eliminarReglaSello(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+      const result = await query(
+        `DELETE FROM reglas_sellos WHERE id = $1 RETURNING id`,
+        [id],
+      );
+      if (!result.rows[0]) throw new ApiError(404, "Regla no encontrada");
+      sendResponse(res, 200, null, "Regla eliminada");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // ===== CATEGORÍAS DE ESTABLECIMIENTOS =====
+  async listarCategorias(
+    _req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const result = await query(
+        `SELECT 
+           c.*,
+           COUNT(e.id)::int AS total_locales
+         FROM categorias_establecimiento c
+         LEFT JOIN establecimientos e ON e.categoria_id = c.id
+         GROUP BY c.id
+         ORDER BY c.nombre ASC`,
+      );
+      sendResponse(res, 200, result.rows, "Categorías obtenidas");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async crearCategoria(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { nombre, icono_url, estado } = req.body;
+      if (!nombre?.trim()) {
+        throw new ApiError(400, "El nombre de la categoría es obligatorio");
+      }
+
+      const existe = await query(
+        `SELECT id FROM categorias_establecimiento WHERE LOWER(nombre) = LOWER($1)`,
+        [nombre.trim()],
+      );
+      if (existe.rows.length > 0) {
+        throw new ApiError(400, "Ya existe una categoría con ese nombre");
+      }
+
+      const result = await query(
+        `INSERT INTO categorias_establecimiento (nombre, icono_url, estado)
+         VALUES ($1, $2, COALESCE($3, true))
+         RETURNING *`,
+        [nombre.trim(), icono_url || null, estado !== undefined ? Boolean(estado) : true],
+      );
+
+      sendResponse(res, 201, result.rows[0], "Categoría creada correctamente");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async actualizarCategoria(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+      const { nombre, icono_url, estado } = req.body;
+
+      if (nombre?.trim()) {
+        const existe = await query(
+          `SELECT id FROM categorias_establecimiento WHERE LOWER(nombre) = LOWER($1) AND id != $2`,
+          [nombre.trim(), id],
+        );
+        if (existe.rows.length > 0) {
+          throw new ApiError(400, "Ya existe otra categoría con ese nombre");
+        }
+      }
+
+      const result = await query(
+        `UPDATE categorias_establecimiento
+         SET 
+           nombre = COALESCE($2, nombre),
+           icono_url = COALESCE($3, icono_url),
+           estado = COALESCE($4, estado)
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          nombre?.trim() ?? null,
+          icono_url !== undefined ? icono_url : null,
+          estado !== undefined ? Boolean(estado) : null,
+        ],
+      );
+
+      if (!result.rows[0]) throw new ApiError(404, "Categoría no encontrada");
+      sendResponse(res, 200, result.rows[0], "Categoría actualizada");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async eliminarCategoria(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+
+      // Verificar si hay locales asociados
+      const locales = await query(
+        `SELECT COUNT(*)::int AS count FROM establecimientos WHERE categoria_id = $1`,
+        [id],
+      );
+      if (locales.rows[0]?.count > 0) {
+        throw new ApiError(
+          400,
+          `No se puede eliminar la categoría porque tiene ${locales.rows[0].count} locales asignados. Puedes desactivarla en su lugar.`,
+        );
+      }
+
+      const result = await query(
+        `DELETE FROM categorias_establecimiento WHERE id = $1 RETURNING id`,
+        [id],
+      );
+
+      if (!result.rows[0]) throw new ApiError(404, "Categoría no encontrada");
+      sendResponse(res, 200, null, "Categoría eliminada con éxito");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // ===== GESTIÓN DE CANJES DE RECOMPENSAS =====
+  async listarCanjes(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { estado, q } = req.query;
+      let sql = `
+        SELECT 
+          c.id,
+          c.puntos_gastados,
+          c.estado_entrega,
+          c.fecha_canje,
+          c.fecha_entrega,
+          u.id AS usuario_id,
+          u.nombres || ' ' || u.apellidos AS usuario_nombre,
+          u.email AS usuario_email,
+          u.avatar_url AS usuario_avatar,
+          r.id AS recompensa_id,
+          r.nombre_recompensa,
+          r.imagen_url AS recompensa_imagen,
+          r.tipo_entrega,
+          r.direccion_recojo
+        FROM historial_canjes c
+        JOIN usuarios u ON u.id = c.usuario_id
+        JOIN recompensas_plataforma r ON r.id = c.recompensa_id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (estado && estado !== "TODOS") {
+        params.push(estado);
+        sql += ` AND c.estado_entrega = $${params.length}`;
+      }
+      if (q && String(q).trim()) {
+        params.push(`%${String(q).trim()}%`);
+        sql += ` AND (
+          u.nombres ILIKE $${params.length} OR 
+          u.apellidos ILIKE $${params.length} OR 
+          u.email ILIKE $${params.length} OR 
+          r.nombre_recompensa ILIKE $${params.length}
+        )`;
+      }
+
+      sql += ` ORDER BY c.fecha_canje DESC LIMIT 200`;
+      const result = await query(sql, params);
+      sendResponse(res, 200, result.rows, "Canjes obtenidos");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async actualizarEstadoCanje(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+      const { estado_entrega } = req.body;
+
+      if (!["PENDIENTE_RECOJO", "ENTREGADO", "CANCELADO"].includes(estado_entrega)) {
+        throw new ApiError(400, "Estado de entrega inválido");
+      }
+
+      const canjeActual = await query(
+        `SELECT * FROM historial_canjes WHERE id = $1`,
+        [id],
+      );
+      if (!canjeActual.rows[0]) throw new ApiError(404, "Canje no encontrado");
+
+      // Si se cancela, devolvemos puntos al usuario y sumamos stock
+      if (estado_entrega === "CANCELADO" && canjeActual.rows[0].estado_entrega !== "CANCELADO") {
+        await query(
+          `UPDATE usuarios SET puntos_globales = puntos_globales + $1 WHERE id = $2`,
+          [canjeActual.rows[0].puntos_gastados, canjeActual.rows[0].usuario_id],
+        );
+        await query(
+          `UPDATE recompensas_plataforma SET stock_disponible = stock_disponible + 1 WHERE id = $1`,
+          [canjeActual.rows[0].recompensa_id],
+        );
+      }
+
+      const result = await query(
+        `UPDATE historial_canjes 
+         SET estado_entrega = $2,
+             fecha_entrega = CASE WHEN $2 = 'ENTREGADO' THEN CURRENT_TIMESTAMP ELSE fecha_entrega END
+         WHERE id = $1
+         RETURNING *`,
+        [id, estado_entrega],
+      );
+
+      sendResponse(res, 200, result.rows[0], "Estado de canje actualizado");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async resumenNotificaciones(
+    _req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const [canjesPend, reclamosPend] = await Promise.all([
+        query(`
+          SELECT 
+            c.id, c.fecha_canje, c.puntos_gastados,
+            u.nombres || ' ' || u.apellidos AS usuario_nombre,
+            u.avatar_url,
+            r.nombre_recompensa
+          FROM historial_canjes c
+          JOIN usuarios u ON u.id = c.usuario_id
+          JOIN recompensas_plataforma r ON r.id = c.recompensa_id
+          WHERE c.estado_entrega = 'PENDIENTE_RECOJO'
+          ORDER BY c.fecha_canje DESC
+          LIMIT 5
+        `),
+        query(`
+          SELECT 
+            id, codigo_seguimiento, tipo_registro, nombres_reclamante, created_at
+          FROM libro_reclamaciones
+          WHERE estado = 'PENDIENTE'
+          ORDER BY created_at DESC
+          LIMIT 5
+        `),
+      ]);
+
+      const countCanjes = await query(
+        `SELECT COUNT(*)::int AS count FROM historial_canjes WHERE estado_entrega = 'PENDIENTE_RECOJO'`,
+      );
+      const countReclamos = await query(
+        `SELECT COUNT(*)::int AS count FROM libro_reclamaciones WHERE estado = 'PENDIENTE'`,
+      );
+
+      sendResponse(
+        res,
+        200,
+        {
+          total_pendientes: (countCanjes.rows[0]?.count ?? 0) + (countReclamos.rows[0]?.count ?? 0),
+          canjes_pendientes_count: countCanjes.rows[0]?.count ?? 0,
+          canjes_pendientes: canjesPend.rows,
+          reclamaciones_pendientes_count: countReclamos.rows[0]?.count ?? 0,
+          reclamaciones_pendientes: reclamosPend.rows,
+        },
+        "Notificaciones",
+      );
     } catch (error) {
       next(error);
     }

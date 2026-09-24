@@ -1,16 +1,13 @@
 -- =================================================================================
--- PASAPORTE VIRTUAL NFC — ESQUEMA COMPLETO Y BASE DE DATOS LIMPIA (POSTGRESQL)
--- =================================================================================
--- Script 100% autónomo, idempotente y compatible con PostgreSQL 14+.
--- Incluye tablas de autenticación, hardware NFC, POS, gamificación, comunidad,
--- amistades, libro de reclamaciones y datos iniciales de prueba.
+-- PASAPORTE VIRTUAL NFC — ESQUEMA COMPLETO + DATOS LIMPIOS + RLS
+-- Solo datos: Roles + Usuarios
+-- Niveles, categorías y todo lo demás lo crea el Admin
 -- =================================================================================
 
--- 1. Habilitar extensión UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =================================================================================
--- MÓDULO 1: ROLES, CATEGORÍAS Y NIVELES (GAMIFICACIÓN)
+-- MÓDULO 1: ROLES, CATEGORÍAS Y NIVELES
 -- =================================================================================
 
 CREATE TABLE IF NOT EXISTS roles (
@@ -45,7 +42,7 @@ CREATE TABLE IF NOT EXISTS niveles_pasaporte (
 CREATE TABLE IF NOT EXISTS usuarios (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     rol_id UUID NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
-    nivel_id UUID REFERENCES niveles_pasaporte(id) ON DELETE SET NULL, -- Solo aplica a CLIENTE
+    nivel_id UUID REFERENCES niveles_pasaporte(id) ON DELETE SET NULL,
     nombres VARCHAR(100) NOT NULL,
     apellidos VARCHAR(100) NOT NULL,
     username VARCHAR(60),
@@ -63,7 +60,6 @@ CREATE TABLE IF NOT EXISTS usuarios (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tokens de verificación de email y recuperación de contraseña
 CREATE TABLE IF NOT EXISTS auth_tokens (
     token_hash TEXT PRIMARY KEY,
     usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
@@ -71,13 +67,11 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
--- Control anti-replay para códigos QR dinámicos consumidos
 CREATE TABLE IF NOT EXISTS qr_consumidos (
     jti UUID PRIMARY KEY,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
--- Hardware NFC (NTAG213/NTAG215)
 CREATE TABLE IF NOT EXISTS tarjetas_nfc (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     usuario_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
@@ -89,7 +83,7 @@ CREATE TABLE IF NOT EXISTS tarjetas_nfc (
 );
 
 -- =================================================================================
--- MÓDULO 3: ESTABLECIMIENTOS Y PERSONAL COMERCIO (POS)
+-- MÓDULO 3: ESTABLECIMIENTOS Y PERSONAL
 -- =================================================================================
 
 CREATE TABLE IF NOT EXISTS establecimientos (
@@ -120,7 +114,7 @@ CREATE TABLE IF NOT EXISTS personal_establecimiento (
 );
 
 -- =================================================================================
--- MÓDULO 4: MOTOR TRANSACCIONAL (REGLAS, RECOMPENSAS, SELLOS Y CANJES)
+-- MÓDULO 4: MOTOR TRANSACCIONAL
 -- =================================================================================
 
 CREATE TABLE IF NOT EXISTS reglas_sellos (
@@ -173,7 +167,7 @@ CREATE TABLE IF NOT EXISTS historial_visitas_sellos (
 );
 
 -- =================================================================================
--- MÓDULO 5: COMUNIDAD, HISTORIAS 24H Y RED SOCIAL
+-- MÓDULO 5: COMUNIDAD
 -- =================================================================================
 
 CREATE TABLE IF NOT EXISTS publicaciones (
@@ -223,7 +217,7 @@ CREATE TABLE IF NOT EXISTS denuncias_moderacion (
 );
 
 -- =================================================================================
--- MÓDULO 6: CONEXIONES SOCIALES Y LÍMITE DE AMIGOS (EXCLUSIVIDAD CLIENTE)
+-- MÓDULO 6: AMISTADES
 -- =================================================================================
 
 CREATE TABLE IF NOT EXISTS amistades (
@@ -238,7 +232,7 @@ CREATE TABLE IF NOT EXISTS amistades (
 );
 
 -- =================================================================================
--- MÓDULO 7: LIBRO DE RECLAMACIONES VIRTUAL (GOBERNANZA & AUDITORÍA ADMIN)
+-- MÓDULO 7: LIBRO DE RECLAMACIONES
 -- =================================================================================
 
 CREATE TABLE IF NOT EXISTS libro_reclamaciones (
@@ -267,7 +261,7 @@ CREATE TABLE IF NOT EXISTS libro_reclamaciones (
 );
 
 -- =================================================================================
--- ÍNDICES DE RENDIMIENTO Y SEGURIDAD
+-- ÍNDICES
 -- =================================================================================
 
 CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);
@@ -283,7 +277,6 @@ CREATE INDEX IF NOT EXISTS idx_amistades_usuarios ON amistades(usuario_solicitan
 CREATE INDEX IF NOT EXISTS idx_libro_reclamaciones_estado ON libro_reclamaciones(estado, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_libro_reclamaciones_codigo ON libro_reclamaciones(codigo_seguimiento);
 
--- Limpieza preventiva de duplicados antes de crear índice único de reacciones
 DELETE FROM interacciones a USING interacciones b 
 WHERE a.tipo_interaccion = 'REACCION' 
   AND b.tipo_interaccion = 'REACCION' 
@@ -294,15 +287,8 @@ WHERE a.tipo_interaccion = 'REACCION'
 CREATE UNIQUE INDEX IF NOT EXISTS reaccion_unica ON interacciones(publicacion_id, usuario_id) WHERE tipo_interaccion = 'REACCION';
 
 -- =================================================================================
--- DATOS SEMILLA BASE (Niveles, Roles, Categorías)
+-- DATOS SEMILLA — SOLO ROLES + USUARIOS
 -- =================================================================================
-
-INSERT INTO niveles_pasaporte (nombre_rango, sellos_requeridos, color_hex) VALUES 
-('Bronce', 0, '#CE8946'),
-('Plata', 20, '#C0C0C0'),
-('Oro', 50, '#FFD700'),
-('Diamante', 150, '#08cef1')
-ON CONFLICT (nombre_rango) DO NOTHING;
 
 INSERT INTO roles (nombre, descripcion) VALUES
 ('ADMIN', 'Administrador del sistema con acceso total'),
@@ -310,51 +296,24 @@ INSERT INTO roles (nombre, descripcion) VALUES
 ('COMERCIO', 'Personal autorizado de establecimientos aliados')
 ON CONFLICT (nombre) DO NOTHING;
 
-INSERT INTO categorias_establecimiento (nombre, icono_url) VALUES
-('Cafeterías y Panaderías', 'https://cdn-icons-png.flaticon.com/512/924/924514.png'),
-('Restaurantes y Bares', 'https://cdn-icons-png.flaticon.com/512/3170/3170733.png'),
-('Turismo y Aventura', 'https://cdn-icons-png.flaticon.com/512/201/201623.png'),
-('Tiendas y Artesanías', 'https://cdn-icons-png.flaticon.com/512/869/869636.png')
-ON CONFLICT (nombre) DO NOTHING;
-
--- =================================================================================
--- BLOQUE DE DATOS DEMO INICIALES (Password para todos los usuarios demo: Password123!)
--- =================================================================================
-
 DO $$
 DECLARE
     v_rol_admin UUID;
     v_rol_comercio UUID;
     v_rol_cliente UUID;
-    v_nivel_plata UUID;
     
     v_user_admin UUID := 'b0000000-0000-0000-0000-000000000001';
     v_user_comercio UUID := 'b0000000-0000-0000-0000-000000000002';
     v_user_cliente UUID := 'b0000000-0000-0000-0000-000000000003';
     
-    v_cat_cafe UUID;
-    v_cat_rest UUID;
-    v_est_cafe UUID := 'c0000000-0000-0000-0000-000000000001';
-    v_est_rest UUID := 'c0000000-0000-0000-0000-000000000002';
-    
-    v_regla_cafe UUID := 'd0000000-0000-0000-0000-000000000001';
-    v_regla_rest UUID := 'd0000000-0000-0000-0000-000000000002';
-    v_rec_cafe UUID := 'e0000000-0000-0000-0000-000000000001';
-    v_rec_postre UUID := 'e0000000-0000-0000-0000-000000000002';
-    
-    -- Hash bcrypt de "Password123!"
+    -- Hash de "Password123!"
     v_hash_demo VARCHAR := '$2a$10$BvFWSzKBxQ9dN0DqsrtCfOhc07KKXXufrUsNGqeBSf46kaau2d8vy';
 BEGIN
     SELECT id INTO v_rol_admin FROM roles WHERE UPPER(nombre) = 'ADMIN' LIMIT 1;
     SELECT id INTO v_rol_comercio FROM roles WHERE UPPER(nombre) = 'COMERCIO' LIMIT 1;
     SELECT id INTO v_rol_cliente FROM roles WHERE UPPER(nombre) = 'CLIENTE' LIMIT 1;
 
-    SELECT id INTO v_nivel_plata FROM niveles_pasaporte WHERE LOWER(nombre_rango) = 'plata' LIMIT 1;
-
-    SELECT id INTO v_cat_cafe FROM categorias_establecimiento WHERE nombre LIKE 'Cafeter%' LIMIT 1;
-    SELECT id INTO v_cat_rest FROM categorias_establecimiento WHERE nombre LIKE 'Restaurante%' LIMIT 1;
-
-    -- 1. Usuario Administrador (sin gamificación: nivel_id = NULL)
+    -- 1. Admin
     INSERT INTO usuarios (id, rol_id, nivel_id, nombres, apellidos, username, email, password_hash, total_sellos, puntos_globales, aceptacion_tyc, email_verificado, estado)
     VALUES (v_user_admin, v_rol_admin, NULL, 'Administrador', 'Principal', 'admin_master', 'cuentaunicaapk@gmail.com', v_hash_demo, 0, 0, TRUE, TRUE, 'ACTIVO')
     ON CONFLICT (email) DO UPDATE 
@@ -367,7 +326,7 @@ BEGIN
           email_verificado = TRUE,
           estado = 'ACTIVO';
 
-    -- 2. Usuario Comercio / Validador (sin gamificación: nivel_id = NULL)
+    -- 2. Comercio
     INSERT INTO usuarios (id, rol_id, nivel_id, nombres, apellidos, username, email, password_hash, total_sellos, puntos_globales, aceptacion_tyc, email_verificado, estado)
     VALUES (v_user_comercio, v_rol_comercio, NULL, 'María', 'Validadora', 'comercio_cafe', 'comercio@cafecentral.com', v_hash_demo, 0, 0, TRUE, TRUE, 'ACTIVO')
     ON CONFLICT (email) DO UPDATE 
@@ -380,158 +339,125 @@ BEGIN
           email_verificado = TRUE,
           estado = 'ACTIVO';
 
-    -- 3. Usuario Cliente (con gamificación: Nivel Plata, 25 sellos, 250 puntos)
+    -- 3. Cliente
     INSERT INTO usuarios (id, rol_id, nivel_id, nombres, apellidos, username, email, password_hash, total_sellos, puntos_globales, aceptacion_tyc, email_verificado, estado)
-    VALUES (v_user_cliente, v_rol_cliente, v_nivel_plata, 'Aldair', 'Viajero', 'aldair_travel', 'cliente@demo.com', v_hash_demo, 25, 250, TRUE, TRUE, 'ACTIVO')
+    VALUES (v_user_cliente, v_rol_cliente, NULL, 'Aldair', 'Viajero', 'aldair_travel', 'cliente@demo.com', v_hash_demo, 0, 0, TRUE, TRUE, 'ACTIVO')
     ON CONFLICT (email) DO UPDATE 
       SET rol_id = EXCLUDED.rol_id, 
+          nivel_id = NULL,
           username = COALESCE(usuarios.username, EXCLUDED.username),
           password_hash = EXCLUDED.password_hash,
           email_verificado = TRUE,
           estado = 'ACTIVO';
-
-    -- 4. Establecimientos aliados
-    INSERT INTO establecimientos (id, categoria_id, ruc, razon_social, nombre, descripcion, direccion, telefono, horario, imagen_url, lat, lng, estado)
-    VALUES 
-    (
-        v_est_cafe, 
-        v_cat_cafe, 
-        '20100000001', 
-        'Café Central Colonial S.A.C.', 
-        'Café Central Colonial', 
-        'Cafetería de especialidad y repostería artesanal en casona colonial del centro histórico.',
-        'Calle del Comercio 101, Centro', 
-        '+51 987 654 321', 
-        'Lun-Sáb: 08:00 - 21:00',
-        'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800',
-        -12.046374, 
-        -77.042793, 
-        'ACTIVO'
-    ),
-    (
-        v_est_rest, 
-        v_cat_rest, 
-        '20100000002', 
-        'Restaurante Fusión Criolla E.I.R.L.', 
-        'Restaurante Fusión Criolla', 
-        'Gastronomía peruana de vanguardia y coctelería de autor.',
-        'Av. Gastronómica 204, Miraflores', 
-        '+51 912 345 678', 
-        'Mar-Dom: 12:30 - 23:00',
-        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
-        -12.121589, 
-        -77.030514, 
-        'ACTIVO'
-    )
-    ON CONFLICT (ruc) DO UPDATE
-      SET nombre = EXCLUDED.nombre,
-          descripcion = EXCLUDED.descripcion,
-          direccion = EXCLUDED.direccion,
-          telefono = EXCLUDED.telefono,
-          horario = EXCLUDED.horario,
-          imagen_url = EXCLUDED.imagen_url,
-          lat = EXCLUDED.lat,
-          lng = EXCLUDED.lng;
-
-    -- 5. Vincular personal al establecimiento
-    INSERT INTO personal_establecimiento (usuario_id, establecimiento_id, pin_validacion, estado)
-    VALUES (v_user_comercio, v_est_cafe, '1234', TRUE)
-    ON CONFLICT (usuario_id, establecimiento_id) DO NOTHING;
-
-    -- 6. Reglas de sellos
-    INSERT INTO reglas_sellos (id, establecimiento_id, nombre_accion, valor_puntos_por_sello, limite_diario_por_usuario, estado)
-    VALUES 
-    (v_regla_cafe, v_est_cafe, 'Consumo en Cafetería', 10, 1, 'ACTIVA'),
-    (v_regla_rest, v_est_rest, 'Almuerzo / Cena Carta', 20, 1, 'ACTIVA')
-    ON CONFLICT (id) DO NOTHING;
-
-    -- 7. Tarjeta NFC asignada al cliente
-    INSERT INTO tarjetas_nfc (usuario_id, uid_nfc, qr_respaldo, estado, fecha_asignacion)
-    VALUES 
-    (v_user_cliente, '04:5A:2B:1A:3C:60:80', 'https://pasaporte.nfc/r/045a2b1a3c6080', 'ASIGNADA', CURRENT_TIMESTAMP)
-    ON CONFLICT (uid_nfc) DO NOTHING;
-
-    -- 8. Catálogo de recompensas
-    INSERT INTO recompensas_plataforma (id, nombre_recompensa, descripcion, costo_puntos_globales, stock_disponible, imagen_url, tipo_entrega, estado)
-    VALUES 
-    (
-        v_rec_cafe,
-        'Café Espresso o Americano Doble',
-        'Canjea tu café favorito en cualquiera de nuestros locales aliados de Café Central.',
-        50,
-        150,
-        'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=500',
-        'LOCAL_ALIADO',
-        'ACTIVA'
-    ),
-    (
-        v_rec_postre,
-        'Postre Artesanal de la Casa',
-        'Elige una porción de postre del día en locales participantes.',
-        90,
-        80,
-        'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=500',
-        'LOCAL_ALIADO',
-        'ACTIVA'
-    )
-    ON CONFLICT (id) DO NOTHING;
-
-    -- 9. Historial de visitas
-    INSERT INTO historial_visitas_sellos (usuario_id, establecimiento_id, personal_validador_id, regla_sello_id, puntos_ganados, metodo_validacion, fecha_hora)
-    VALUES 
-    (v_user_cliente, v_est_cafe, v_user_comercio, v_regla_cafe, 10, 'NFC', CURRENT_TIMESTAMP - INTERVAL '2 days'),
-    (v_user_cliente, v_est_rest, NULL, v_regla_rest, 20, 'QR', CURRENT_TIMESTAMP - INTERVAL '1 day')
-    ON CONFLICT DO NOTHING;
-
-    -- 10. Publicación inicial en comunidad
-    INSERT INTO publicaciones (usuario_id, establecimiento_id, texto_contenido, url_media, tipo_media, visibilidad, estado_moderacion)
-    VALUES 
-    (
-        v_user_cliente,
-        v_est_cafe,
-        '¡Excelente café y ambiente en Café Central Colonial! Primer sello del día obtenido ☕✨',
-        'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800',
-        'IMAGEN',
-        'PUBLICA',
-        'APROBADA'
-    )
-    ON CONFLICT DO NOTHING;
-
-    -- 11. Registro Demo de Libro de Reclamaciones
-    INSERT INTO libro_reclamaciones (
-        codigo_seguimiento,
-        usuario_id,
-        establecimiento_id,
-        nombres_reclamante,
-        apellidos_reclamante,
-        tipo_documento,
-        numero_documento,
-        email,
-        telefono,
-        direccion,
-        tipo_bien_contratado,
-        tipo_registro,
-        monto_reclamado,
-        detalle,
-        pedido_consumidor,
-        estado
-    ) VALUES (
-        'REC-2026-0001',
-        v_user_cliente,
-        v_est_cafe,
-        'Aldair',
-        'Viajero',
-        'DNI',
-        '72819283',
-        'cliente@demo.com',
-        '+51 999 888 777',
-        'Av. Principal 456, Lima',
-        'SERVICIO',
-        'RECLAMO',
-        18.50,
-        'Demora en la validación del sello NFC durante la hora punta de la tarde.',
-        'Capacitación al personal sobre el uso del POS NFC para agilizar la atención.',
-        'PENDIENTE'
-    ) ON CONFLICT (codigo_seguimiento) DO NOTHING;
-
 END $$;
+
+-- =================================================================================
+-- ROW LEVEL SECURITY
+-- =================================================================================
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM usuarios u
+    JOIN roles r ON u.rol_id = r.id
+    WHERE u.id = auth.uid()
+      AND UPPER(r.nombre) = 'ADMIN'
+      AND u.estado = 'ACTIVO'
+  );
+$$;
+
+-- Habilitar RLS en todas las tablas
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categorias_establecimiento ENABLE ROW LEVEL SECURITY;
+ALTER TABLE niveles_pasaporte ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE qr_consumidos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tarjetas_nfc ENABLE ROW LEVEL SECURITY;
+ALTER TABLE establecimientos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE personal_establecimiento ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reglas_sellos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recompensas_plataforma ENABLE ROW LEVEL SECURITY;
+ALTER TABLE historial_canjes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE historial_visitas_sellos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE publicaciones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE historias ENABLE ROW LEVEL SECURITY;
+ALTER TABLE interacciones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE denuncias_moderacion ENABLE ROW LEVEL SECURITY;
+ALTER TABLE amistades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE libro_reclamaciones ENABLE ROW LEVEL SECURITY;
+
+-- =====================================================
+-- ADMIN → acceso total
+-- =====================================================
+CREATE POLICY "Admin full access on roles" ON roles FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on categorias" ON categorias_establecimiento FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on niveles" ON niveles_pasaporte FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on usuarios" ON usuarios FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on auth_tokens" ON auth_tokens FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on qr_consumidos" ON qr_consumidos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on tarjetas_nfc" ON tarjetas_nfc FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on establecimientos" ON establecimientos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on personal" ON personal_establecimiento FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on reglas_sellos" ON reglas_sellos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on recompensas" ON recompensas_plataforma FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on historial_canjes" ON historial_canjes FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on historial_visitas" ON historial_visitas_sellos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on publicaciones" ON publicaciones FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on historias" ON historias FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on interacciones" ON interacciones FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on denuncias" ON denuncias_moderacion FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on amistades" ON amistades FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "Admin full access on libro_reclamaciones" ON libro_reclamaciones FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+
+-- =====================================================
+-- CLIENTE → solo lo necesario
+-- =====================================================
+
+-- 1. Ver y editar su propio perfil
+CREATE POLICY "Cliente ve su perfil"
+ON usuarios FOR SELECT
+USING (id = auth.uid());
+
+CREATE POLICY "Cliente edita sus datos personales"
+ON usuarios FOR UPDATE
+USING (id = auth.uid())
+WITH CHECK (id = auth.uid());
+
+-- 2. Ver y gestionar su propia tarjeta NFC (vincular + diseño)
+CREATE POLICY "Cliente ve su tarjeta NFC"
+ON tarjetas_nfc FOR SELECT
+USING (usuario_id = auth.uid());
+
+CREATE POLICY "Cliente actualiza su tarjeta NFC"
+ON tarjetas_nfc FOR UPDATE
+USING (usuario_id = auth.uid())
+WITH CHECK (usuario_id = auth.uid());
+
+CREATE POLICY "Cliente vincula tarjeta NFC"
+ON tarjetas_nfc FOR INSERT
+WITH CHECK (usuario_id = auth.uid());
+
+-- 3. Ver recompensas disponibles
+CREATE POLICY "Cliente ve recompensas"
+ON recompensas_plataforma FOR SELECT
+USING (estado = 'ACTIVA');
+
+-- 4. Reclamar regalos
+CREATE POLICY "Cliente ve sus canjes"
+ON historial_canjes FOR SELECT
+USING (usuario_id = auth.uid());
+
+CREATE POLICY "Cliente reclama regalos"
+ON historial_canjes FOR INSERT
+WITH CHECK (usuario_id = auth.uid());
+
+-- 5. Ver niveles (para mostrar su rango)
+CREATE POLICY "Cliente ve niveles"
+ON niveles_pasaporte FOR SELECT
+USING (true);

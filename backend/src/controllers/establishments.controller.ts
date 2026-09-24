@@ -69,17 +69,57 @@ export const EstablishmentsController = {
   async crear(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       if (!req.user) throw new ApiError(401, "No autenticado");
-      const { categoria_id, ruc, razon_social, direccion } = req.body;
+      const {
+        categoria_id,
+        ruc,
+        razon_social,
+        nombre,
+        direccion,
+        telefono,
+        descripcion,
+        horario,
+        imagen_url,
+        lat,
+        lng,
+      } = req.body;
 
       if (!ruc || !razon_social) {
         throw new ApiError(400, "RUC y razón social son obligatorios");
       }
 
+      for (const [v, max] of [
+        [lat, 90],
+        [lng, 180],
+      ]) {
+        if (
+          v !== undefined &&
+          v !== null &&
+          (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > max)
+        ) {
+          throw new ApiError(400, "Coordenadas inválidas");
+        }
+      }
+
       const result = await query(
-        `INSERT INTO establecimientos (categoria_id, ruc, razon_social, direccion, estado)
-         VALUES ($1, $2, $3, $4, 'ACTIVO')
+        `INSERT INTO establecimientos (
+           categoria_id, ruc, razon_social, nombre, direccion,
+           telefono, descripcion, horario, imagen_url, lat, lng, estado
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ACTIVO')
          RETURNING *`,
-        [categoria_id || null, ruc, razon_social, direccion || null],
+        [
+          categoria_id || null,
+          ruc,
+          razon_social,
+          nombre || razon_social,
+          direccion || null,
+          telefono || null,
+          descripcion || null,
+          horario || null,
+          imagen_url || null,
+          lat ?? null,
+          lng ?? null,
+        ],
       );
 
       sendResponse(res, 201, result.rows[0], "Establecimiento creado");

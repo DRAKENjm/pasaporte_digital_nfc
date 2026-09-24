@@ -30,6 +30,7 @@ import { AdminReglas } from "./pages/admin/AdminReglas";
 import { AdminUsuarios } from "./pages/admin/AdminUsuarios";
 import { AdminTarjetas } from "./pages/admin/AdminTarjetas";
 import { AdminRecompensas } from "./pages/admin/AdminRecompensas";
+import { AdminCategorias } from "./pages/admin/AdminCategorias";
 import { useAuth } from "./hooks/useAuth";
 import { Spinner } from "./components/common/Spinner";
 import { homePathForRole, normalizeRole, AppRole } from "./utils/roles";
@@ -150,6 +151,7 @@ export const App: React.FC = () => {
                 >
                   <Route path="/admin" element={<AdminHome />} />
                   <Route path="/admin/locales" element={<AdminLocales />} />
+                  <Route path="/admin/categorias" element={<AdminCategorias />} />
                   <Route path="/admin/reglas" element={<AdminReglas />} />
                   <Route path="/admin/usuarios" element={<AdminUsuarios />} />
                   <Route path="/admin/tarjetas" element={<AdminTarjetas />} />

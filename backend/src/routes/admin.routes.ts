@@ -5,14 +5,15 @@ import { requireRoles } from "../middlewares/role.middleware";
 
 const router = Router();
 
+// Proteger todas las rutas administrativas
 router.use(authMiddleware, requireRoles("ADMIN"));
 
 router.get("/dashboard", AdminController.dashboard);
 
 // Usuarios
 router.get("/usuarios", AdminController.listarUsuarios);
-router.patch("/usuarios/:id/estado", AdminController.cambiarEstadoUsuario);
-router.patch("/usuarios/:id/rol", AdminController.cambiarRolUsuario);
+router.patch("/usuarios/:id", AdminController.actualizarUsuario);
+router.delete("/usuarios/:id", AdminController.eliminarUsuario);
 
 // Tarjetas NFC
 router.get("/tarjetas", AdminController.listarTarjetas);
@@ -53,5 +54,84 @@ router.get("/roles", AdminController.listarRoles);
 router.get("/reglas-sellos", AdminController.listarReglasSellos);
 router.post("/reglas-sellos", AdminController.crearReglaSello);
 router.patch("/reglas-sellos/:id", AdminController.actualizarReglaSello);
+router.delete("/reglas-sellos/:id", AdminController.eliminarReglaSello);
+
+// ===== CATEGORÍAS DE LOCALES =====
+router.get("/categorias", AdminController.listarCategorias);
+router.post("/categorias", AdminController.crearCategoria);
+router.patch("/categorias/:id", AdminController.actualizarCategoria);
+router.delete("/categorias/:id", AdminController.eliminarCategoria);
+
+// ===== CANJES Y ENTREGAS DE RECOMPENSAS =====
+router.get("/canjes", AdminController.listarCanjes);
+router.patch("/canjes/:id/estado", AdminController.actualizarEstadoCanje);
+
+// ===== NOTIFICACIONES Y PENDIENTES =====
+router.get("/notificaciones", AdminController.resumenNotificaciones);
+
+// ===== SUBIDA DE ARCHIVOS / FOTOS (Locales, Recompensas, etc.) =====
+import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { sendResponse, ApiError } from "../utils";
+
+const uploadDir = path.join(process.cwd(), "uploads", "locales");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const diskStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+    const uniqueName = `local-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+    cb(null, uniqueName);
+  },
+});
+
+const diskUpload = multer({
+  storage: diskStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Solo se permiten imágenes (JPEG, PNG, WebP, GIF, AVIF)"));
+    }
+  },
+});
+
+router.post(
+  "/upload",
+  authMiddleware,
+  requireRoles("ADMIN"),
+  diskUpload.single("file"),
+  (req, res, next) => {
+    try {
+      if (!req.file) {
+        throw new ApiError(400, "No se ha subido ningún archivo");
+      }
+      const host = req.get("host");
+      const protocol = req.protocol;
+      const url = `${protocol}://${host}/uploads/locales/${req.file.filename}`;
+      sendResponse(
+        res,
+        200,
+        {
+          url,
+          filename: req.file.filename,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        },
+        "Archivo subido exitosamente",
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;

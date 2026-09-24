@@ -119,3 +119,13 @@ p { overflow-wrap: anywhere; }
 .animate-progress {
   animation: story-progress 5s linear forwards;
 }
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.animate-shimmer {
+  transform: translateX(-100%);
+  animation: shimmer 1.5s infinite linear;
+}

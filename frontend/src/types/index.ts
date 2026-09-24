@@ -32,6 +32,15 @@ export interface NivelPasaporte {
   insignia_url?: string;
 }
 
+export interface CategoriaEstablecimiento {
+  id: string;
+  nombre: string;
+  icono_url?: string | null;
+  estado: boolean;
+  total_locales?: number;
+  created_at?: string;
+}
+
 export interface Establecimiento {
   id: string;
   razon_social: string;
@@ -48,6 +57,7 @@ export interface Establecimiento {
   estado?: string;
   telefono?: string;
   horario?: string;
+  google_maps_url?: string;
 }
 
 export interface ReglaSello {
@@ -94,6 +104,23 @@ export interface Recompensa {
   tipo_entrega?: string;
   direccion_recojo?: string;
   estado?: string;
+}
+
+export interface CanjeHistorial {
+  id: string;
+  puntos_gastados: number;
+  estado_entrega: "PENDIENTE_RECOJO" | "ENTREGADO" | "CANCELADO";
+  fecha_canje: string;
+  fecha_entrega?: string;
+  usuario_id: string;
+  usuario_nombre: string;
+  usuario_email: string;
+  usuario_avatar?: string;
+  recompensa_id: string;
+  nombre_recompensa: string;
+  recompensa_imagen?: string;
+  tipo_entrega?: string;
+  direccion_recojo?: string;
 }
 
 export interface VisitaHistorial {
