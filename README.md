@@ -1,4 +1,4 @@
-# Pasaporte NFC — Plataforma de Fidelización y Experiencias 🎫
+# Pasaporte NFC — Plataforma de Fidelización y Experiencias
 
 WebApp (PWA) + API REST para conectar usuarios con establecimientos aliados mediante tarjeta NFC física, acumulación de sellos/puntos, recompensas y comunidad de experiencias.
 
@@ -29,14 +29,14 @@ pasaporte_digital_nfc-main/
 ## 1. Base de datos
 
 ```bash
-# Crear la base
-createdb pasaporte_nfc_db
+# Crear la base de datos en PostgreSQL
+createdb pasaportedigital_db
 
-# Ejecutar el esquema
-psql -d pasaporte_nfc_db -f docs/init_database.sql
+# Ejecutar el esquema completo + datos iniciales
+psql -d pasaportedigital_db -f pasaporte.sql
 ```
 
-El script crea tablas, índices, niveles (Bronce/Plata/Oro/Diamante), roles (ADMIN, CLIENTE, COMERCIO) y categorías de establecimientos.
+El script `pasaporte.sql` es 100% autónomo e idempotente: crea todas las tablas, índices antifraude, niveles de gamificación, categorías y las cuentas de prueba iniciales (`Admin`, `Comercio` y `Cliente`) listas para iniciar sesión.
 
 ---
 

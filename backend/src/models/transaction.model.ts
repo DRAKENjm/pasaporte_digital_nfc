@@ -1,4 +1,4 @@
-import { query } from '../config/database';
+import { query } from "../config/database";
 
 export const TransactionModel = {
   async registrarVisita(data: {
@@ -7,7 +7,7 @@ export const TransactionModel = {
     personal_validador_id?: string | null;
     regla_sello_id?: string | null;
     puntos_ganados: number;
-    metodo_validacion: 'NFC' | 'QR' | 'MANUAL_DASHBOARD';
+    metodo_validacion: "NFC" | "QR" | "MANUAL_DASHBOARD";
     ip_registro?: string | null;
   }) {
     const res = await query(
@@ -24,7 +24,7 @@ export const TransactionModel = {
         data.puntos_ganados,
         data.metodo_validacion,
         data.ip_registro || null,
-      ]
+      ],
     );
     return res.rows[0];
   },
@@ -36,7 +36,7 @@ export const TransactionModel = {
        WHERE usuario_id = $1
          AND establecimiento_id = $2
          AND fecha_hora >= CURRENT_DATE`,
-      [usuarioId, establecimientoId]
+      [usuarioId, establecimientoId],
     );
     return res.rows[0].total as number;
   },
@@ -49,7 +49,7 @@ export const TransactionModel = {
        WHERE h.usuario_id = $1
        ORDER BY h.fecha_hora DESC
        LIMIT $2`,
-      [usuarioId, limit]
+      [usuarioId, limit],
     );
     return res.rows;
   },
@@ -60,7 +60,7 @@ export const TransactionModel = {
        WHERE establecimiento_id = $1 AND estado = 'ACTIVA'
        ORDER BY created_at DESC
        LIMIT 1`,
-      [establecimientoId]
+      [establecimientoId],
     );
     return res.rows[0] || null;
   },
@@ -70,8 +70,8 @@ export const TransactionModel = {
       `SELECT t.*, u.nombres, u.apellidos, u.email, u.total_sellos, u.puntos_globales
        FROM tarjetas_nfc t
        LEFT JOIN usuarios u ON u.id = t.usuario_id
-       WHERE t.uid_nfc = $1`,
-      [uid]
+       WHERE upper(t.uid_nfc) = upper($1)`,
+      [uid],
     );
     return res.rows[0] || null;
   },
@@ -84,8 +84,9 @@ export const TransactionModel = {
          SET usuario_id = EXCLUDED.usuario_id,
              estado = 'ASIGNADA',
              fecha_asignacion = CURRENT_TIMESTAMP
+       WHERE (tarjetas_nfc.usuario_id = EXCLUDED.usuario_id AND tarjetas_nfc.estado = 'ASIGNADA') OR (tarjetas_nfc.usuario_id IS NULL AND tarjetas_nfc.estado='EN_STOCK')
        RETURNING *`,
-      [usuarioId, uid, qrRespaldo]
+      [usuarioId, uid, qrRespaldo],
     );
     return res.rows[0];
   },

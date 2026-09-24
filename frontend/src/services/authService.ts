@@ -1,5 +1,5 @@
-import api from './api';
-import { User } from '../types';
+import api from "./api";
+import { User } from "../types";
 
 export interface BackendApiResponse<T> {
   success: boolean;
@@ -14,7 +14,10 @@ export interface AuthPayload {
 
 export const authService = {
   async login(email: string, password: string): Promise<AuthPayload> {
-    const res = await api.post<BackendApiResponse<AuthPayload>>('/auth/login', { email, password });
+    const res = await api.post<BackendApiResponse<AuthPayload>>("/auth/login", {
+      email,
+      password,
+    });
     // El backend responde { success: true, message: '...', data: { token, user } }
     if (res.data && res.data.data) {
       return res.data.data;
@@ -22,8 +25,16 @@ export const authService = {
     return res.data as unknown as AuthPayload;
   },
 
-  async register(data: { email: string; password: string; nombres: string; apellidos: string }): Promise<AuthPayload> {
-    const res = await api.post<BackendApiResponse<AuthPayload>>('/auth/register', data);
+  async register(data: {
+    email: string;
+    password: string;
+    nombres: string;
+    apellidos: string;
+  }): Promise<AuthPayload> {
+    const res = await api.post<BackendApiResponse<AuthPayload>>(
+      "/auth/register",
+      data,
+    );
     if (res.data && res.data.data) {
       return res.data.data;
     }
@@ -31,9 +42,12 @@ export const authService = {
   },
 
   async loginWithGoogle(credential: string): Promise<AuthPayload> {
-    const res = await api.post<BackendApiResponse<AuthPayload>>('/auth/google', {
-      credential,
-    });
+    const res = await api.post<BackendApiResponse<AuthPayload>>(
+      "/auth/google",
+      {
+        credential,
+      },
+    );
     if (res.data && res.data.data) {
       return res.data.data;
     }
@@ -41,7 +55,7 @@ export const authService = {
   },
 
   async getProfile(): Promise<User> {
-    const res = await api.get<BackendApiResponse<User>>('/auth/profile');
+    const res = await api.get<BackendApiResponse<User>>("/auth/profile");
     if (res.data && res.data.data) {
       return res.data.data;
     }

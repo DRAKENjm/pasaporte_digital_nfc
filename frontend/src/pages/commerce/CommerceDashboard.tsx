@@ -1,29 +1,29 @@
-import React, { useState } from 'react';
-import { nfcService } from '../../services/nfcService';
-import { useUI } from '../../hooks/useUI';
-import { Input } from '../../components/common/Input';
-import { Button } from '../../components/common/Button';
+import React, { useState } from "react";
+import { nfcService } from "../../services/nfcService";
+import { useUI } from "../../hooks/useUI";
+import { Input } from "../../components/common/Input";
+import { Button } from "../../components/common/Button";
 
 export const CommerceDashboard: React.FC = () => {
-  const [uid, setUid] = useState('');
-  const [establecimientoId, setEstablecimientoId] = useState('');
+  const [uid, setUid] = useState("");
+  const [establecimientoId, setEstablecimientoId] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
   const { showToast } = useUI();
 
   const validar = async () => {
     if (!uid || !establecimientoId) {
-      showToast('Completa UID y ID de establecimiento', 'error');
+      showToast("Completa UID y ID de establecimiento", "error");
       return;
     }
     setLoading(true);
     try {
       const result = await nfcService.validarNfc(uid, establecimientoId);
       setLastResult(result);
-      showToast('¡Sello acreditado!', 'success');
-      setUid('');
+      showToast("¡Sello acreditado!", "success");
+      setUid("");
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Error en validación', 'error');
+      showToast(err.response?.data?.message || "Error en validación", "error");
     } finally {
       setLoading(false);
     }
@@ -59,10 +59,11 @@ export const CommerceDashboard: React.FC = () => {
           <p className="font-semibold text-emerald-400">Validación exitosa</p>
           <p className="mt-1">Puntos: +{lastResult.puntos_acreditados}</p>
           <p>
-            Cliente: {lastResult.usuario?.nombres} {lastResult.usuario?.apellidos}
+            Cliente: {lastResult.usuario?.nombres}{" "}
+            {lastResult.usuario?.apellidos}
           </p>
           <p>
-            Total sellos: {lastResult.usuario?.total_sellos} · Puntos:{' '}
+            Total sellos: {lastResult.usuario?.total_sellos} · Puntos:{" "}
             {lastResult.usuario?.puntos_globales}
           </p>
         </div>

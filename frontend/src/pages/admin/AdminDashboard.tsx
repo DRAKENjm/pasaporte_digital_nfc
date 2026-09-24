@@ -1,171 +1,322 @@
-import React from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { 
-  Users, 
-  Store, 
-  CreditCard, 
-  Award, 
-  TrendingUp, 
-  ShieldCheck, 
-  BarChart3,
-  Activity
-} from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { Settings2, Plus, RefreshCw } from "lucide-react";
+import api from "../../services/api";
+import { ReglaSello, Establecimiento } from "../../types";
+import { Spinner } from "../../components/common/Spinner";
+import { Button } from "../../components/common/Button";
+import { Input } from "../../components/common/Input";
+import { useUI } from "../../hooks/useUI";
+
+interface Stats {
+  usuarios?: number;
+  establecimientos_activos?: number;
+  visitas_totales?: number;
+  canjes_totales?: number;
+}
 
 export const AdminDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [reglas, setReglas] = useState<ReglaSello[]>([]);
+  const [locales, setLocales] = useState<Establecimiento[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const { showToast } = useUI();
+
+  const [form, setForm] = useState({
+    establecimiento_id: "",
+    nombre_accion: "Visita estándar",
+    valor_puntos_por_sello: 10,
+    limite_diario_por_usuario: 1,
+    estado: "ACTIVA",
+    fecha_inicio: "",
+    fecha_fin: "",
+  });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [dash, reg, est] = await Promise.all([
+        api.get("/admin/dashboard").catch(() => ({ data: {} })),
+        api.get("/admin/reglas-sellos").catch(() => ({ data: { data: [] } })),
+        api.get("/establishments").catch(() => ({ data: { data: [] } })),
+      ]);
+      setStats(dash.data?.data ?? dash.data ?? {});
+      const r = reg.data?.data ?? reg.data ?? [];
+      setReglas(Array.isArray(r) ? r : []);
+      const e = est.data?.data ?? est.data ?? [];
+      setLocales(Array.isArray(e) ? e : []);
+    } catch {
+      showToast("Error cargando panel admin", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const crearRegla = async () => {
+    if (!form.establecimiento_id || !form.nombre_accion) {
+      showToast("Completa local y nombre de la acción", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post("/admin/reglas-sellos", {
+        establecimiento_id: form.establecimiento_id,
+        nombre_accion: form.nombre_accion,
+        valor_puntos_por_sello: Number(form.valor_puntos_por_sello),
+        limite_diario_por_usuario: Number(form.limite_diario_por_usuario),
+        estado: form.estado,
+        fecha_inicio: form.fecha_inicio || null,
+        fecha_fin: form.fecha_fin || null,
+      });
+      showToast("Regla de sello creada", "success");
+      setShowForm(false);
+      await load();
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.message || "No se pudo crear la regla",
+        "error",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleEstado = async (regla: ReglaSello) => {
+    const nuevo = regla.estado === "ACTIVA" ? "INACTIVA" : "ACTIVA";
+    try {
+      await api.patch(`/admin/reglas-sellos/${regla.id}`, { estado: nuevo });
+      showToast(`Regla ${nuevo.toLowerCase()}`, "success");
+      await load();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Error al actualizar", "error");
+    }
+  };
+
+  const actualizarPuntos = async (regla: ReglaSello, valor: number) => {
+    try {
+      await api.patch(`/admin/reglas-sellos/${regla.id}`, {
+        valor_puntos_por_sello: valor,
+      });
+      showToast("Puntos por sello actualizados", "success");
+      await load();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Error al actualizar", "error");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner size={32} />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 pb-6 animate-fadeIn">
-      {/* Encabezado */}
-      <div className="bg-gradient-to-br from-indigo-950/60 via-slate-900 to-slate-950 border border-indigo-500/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
-        
-        <div className="flex items-center justify-between mb-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-semibold uppercase tracking-wider">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Panel de Administración</span>
+    <div className="space-y-5 max-w-lg mx-auto animate-fadeIn pb-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold">Administración</h1>
+          <p className="text-xs text-muted">
+            Reglas de sellos, puntos y temporada
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={load}
+          className="min-h-touch min-w-touch flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-2.5">
+        {[
+          ["Usuarios", stats?.usuarios],
+          ["Locales", stats?.establecimientos_activos],
+          ["Visitas", stats?.visitas_totales],
+          ["Canjes", stats?.canjes_totales],
+        ].map(([label, val]) => (
+          <div key={String(label)} className="card !py-3">
+            <p className="text-[11px] text-muted">{label}</p>
+            <p className="text-xl font-bold tabular-nums">{val ?? "—"}</p>
           </div>
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
+        ))}
+      </div>
+
+      {/* Reglas de sellos */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-sky-500" />
+            <h2 className="font-bold text-sm">Reglas de sellos / puntos</h2>
+          </div>
+          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+            <Plus className="w-4 h-4" />
+            Nueva
+          </Button>
         </div>
 
-        <h1 className="text-2xl font-black tracking-tight text-white">
-          Bienvenido, {user?.nombres || 'Admin'}
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Supervisión global del sistema Pasaporte Digital NFC & Fidelización
+        <p className="text-[11px] text-muted leading-relaxed">
+          Define cuántos puntos vale cada sello por local, límite diario y
+          vigencia (temporada). El comercio solo valida; el valor lo fija admin.
         </p>
 
-        <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-wrap items-center gap-4 text-xs text-slate-300">
-          <div>
-            <span className="text-slate-500 block text-[10px] uppercase">Correo</span>
-            <span className="font-medium text-slate-200">{user?.email}</span>
-          </div>
-          <div>
-            <span className="text-slate-500 block text-[10px] uppercase">Rol en Sistema</span>
-            <span className="font-bold text-indigo-400">{user?.role || user?.rol}</span>
-          </div>
-          <div>
-            <span className="text-slate-500 block text-[10px] uppercase">Acceso</span>
-            <span className="font-medium text-emerald-400">Total / Superadmin</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Métricas Rápidas */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-sky-400 mb-2">
-            <Users className="w-5 h-5" />
-            <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-0.5">
-              <TrendingUp className="w-3 h-3" /> +12%
-            </span>
-          </div>
-          <div>
-            <span className="text-2xl font-black text-white">1,248</span>
-            <p className="text-[11px] text-slate-400 font-medium">Usuarios Registrados</p>
-          </div>
-        </div>
-
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-amber-400 mb-2">
-            <Store className="w-5 h-5" />
-            <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-0.5">
-              <TrendingUp className="w-3 h-3" /> +5
-            </span>
-          </div>
-          <div>
-            <span className="text-2xl font-black text-white">42</span>
-            <p className="text-[11px] text-slate-400 font-medium">Comercios Aliados</p>
-          </div>
-        </div>
-
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-emerald-400 mb-2">
-            <CreditCard className="w-5 h-5" />
-            <span className="text-[10px] font-medium text-slate-400">89% asignadas</span>
-          </div>
-          <div>
-            <span className="text-2xl font-black text-white">850</span>
-            <p className="text-[11px] text-slate-400 font-medium">Tarjetas NFC Activas</p>
-          </div>
-        </div>
-
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-purple-400 mb-2">
-            <Award className="w-5 h-5" />
-            <span className="text-[10px] font-semibold text-emerald-400">Hoy: +18</span>
-          </div>
-          <div>
-            <span className="text-2xl font-black text-white">320</span>
-            <p className="text-[11px] text-slate-400 font-medium">Premios Canjeados</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Secciones de Gestión */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-          <Activity className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Gestión del Ecosistema</span>
-        </h2>
-
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl divide-y divide-slate-800/80">
-          <div className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400">
-                <Store className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">Establecimientos y Reglas</h3>
-                <p className="text-xs text-slate-400">Administrar comercios afiliados y reglas de sellos</p>
-              </div>
+        {showForm && (
+          <div className="card space-y-3">
+            <div>
+              <label className="text-xs font-semibold uppercase text-muted">
+                Local
+              </label>
+              <select
+                className="input-base mt-1"
+                value={form.establecimiento_id}
+                onChange={(e) =>
+                  setForm({ ...form, establecimiento_id: e.target.value })
+                }
+              >
+                <option value="">Seleccionar establecimiento</option>
+                {locales.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.razon_social || l.nombre}
+                  </option>
+                ))}
+              </select>
             </div>
-            <span className="text-xs text-slate-500 font-medium bg-slate-800 px-2 py-1 rounded-lg">Ver</span>
-          </div>
-
-          <div className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400">
-                <CreditCard className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">Lote de Tarjetas NFC / QR</h3>
-                <p className="text-xs text-slate-400">Control de stock, asignación y tarjetas extraviadas</p>
-              </div>
+            <Input
+              label="Nombre de la acción"
+              value={form.nombre_accion}
+              onChange={(e) =>
+                setForm({ ...form, nombre_accion: e.target.value })
+              }
+              placeholder="Ej. Visita, Happy hour, Promo verano"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                label="Puntos por sello"
+                type="number"
+                min={1}
+                value={form.valor_puntos_por_sello}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    valor_puntos_por_sello: Number(e.target.value),
+                  })
+                }
+              />
+              <Input
+                label="Límite diario / usuario"
+                type="number"
+                min={1}
+                value={form.limite_diario_por_usuario}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    limite_diario_por_usuario: Number(e.target.value),
+                  })
+                }
+              />
             </div>
-            <span className="text-xs text-slate-500 font-medium bg-slate-800 px-2 py-1 rounded-lg">Ver</span>
-          </div>
-
-          <div className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400">
-                <Award className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">Catálogo de Recompensas</h3>
-                <p className="text-xs text-slate-400">Crear o editar premios y stock disponible</p>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                label="Inicio temporada"
+                type="date"
+                value={form.fecha_inicio}
+                onChange={(e) =>
+                  setForm({ ...form, fecha_inicio: e.target.value })
+                }
+              />
+              <Input
+                label="Fin temporada"
+                type="date"
+                value={form.fecha_fin}
+                onChange={(e) =>
+                  setForm({ ...form, fecha_fin: e.target.value })
+                }
+              />
             </div>
-            <span className="text-xs text-slate-500 font-medium bg-slate-800 px-2 py-1 rounded-lg">Ver</span>
+            <Button fullWidth loading={saving} onClick={crearRegla}>
+              Guardar regla
+            </Button>
           </div>
+        )}
 
-          <div className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-                <BarChart3 className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">Reportes y Auditoría Antifraude</h3>
-                <p className="text-xs text-slate-400">Historial transaccional y validaciones sospechosas</p>
-              </div>
-            </div>
-            <span className="text-xs text-slate-500 font-medium bg-slate-800 px-2 py-1 rounded-lg">Ver</span>
-          </div>
-        </div>
-      </div>
+        {reglas.length === 0 ? (
+          <p className="text-sm text-muted text-center py-6">
+            No hay reglas. Crea una para cada local o promoción.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {reglas.map((r) => (
+              <li key={r.id} className="card space-y-2 !p-3.5">
+                <div className="flex justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate">
+                      {r.nombre_accion}
+                    </p>
+                    <p className="text-[11px] text-muted truncate">
+                      {r.establecimiento_nombre || r.establecimiento_id}
+                    </p>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full h-fit ${
+                      r.estado === "ACTIVA"
+                        ? "bg-emerald-500/15 text-emerald-600"
+                        : "bg-slate-500/15 text-slate-500"
+                    }`}
+                  >
+                    {r.estado}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-muted">Pts/sello</span>
+                    <input
+                      type="number"
+                      className="w-16 rounded-lg border border-[rgb(var(--app-border))] bg-[rgb(var(--app-elevated))] px-2 py-1 text-sm font-semibold"
+                      defaultValue={r.valor_puntos_por_sello}
+                      min={1}
+                      onBlur={(e) => {
+                        const v = Number(e.target.value);
+                        if (v && v !== r.valor_puntos_por_sello)
+                          actualizarPuntos(r, v);
+                      }}
+                    />
+                  </label>
+                  <span className="text-muted">
+                    Límite: {r.limite_diario_por_usuario}/día
+                  </span>
+                  {(r.fecha_inicio || r.fecha_fin) && (
+                    <span className="text-muted">
+                      Temporada:{" "}
+                      {r.fecha_inicio
+                        ? new Date(r.fecha_inicio).toLocaleDateString("es-PE")
+                        : "—"}{" "}
+                      →{" "}
+                      {r.fecha_fin
+                        ? new Date(r.fecha_fin).toLocaleDateString("es-PE")
+                        : "—"}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => toggleEstado(r)}
+                >
+                  {r.estado === "ACTIVA" ? "Desactivar" : "Activar"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 };

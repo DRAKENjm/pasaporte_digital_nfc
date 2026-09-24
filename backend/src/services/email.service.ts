@@ -1,8 +1,8 @@
-import nodemailer from 'nodemailer';
+import nodemailer from "nodemailer";
 
 // Mantenemos la lógica de producción lista, leyendo de las variables de entorno
 const transporter = nodemailer.createTransport({
-  service: 'gmail', // Asumimos Gmail según tu preferencia, pero se puede configurar
+  service: "gmail", // Asumimos Gmail según tu preferencia, pero se puede configurar
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -13,8 +13,12 @@ export const EmailService = {
   /**
    * Envia notificación de nuevo inicio de sesión
    */
-  async sendLoginNotification(to: string, ip: string, device: string = 'Dispositivo no identificado') {
-    const subject = 'Nuevo inicio de sesión detectado - Pasaporte Digital';
+  async sendLoginNotification(
+    to: string,
+    ip: string,
+    device: string = "Dispositivo no identificado",
+  ) {
+    const subject = "Nuevo inicio de sesión detectado - Pasaporte Digital";
     const text = `Hola,\n\nHemos detectado un nuevo inicio de sesión en tu cuenta.\n\nDetalles:\nIP: ${ip}\nDispositivo: ${device}\nFecha: ${new Date().toLocaleString()}\n\nSi no fuiste tú, por favor contacta al soporte de inmediato.\n\nSaludos,\nEl equipo de Pasaporte Digital`;
     const html = `
       <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -39,10 +43,10 @@ export const EmailService = {
    * Envia correo de verificación con token
    */
   async sendVerificationEmail(to: string, token: string) {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     const verifyLink = `${frontendUrl}/verify-email?token=${token}`;
-    
-    const subject = 'Verifica tu cuenta - Pasaporte Digital';
+
+    const subject = "Verifica tu cuenta - Pasaporte Digital";
     const text = `Bienvenido a Pasaporte Digital.\n\nPor favor, verifica tu correo electrónico haciendo clic en el siguiente enlace:\n${verifyLink}\n\nSi no solicitaste esta cuenta, puedes ignorar este correo.`;
     const html = `
       <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
@@ -67,8 +71,8 @@ export const EmailService = {
    */
   async sendMail(to: string, subject: string, text: string, html: string) {
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.warn('⚠️ SMTP_USER o SMTP_PASS no están configurados.');
-      console.log('SIMULANDO ENVÍO DE CORREO:');
+      console.warn("⚠️ SMTP_USER o SMTP_PASS no están configurados.");
+      console.log("SIMULANDO ENVÍO DE CORREO:");
       console.log(`Para: ${to}`);
       console.log(`Asunto: ${subject}`);
       console.log(`Cuerpo: ${text}`);
@@ -83,10 +87,10 @@ export const EmailService = {
         text,
         html,
       });
-      console.log('Correo enviado: %s', info.messageId);
+      console.log("Correo enviado: %s", info.messageId);
       return { simulated: false, success: true, messageId: info.messageId };
     } catch (error) {
-      console.error('Error al enviar correo:', error);
+      console.error("Error al enviar correo:", error);
       // No lanzamos error para no interrumpir el flujo (por ejemplo, el login),
       // pero se podría cambiar según la criticidad
       return { simulated: false, success: false, error };

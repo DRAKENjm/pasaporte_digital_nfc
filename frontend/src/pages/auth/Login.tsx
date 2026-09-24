@@ -1,94 +1,195 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ShieldCheck, AlertCircle, UserX, KeyRound, X } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
-import { useGoogleLogin } from '@react-oauth/google';
-import { useUI } from '../../hooks/useUI';
-import { Input } from '../../components/common/Input';
-import { Button } from '../../components/common/Button';
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  ArrowRight,
+  ShieldAlert,
+  AlertCircle,
+  Lock,
+  Mail,
+  Clock,
+  X,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+import { useAuth } from "../../hooks/useAuth";
+import { GoogleLogin } from "@react-oauth/google";
+import { useUI } from "../../hooks/useUI";
+
+const MAX_INTENTOS = 3;
+const TIEMPO_BLOQUEO_SEGUNDOS = 60;
 
 interface ErrorDialogState {
   isOpen: boolean;
-  type: 'not_found' | 'invalid_password' | 'generic';
+  type: "not_found" | "invalid_password" | "locked" | "generic";
   title: string;
   message: string;
+  intentosRestantes?: number;
 }
 
 export const Login: React.FC = () => {
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const [identifier, setIdentifier] = useState(() => {
+    return localStorage.getItem("remembered_identifier") || "";
+  });
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => {
+    return !!localStorage.getItem("remembered_identifier");
+  });
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  
-  // Modal de error personalizado
+
+  // Control de Intentos Fallidos y Bloqueo
+  const [intentosFallidos, setIntentosFallidos] = useState<number>(() => {
+    const saved = sessionStorage.getItem("auth_intentos_fallidos");
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  const [tiempoRestanteBloqueo, setTiempoRestanteBloqueo] = useState<number>(() => {
+    const lockoutUntil = sessionStorage.getItem("auth_lockout_until");
+    if (!lockoutUntil) return 0;
+    const diff = Math.ceil((parseInt(lockoutUntil, 10) - Date.now()) / 1000);
+    return diff > 0 ? diff : 0;
+  });
+
+  // Modal de diálogo formal de seguridad
   const [errorDialog, setErrorDialog] = useState<ErrorDialogState>({
     isOpen: false,
-    type: 'generic',
-    title: '',
-    message: '',
+    type: "generic",
+    title: "",
+    message: "",
   });
 
   const { login, loginWithGoogle } = useAuth();
   const { showToast } = useUI();
   const navigate = useNavigate();
 
+  // Temporizador de cuenta regresiva de bloqueo temporal
+  useEffect(() => {
+    if (tiempoRestanteBloqueo <= 0) return;
+
+    const interval = setInterval(() => {
+      setTiempoRestanteBloqueo((prev) => {
+        if (prev <= 1) {
+          sessionStorage.removeItem("auth_lockout_until");
+          sessionStorage.removeItem("auth_intentos_fallidos");
+          setIntentosFallidos(0);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [tiempoRestanteBloqueo]);
+
   const closeDialog = () => {
     setErrorDialog((prev) => ({ ...prev, isOpen: false }));
   };
 
+  const activarBloqueoSeguridad = () => {
+    const lockoutTimestamp = Date.now() + TIEMPO_BLOQUEO_SEGUNDOS * 1000;
+    sessionStorage.setItem("auth_lockout_until", lockoutTimestamp.toString());
+    setTiempoRestanteBloqueo(TIEMPO_BLOQUEO_SEGUNDOS);
+    setErrorDialog({
+      isOpen: true,
+      type: "locked",
+      title: "Acceso Suspendido Temporalmente",
+      message: `Ha superado el límite de ${MAX_INTENTOS} intentos fallidos permitidos. Por motivos de seguridad, el formulario permanecerá bloqueado durante ${TIEMPO_BLOQUEO_SEGUNDOS} segundos.`,
+    });
+  };
+
+  const registrarIntentoFallido = () => {
+    const nuevosIntentos = intentosFallidos + 1;
+    setIntentosFallidos(nuevosIntentos);
+    sessionStorage.setItem("auth_intentos_fallidos", nuevosIntentos.toString());
+
+    if (nuevosIntentos >= MAX_INTENTOS) {
+      activarBloqueoSeguridad();
+    } else {
+      const restantes = MAX_INTENTOS - nuevosIntentos;
+      setErrorDialog({
+        isOpen: true,
+        type: "invalid_password",
+        title: "Credenciales Incorrectas",
+        message: `La contraseña o el usuario ingresado no coinciden. Le quedan ${restantes} ${
+          restantes === 1 ? "intento" : "intentos"
+        } antes del bloqueo temporal.`,
+        intentosRestantes: restantes,
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (tiempoRestanteBloqueo > 0) {
+      setErrorDialog({
+        isOpen: true,
+        type: "locked",
+        title: "Acceso Bloqueado",
+        message: `Por favor espere ${tiempoRestanteBloqueo} segundos para volver a intentar ingresar.`,
+      });
+      return;
+    }
+
     if (!identifier.trim() || !password) {
-      showToast('Por favor completa todos los campos', 'info');
+      showToast("Por favor complete los campos requeridos.", "info");
       return;
     }
 
     setLoading(true);
     try {
       const loggedUser: any = await login(identifier.trim(), password);
-      showToast('¡Sesión iniciada con éxito!', 'success');
-      
-      const userRole = (loggedUser?.role || loggedUser?.rol || '').toUpperCase();
-      if (userRole === 'ADMIN' || userRole === 'ADMINISTRADOR') {
-        navigate('/admin');
-      } else if (userRole === 'COMERCIO' || userRole === 'COMMERCE') {
-        navigate('/commerce');
+
+      // Recordar en este equipo si el usuario lo seleccionó
+      if (rememberMe) {
+        localStorage.setItem("remembered_identifier", identifier.trim());
       } else {
-        navigate('/user/wallet');
+        localStorage.removeItem("remembered_identifier");
+      }
+
+      sessionStorage.removeItem("auth_intentos_fallidos");
+      sessionStorage.removeItem("auth_lockout_until");
+      setIntentosFallidos(0);
+
+      const userRole = (loggedUser?.role || loggedUser?.rol || "").toUpperCase();
+      if (userRole === "ADMIN" || userRole === "ADMINISTRADOR") {
+        navigate("/admin");
+      } else if (userRole === "COMERCIO" || userRole === "COMMERCE") {
+        navigate("/commerce");
+      } else {
+        navigate("/user/home");
       }
     } catch (err: any) {
-      const serverMsg: string = err.response?.data?.message || '';
+      const serverMsg: string = err.response?.data?.message || "";
       const status: number = err.response?.status || 0;
 
       if (
-        serverMsg.toLowerCase().includes('no encontrado') ||
-        serverMsg.toLowerCase().includes('usuario no existe') ||
-        serverMsg.toLowerCase().includes('no registrado') ||
+        serverMsg.toLowerCase().includes("no encontrado") ||
+        serverMsg.toLowerCase().includes("usuario no existe") ||
+        serverMsg.toLowerCase().includes("no registrado") ||
         status === 404
       ) {
         setErrorDialog({
           isOpen: true,
-          type: 'not_found',
-          title: 'Usuario no encontrado',
-          message: `No existe ninguna cuenta asociada a "${identifier}". Verifica que el correo o usuario esté bien escrito.`,
+          type: "not_found",
+          title: "Usuario No Encontrado",
+          message: `No existe ninguna cuenta asociada a "${identifier}".`,
         });
       } else if (
-        serverMsg.toLowerCase().includes('credenciales incorrectas') ||
-        serverMsg.toLowerCase().includes('contraseña') ||
+        serverMsg.toLowerCase().includes("credenciales incorrectas") ||
+        serverMsg.toLowerCase().includes("contraseña") ||
         status === 401
       ) {
-        setErrorDialog({
-          isOpen: true,
-          type: 'invalid_password',
-          title: 'Credenciales incorrectas',
-          message: 'El usuario o la contraseña ingresada no son correctos. Por favor, revísalos e inténtalo de nuevo.',
-        });
+        registrarIntentoFallido();
       } else {
         setErrorDialog({
           isOpen: true,
-          type: 'generic',
-          title: 'Error al iniciar sesión',
-          message: serverMsg || 'Ocurrió un inconveniente al conectar con el servidor. Por favor intenta de nuevo en unos momentos.',
+          type: "generic",
+          title: "Error de Conexión",
+          message:
+            serverMsg ||
+            "No se pudo conectar con el servidor. Intente nuevamente en unos instantes.",
         });
       }
     } finally {
@@ -96,199 +197,256 @@ export const Login: React.FC = () => {
     }
   };
 
-  const googleButtonRef = React.useRef<HTMLDivElement>(null);
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    if (!credentialResponse?.credential) return;
+    setGoogleLoading(true);
+    try {
+      const loggedUser: any = await loginWithGoogle(credentialResponse.credential);
+      sessionStorage.removeItem("auth_intentos_fallidos");
+      sessionStorage.removeItem("auth_lockout_until");
 
-  React.useEffect(() => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      console.warn('VITE_GOOGLE_CLIENT_ID no configurado');
-      return;
-    }
-
-    const initGoogle = () => {
-      // @ts-ignore
-      if (!window.google?.accounts?.id) return;
-
-      // @ts-ignore
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: async (response: { credential: string }) => {
-          if (!response.credential) return;
-          setGoogleLoading(true);
-          try {
-            const loggedUser: any = await loginWithGoogle(response.credential);
-            showToast('¡Acceso verificado con Google!', 'success');
-            const userRole = (loggedUser?.role || loggedUser?.rol || '').toUpperCase();
-            if (userRole === 'ADMIN' || userRole === 'ADMINISTRADOR') {
-              navigate('/admin');
-            } else if (userRole === 'COMERCIO' || userRole === 'ESTABLECIMIENTO') {
-              navigate('/commerce');
-            } else {
-              navigate('/wallet');
-            }
-          } catch (err: any) {
-            const msg = err.response?.data?.message || 'Error al autenticar con Google';
-            showToast(msg, 'error');
-          } finally {
-            setGoogleLoading(false);
-          }
-        },
-        auto_select: false,
-      });
-
-    if (googleButtonRef.current) {
-      // @ts-ignore
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: 'outline',
-        size: 'large',
-        width: googleButtonRef.current.offsetWidth || 320,
-        text: 'continue_with',
-        shape: 'rectangular',
-        logo_alignment: 'left',
-      });
+      const userRole = (loggedUser?.role || loggedUser?.rol || "").toUpperCase();
+      if (userRole === "ADMIN" || userRole === "ADMINISTRADOR") {
+        navigate("/admin");
+      } else if (userRole === "COMERCIO" || userRole === "COMMERCE") {
+        navigate("/commerce");
+      } else {
+        navigate("/user/home");
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "No se pudo iniciar sesión con Google", "error");
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
-  // Cargar script de Google Identity Services si no está
-  // @ts-ignore
-  if (window.google?.accounts?.id) {
-    initGoogle();
-  } else {
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = initGoogle;
-    document.body.appendChild(script);
-  }
-}, [loginWithGoogle, navigate, showToast]);
+  const isLocked = tiempoRestanteBloqueo > 0;
 
   return (
     <>
-      <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-2xl shadow-black/40">
-        <div className="text-center mb-6">
-          <h2 className="text-2xl font-black tracking-tight text-white">¡Hola de nuevo!</h2>
-          <p className="text-xs text-slate-400 mt-1">Ingresa tus datos para acceder a tu pasaporte</p>
+      <div className="bg-white border border-slate-200 p-6 sm:p-8 rounded-2xl shadow-sm space-y-6">
+        {/* Cabecera */}
+        <div className="space-y-1">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900">
+            Iniciar Sesión
+          </h2>
+          <p className="text-xs text-slate-500">
+            Ingrese sus credenciales de acceso
+          </p>
         </div>
 
-        {/* Botón de acceso con Google */}
-        <div className="w-full flex flex-col items-center justify-center">
-          <div className="w-full min-h-[44px] flex justify-center" ref={googleButtonRef} />
-          {googleLoading && (
-            <p className="text-center text-xs text-slate-400 mt-2">Conectando con Google...</p>
-          )}
-        </div>
+        {/* Advertencia de Bloqueo Temporal si aplica */}
+        {isLocked && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Acceso pausado por seguridad</p>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Espere <strong>{tiempoRestanteBloqueo} segundos</strong> para reintentar.
+              </p>
+            </div>
+          </div>
+        )}
 
-        {/* Separador */}
-        <div className="relative my-6 flex items-center justify-center">
-          <div className="border-t border-slate-800 w-full" />
-          <span className="bg-slate-900 px-3 text-[11px] font-medium tracking-wider uppercase text-slate-500 absolute">
-            o con tus credenciales
-          </span>
-        </div>
+        {/* Advertencia de intentos fallidos */}
+        {!isLocked && intentosFallidos > 0 && intentosFallidos < MAX_INTENTOS && (
+          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
+            <span className="flex items-center gap-1.5 font-medium">
+              <ShieldAlert className="w-4 h-4 text-amber-600" />
+              Intento {intentosFallidos} de {MAX_INTENTOS}
+            </span>
+            <span className="text-[11px] text-amber-700 font-medium">
+              Queda {MAX_INTENTOS - intentosFallidos} {MAX_INTENTOS - intentosFallidos === 1 ? "intento" : "intentos"}
+            </span>
+          </div>
+        )}
 
+        {/* Formulario */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Input
-              label="Usuario o Correo Electrónico"
-              type="text"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="ej. cliente@demo.com o tu_usuario"
-              required
-              autoComplete="username"
-            />
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Usuario o Correo Electrónico
+            </label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <input
+                type="text"
+                required
+                disabled={isLocked || loading}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="correo@ejemplo.com o usuario"
+                className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-50 disabled:bg-slate-100 transition"
+              />
+            </div>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span />
+              <label className="block text-xs font-semibold text-slate-700">
+                Contraseña
+              </label>
               <Link
                 to="/auth/recover"
-                className="text-xs text-sky-400 hover:text-sky-300 transition font-medium hover:underline"
+                className="text-[11px] text-slate-500 hover:text-slate-900 hover:underline transition"
               >
-                ¿Olvidaste tu contraseña?
+                ¿Olvidó su contraseña?
               </Link>
             </div>
-            <Input
-              label="Contraseña"
-              type="password"
-              isPassword={true}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
-              required
-              autoComplete="current-password"
-            />
+            <div className="relative">
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                disabled={isLocked || loading}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-50 disabled:bg-slate-100 transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                className="absolute right-3 top-2.5 p-1 text-slate-400 hover:text-slate-700 transition"
+                aria-label={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           </div>
 
-          <Button
+          {/* Recordar en este equipo */}
+          <div className="flex items-center">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+              />
+              <span className="text-xs text-slate-600">
+                Recordar en este equipo
+              </span>
+            </label>
+          </div>
+
+          <button
             type="submit"
-            className="w-full py-3 mt-2 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-sky-500/20"
-            loading={loading}
+            disabled={loading || isLocked}
+            className="w-full py-2.5 bg-slate-900 hover:bg-black disabled:opacity-50 text-white font-semibold text-sm rounded-xl flex items-center justify-center gap-2 transition"
           >
-            <span>Iniciar Sesión</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
-          </Button>
-
-          <div className="mt-4 pt-4 border-t border-slate-800/60 flex items-center justify-center gap-2 text-[11px] text-slate-500">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Acceso seguro protegido por chip NFC & Encriptación</span>
-          </div>
+            {loading ? (
+              "Verificando..."
+            ) : isLocked ? (
+              `Bloqueado (${tiempoRestanteBloqueo}s)`
+            ) : (
+              <>
+                Ingresar
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
         </form>
+
+        {/* Separador */}
+        <div className="relative flex items-center justify-center my-4">
+          <div className="border-t border-slate-200 w-full" />
+          <span className="bg-white px-3 text-[11px] text-slate-400 uppercase tracking-wider">
+            O continuar con
+          </span>
+        </div>
+
+        {/* Google OAuth */}
+        <div className="flex justify-center w-full">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() =>
+              showToast("Inconveniente con la autenticación de Google", "error")
+            }
+            theme="outline"
+            size="large"
+            shape="pill"
+            text="signin_with"
+          />
+        </div>
+
+        {/* Registro */}
+        <div className="text-center pt-2 border-t border-slate-100">
+          <p className="text-xs text-slate-500">
+            ¿No tiene cuenta?{" "}
+            <Link
+              to="/auth/register"
+              className="font-semibold text-slate-900 hover:underline"
+            >
+              Registrarse como cliente
+            </Link>
+          </p>
+        </div>
       </div>
 
-      {/* Modal / Cuadro de Diálogo de Error */}
+      {/* Modal formal de advertencia / seguridad */}
       {errorDialog.isOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn"
-          onClick={closeDialog}
-        >
-          <div
-            className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-sm p-6 shadow-2xl shadow-rose-950/20 relative animate-scaleUp text-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={closeDialog}
-              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition"
-              aria-label="Cerrar"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {/* Icono temático según el tipo de error */}
-            <div className="mx-auto mb-4 w-12 h-12 rounded-2xl flex items-center justify-center bg-rose-500/10 border border-rose-500/20 text-rose-400">
-              {errorDialog.type === 'not_found' ? (
-                <UserX className="w-6 h-6" />
-              ) : errorDialog.type === 'invalid_password' ? (
-                <KeyRound className="w-6 h-6" />
-              ) : (
-                <AlertCircle className="w-6 h-6" />
-              )}
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm p-6 shadow-xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                  errorDialog.type === "locked"
+                    ? "bg-rose-50 text-rose-600 border border-rose-200"
+                    : errorDialog.type === "invalid_password"
+                    ? "bg-amber-50 text-amber-600 border border-amber-200"
+                    : "bg-slate-100 text-slate-600 border border-slate-200"
+                }`}
+              >
+                {errorDialog.type === "locked" ? (
+                  <Lock className="w-4 h-4" />
+                ) : errorDialog.type === "invalid_password" ? (
+                  <ShieldAlert className="w-4 h-4" />
+                ) : (
+                  <AlertCircle className="w-4 h-4" />
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <h3 className="text-lg font-bold text-white mb-2">{errorDialog.title}</h3>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
-              {errorDialog.message}
-            </p>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                {errorDialog.title}
+              </h3>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                {errorDialog.message}
+              </p>
+            </div>
 
-            <div className="flex flex-col gap-2">
-              <Button
-                variant="primary"
-                onClick={closeDialog}
-                className="w-full bg-rose-600 hover:bg-rose-500 focus:ring-rose-500 py-2.5 text-sm font-semibold rounded-xl"
-              >
-                Entendido
-              </Button>
-              {errorDialog.type === 'invalid_password' && (
+            <div className="pt-2 flex flex-col gap-2">
+              {errorDialog.type === "invalid_password" && (
                 <Link
                   to="/auth/recover"
                   onClick={closeDialog}
-                  className="text-xs text-sky-400 hover:text-sky-300 pt-1 font-medium hover:underline"
+                  className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl text-center transition"
                 >
-                  Restablecer mi contraseña
+                  Restablecer Contraseña
                 </Link>
               )}
+
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="w-full py-2 bg-slate-900 hover:bg-black text-white text-xs font-semibold rounded-xl transition"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

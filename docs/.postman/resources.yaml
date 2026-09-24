@@ -1,0 +1,7 @@
+# Use this workspace to collaborate
+workspace:
+  id: be0756ff-212c-4f68-80db-761f6aa7a1d6
+
+localResources:
+  collections:
+    - ../PasaporteNFC.postman_collection.json

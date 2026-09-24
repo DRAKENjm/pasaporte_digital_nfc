@@ -1,6 +1,6 @@
-import { Request } from 'express';
+import { Request } from "express";
 
-export type UserRole = 'CLIENTE' | 'COMERCIO' | 'ADMIN';
+export type UserRole = "CLIENTE" | "COMERCIO" | "ADMIN";
 
 export interface AuthUser {
   id: string;
@@ -14,6 +14,8 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }
 
+export type AuthRequest = AuthenticatedRequest;
+
 export interface UserDB {
   id: string;
   rol_id: string;
@@ -25,7 +27,7 @@ export interface UserDB {
   total_sellos: number;
   puntos_globales: number;
   aceptacion_tyc: boolean;
-  estado: 'ACTIVO' | 'INACTIVO' | 'BLOQUEADO';
+  estado: "ACTIVO" | "INACTIVO" | "BLOQUEADO";
   created_at: Date;
   rol_nombre?: string;
   nivel_nombre?: string;
@@ -36,7 +38,7 @@ export interface TarjetaNfcDB {
   usuario_id: string | null;
   uid_nfc: string;
   qr_respaldo: string;
-  estado: 'EN_STOCK' | 'ASIGNADA' | 'EXTRAVIADA' | 'BLOQUEADA';
+  estado: "EN_STOCK" | "ASIGNADA" | "EXTRAVIADA" | "BLOQUEADA";
   fecha_asignacion?: Date;
   created_at: Date;
 }
@@ -47,7 +49,7 @@ export interface EstablecimientoDB {
   ruc: string;
   razon_social: string;
   direccion: string | null;
-  estado: 'ACTIVO' | 'INACTIVO' | 'SUSPENDIDO';
+  estado: "ACTIVO" | "INACTIVO" | "SUSPENDIDO";
   created_at: Date;
   categoria_nombre?: string;
 }
@@ -58,7 +60,7 @@ export interface ReglaSelloDB {
   nombre_accion: string;
   valor_puntos_por_sello: number;
   limite_diario_por_usuario: number;
-  estado: 'ACTIVA' | 'INACTIVA';
+  estado: "ACTIVA" | "INACTIVA";
   created_at: Date;
 }
 
@@ -68,11 +70,11 @@ export interface PublicacionDB {
   establecimiento_id: string | null;
   texto_contenido: string | null;
   url_media: string | null;
-  tipo_media: 'IMAGEN' | 'VIDEO';
+  tipo_media: "IMAGEN" | "VIDEO";
   url_thumbnail: string | null;
   duracion_segundos: number;
-  visibilidad: 'PUBLICA' | 'PRIVADA' | 'AMIGOS';
-  estado_moderacion: 'APROBADA' | 'REVISION' | 'OCULTA' | 'ELIMINADA';
+  visibilidad: "PUBLICA" | "PRIVADA" | "AMIGOS";
+  estado_moderacion: "APROBADA" | "REVISION" | "OCULTA" | "ELIMINADA";
   created_at: Date;
   autor_nombres?: string;
   autor_apellidos?: string;
@@ -86,7 +88,7 @@ export interface RecompensaDB {
   costo_puntos_globales: number;
   stock_disponible: number | null;
   imagen_url: string | null;
-  tipo_entrega: 'OFICINA_CENTRAL' | 'LOCAL_ALIADO' | 'VIRTUAL';
-  estado: 'ACTIVA' | 'AGOTADA' | 'FINALIZADA';
+  tipo_entrega: "OFICINA_CENTRAL" | "LOCAL_ALIADO" | "VIRTUAL";
+  estado: "ACTIVA" | "AGOTADA" | "FINALIZADA";
   created_at: Date;
 }
