@@ -1,463 +1,428 @@
 -- =================================================================================
--- PASAPORTE VIRTUAL NFC — ESQUEMA COMPLETO + DATOS LIMPIOS + RLS
--- Solo datos: Roles + Usuarios
--- Niveles, categorías y todo lo demás lo crea el Admin
+-- PASAPORTE DIGITAL NFC — ESQUEMA COMPLETO POSTGRESQL (23 TABLAS)
+-- Compatible con PostgreSQL 14+ / 17
 -- =================================================================================
 
+-- Extensiones necesarias
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =================================================================================
--- MÓDULO 1: ROLES, CATEGORÍAS Y NIVELES
+-- BLOQUE 1: BASE ADMINISTRATIVA, LOCALES Y CAPA LEGAL MÍNIMA
 -- =================================================================================
 
+-- 1. ROLES
 CREATE TABLE IF NOT EXISTS roles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nombre VARCHAR(50) UNIQUE NOT NULL, 
-    descripcion TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id_rol SERIAL PRIMARY KEY,
+    nombre VARCHAR(50) UNIQUE NOT NULL,
+    descripcion VARCHAR(150),
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1))
 );
-
-CREATE TABLE IF NOT EXISTS categorias_establecimiento (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nombre VARCHAR(100) UNIQUE NOT NULL, 
-    icono_url VARCHAR(255),
-    estado BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS niveles_pasaporte (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nombre_rango VARCHAR(50) UNIQUE NOT NULL, 
-    sellos_requeridos INT NOT NULL, 
-    insignia_url VARCHAR(255), 
-    color_hex VARCHAR(7), 
-    estado BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- =================================================================================
--- MÓDULO 2: USUARIOS, TOKENS Y HARDWARE NFC
--- =================================================================================
-
-CREATE TABLE IF NOT EXISTS usuarios (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    rol_id UUID NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
-    nivel_id UUID REFERENCES niveles_pasaporte(id) ON DELETE SET NULL,
-    nombres VARCHAR(100) NOT NULL,
-    apellidos VARCHAR(100) NOT NULL,
-    username VARCHAR(60),
-    avatar_url TEXT,
-    email VARCHAR(150) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL, 
-    total_sellos INT DEFAULT 0, 
-    puntos_globales INT DEFAULT 0, 
-    aceptacion_tyc BOOLEAN NOT NULL DEFAULT FALSE,
-    email_verificado BOOLEAN DEFAULT FALSE, 
-    preferencias_privacidad JSONB DEFAULT '{}'::jsonb, 
-    estado VARCHAR(20) DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO', 'INACTIVO', 'BLOQUEADO', 'PENDIENTE')),
-    ultimo_acceso TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS auth_tokens (
-    token_hash TEXT PRIMARY KEY,
-    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    purpose TEXT NOT NULL,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS qr_consumidos (
-    jti UUID PRIMARY KEY,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tarjetas_nfc (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
-    uid_nfc VARCHAR(100) UNIQUE NOT NULL, 
-    qr_respaldo VARCHAR(150) UNIQUE NOT NULL,
-    estado VARCHAR(20) DEFAULT 'ASIGNADA' CHECK (estado IN ('EN_STOCK', 'ASIGNADA', 'EXTRAVIADA', 'BLOQUEADA')),
-    fecha_asignacion TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- =================================================================================
--- MÓDULO 3: ESTABLECIMIENTOS Y PERSONAL
--- =================================================================================
-
-CREATE TABLE IF NOT EXISTS establecimientos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    categoria_id UUID REFERENCES categorias_establecimiento(id) ON DELETE RESTRICT,
-    ruc VARCHAR(11) UNIQUE NOT NULL, 
-    razon_social VARCHAR(150) NOT NULL, 
-    nombre VARCHAR(150),
-    descripcion TEXT,
-    direccion TEXT,
-    telefono VARCHAR(30),
-    horario TEXT,
-    imagen_url TEXT,
-    lat DOUBLE PRECISION CHECK(lat BETWEEN -90 AND 90),
-    lng DOUBLE PRECISION CHECK(lng BETWEEN -180 AND 180),
-    estado VARCHAR(20) DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO', 'INACTIVO', 'SUSPENDIDO')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS personal_establecimiento (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    establecimiento_id UUID NOT NULL REFERENCES establecimientos(id) ON DELETE CASCADE,
-    pin_validacion VARCHAR(255),
-    estado BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(usuario_id, establecimiento_id)
-);
-
--- =================================================================================
--- MÓDULO 4: MOTOR TRANSACCIONAL
--- =================================================================================
-
-CREATE TABLE IF NOT EXISTS reglas_sellos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    establecimiento_id UUID NOT NULL REFERENCES establecimientos(id) ON DELETE CASCADE,
-    nombre_accion VARCHAR(150) NOT NULL, 
-    valor_puntos_por_sello INT NOT NULL DEFAULT 0,
-    limite_diario_por_usuario INT DEFAULT 1,
-    fecha_inicio TIMESTAMP WITH TIME ZONE,
-    fecha_fin TIMESTAMP WITH TIME ZONE,
-    estado VARCHAR(20) DEFAULT 'ACTIVA' CHECK (estado IN ('ACTIVA', 'INACTIVA')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS recompensas_plataforma (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nombre_recompensa VARCHAR(150) NOT NULL, 
-    descripcion TEXT, 
-    costo_puntos_globales INT NOT NULL,
-    stock_disponible INT, 
-    imagen_url VARCHAR(255), 
-    tipo_entrega VARCHAR(50) DEFAULT 'OFICINA_CENTRAL' CHECK (tipo_entrega IN ('OFICINA_CENTRAL', 'LOCAL_ALIADO', 'VIRTUAL', 'EN_LOCAL', 'DIGITAL')),
-    direccion_recojo TEXT, 
-    fecha_inicio TIMESTAMP WITH TIME ZONE,
-    fecha_fin TIMESTAMP WITH TIME ZONE,
-    estado VARCHAR(20) DEFAULT 'ACTIVA' CHECK (estado IN ('ACTIVA', 'AGOTADA', 'FINALIZADA', 'INACTIVA')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS historial_canjes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
-    recompensa_id UUID NOT NULL REFERENCES recompensas_plataforma(id) ON DELETE RESTRICT,
-    puntos_gastados INT NOT NULL,
-    estado_entrega VARCHAR(20) DEFAULT 'PENDIENTE_RECOJO' CHECK (estado_entrega IN ('PENDIENTE_RECOJO', 'ENTREGADO', 'CANCELADO')),
-    fecha_canje TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    fecha_entrega TIMESTAMP WITH TIME ZONE 
-);
-
-CREATE TABLE IF NOT EXISTS historial_visitas_sellos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
-    establecimiento_id UUID NOT NULL REFERENCES establecimientos(id) ON DELETE RESTRICT,
-    personal_validador_id UUID REFERENCES usuarios(id) ON DELETE RESTRICT,
-    regla_sello_id UUID REFERENCES reglas_sellos(id) ON DELETE SET NULL,
-    puntos_ganados INT NOT NULL,
-    metodo_validacion VARCHAR(50) NOT NULL CHECK (metodo_validacion IN ('NFC', 'QR', 'MANUAL_DASHBOARD')),
-    fecha_hora TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    ip_registro VARCHAR(45)
-);
-
--- =================================================================================
--- MÓDULO 5: COMUNIDAD
--- =================================================================================
-
-CREATE TABLE IF NOT EXISTS publicaciones (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    establecimiento_id UUID REFERENCES establecimientos(id) ON DELETE SET NULL,
-    texto_contenido TEXT,
-    url_media TEXT,
-    tipo_media VARCHAR(20) DEFAULT 'IMAGEN' CHECK (tipo_media IN ('IMAGEN', 'VIDEO')),
-    url_thumbnail VARCHAR(255),
-    duracion_segundos INT DEFAULT 0,
-    visibilidad VARCHAR(20) DEFAULT 'PUBLICA' CHECK (visibilidad IN ('PUBLICA', 'PRIVADA', 'AMIGOS')),
-    estado_moderacion VARCHAR(20) DEFAULT 'APROBADA' CHECK (estado_moderacion IN ('APROBADA', 'REVISION', 'OCULTA', 'ELIMINADA')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS historias (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    media_url TEXT NOT NULL,
-    media_type VARCHAR(10) NOT NULL CHECK (media_type IN ('image', 'video', 'IMAGEN', 'VIDEO')),
-    caption VARCHAR(500) NOT NULL DEFAULT '',
-    filtro VARCHAR(40) NOT NULL DEFAULT 'none',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours')
-);
-
-CREATE TABLE IF NOT EXISTS interacciones (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    publicacion_id UUID NOT NULL REFERENCES publicaciones(id) ON DELETE CASCADE,
-    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    tipo_interaccion VARCHAR(20) NOT NULL CHECK (tipo_interaccion IN ('REACCION', 'COMENTARIO')),
-    comentario TEXT, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS denuncias_moderacion (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    publicacion_id UUID NOT NULL REFERENCES publicaciones(id) ON DELETE CASCADE,
-    usuario_reportador_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    motivo_denuncia VARCHAR(100) NOT NULL, 
-    detalle_denuncia TEXT,
-    estado_revision VARCHAR(20) DEFAULT 'PENDIENTE' CHECK (estado_revision IN ('PENDIENTE', 'REVISADO', 'DESCARTADO')),
-    admin_revisor_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
-    fecha_reporte TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    fecha_revision TIMESTAMP WITH TIME ZONE
-);
-
--- =================================================================================
--- MÓDULO 6: AMISTADES
--- =================================================================================
-
-CREATE TABLE IF NOT EXISTS amistades (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_solicitante_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    usuario_receptor_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    estado VARCHAR(20) DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'ACEPTADA', 'RECHAZADA', 'BLOQUEADO')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT chk_no_autoamistad CHECK (usuario_solicitante_id <> usuario_receptor_id),
-    UNIQUE(usuario_solicitante_id, usuario_receptor_id)
-);
-
--- =================================================================================
--- MÓDULO 7: LIBRO DE RECLAMACIONES
--- =================================================================================
-
-CREATE TABLE IF NOT EXISTS libro_reclamaciones (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    codigo_seguimiento VARCHAR(30) UNIQUE NOT NULL,
-    usuario_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
-    establecimiento_id UUID REFERENCES establecimientos(id) ON DELETE SET NULL,
-    nombres_reclamante VARCHAR(100) NOT NULL,
-    apellidos_reclamante VARCHAR(100) NOT NULL,
-    tipo_documento VARCHAR(20) DEFAULT 'DNI' CHECK (tipo_documento IN ('DNI', 'CE', 'PASAPORTE', 'RUC')),
-    numero_documento VARCHAR(20) NOT NULL,
-    email VARCHAR(150) NOT NULL,
-    telefono VARCHAR(30),
-    direccion TEXT,
-    tipo_bien_contratado VARCHAR(20) DEFAULT 'SERVICIO' CHECK (tipo_bien_contratado IN ('PRODUCTO', 'SERVICIO')),
-    tipo_registro VARCHAR(20) NOT NULL CHECK (tipo_registro IN ('RECLAMO', 'QUEJA')),
-    monto_reclamado NUMERIC(10, 2) DEFAULT 0.00,
-    detalle TEXT NOT NULL,
-    pedido_consumidor TEXT NOT NULL,
-    estado VARCHAR(20) DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'EN_PROCESO', 'ATENDIDO', 'RECHAZADO')),
-    respuesta_admin TEXT,
-    fecha_respuesta TIMESTAMP WITH TIME ZONE,
-    admin_responsable_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- =================================================================================
--- ÍNDICES
--- =================================================================================
-
-CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);
-CREATE INDEX IF NOT EXISTS idx_tarjetas_uid ON tarjetas_nfc(uid_nfc);
-CREATE INDEX IF NOT EXISTS idx_usuarios_sellos_historicos ON usuarios(total_sellos DESC);
-CREATE INDEX IF NOT EXISTS idx_establecimientos_categoria ON establecimientos(categoria_id);
-CREATE INDEX IF NOT EXISTS idx_recompensas_plataforma_estado ON recompensas_plataforma(estado);
-CREATE INDEX IF NOT EXISTS idx_visitas_antifraude ON historial_visitas_sellos(usuario_id, establecimiento_id, fecha_hora);
-CREATE INDEX IF NOT EXISTS idx_publicaciones_feed ON publicaciones(estado_moderacion, visibilidad, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_publicaciones_tipo_media ON publicaciones(tipo_media);
-CREATE INDEX IF NOT EXISTS idx_historias_expiry ON historias(expires_at);
-CREATE INDEX IF NOT EXISTS idx_amistades_usuarios ON amistades(usuario_solicitante_id, usuario_receptor_id, estado);
-CREATE INDEX IF NOT EXISTS idx_libro_reclamaciones_estado ON libro_reclamaciones(estado, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_libro_reclamaciones_codigo ON libro_reclamaciones(codigo_seguimiento);
-
-DELETE FROM interacciones a USING interacciones b 
-WHERE a.tipo_interaccion = 'REACCION' 
-  AND b.tipo_interaccion = 'REACCION' 
-  AND a.publicacion_id = b.publicacion_id 
-  AND a.usuario_id = b.usuario_id 
-  AND a.id > b.id;
-
-CREATE UNIQUE INDEX IF NOT EXISTS reaccion_unica ON interacciones(publicacion_id, usuario_id) WHERE tipo_interaccion = 'REACCION';
-
--- =================================================================================
--- DATOS SEMILLA — SOLO ROLES + USUARIOS
--- =================================================================================
 
 INSERT INTO roles (nombre, descripcion) VALUES
-('ADMIN', 'Administrador del sistema con acceso total'),
-('CLIENTE', 'Usuario final portador del pasaporte y acumulador de sellos'),
-('COMERCIO', 'Personal autorizado de establecimientos aliados')
-ON CONFLICT (nombre) DO NOTHING;
+('ADMIN_GENERAL', 'Administrador general de Pasaporte Digital'),
+('ADMIN_LOCAL', 'Administrador de establecimiento afiliado'),
+('TRABAJADOR_LOCAL', 'Trabajador autorizado del establecimiento'),
+('CLIENTE', 'Cliente usuario del Pasaporte Digital')
+ON CONFLICT (nombre) DO UPDATE SET descripcion = EXCLUDED.descripcion;
 
-DO $$
-DECLARE
-    v_rol_admin UUID;
-    v_rol_comercio UUID;
-    v_rol_cliente UUID;
-    
-    v_user_admin UUID := 'b0000000-0000-0000-0000-000000000001';
-    v_user_comercio UUID := 'b0000000-0000-0000-0000-000000000002';
-    v_user_cliente UUID := 'b0000000-0000-0000-0000-000000000003';
-    
-    -- Hash de "Password123!"
-    v_hash_demo VARCHAR := '$2a$10$BvFWSzKBxQ9dN0DqsrtCfOhc07KKXXufrUsNGqeBSf46kaau2d8vy';
-BEGIN
-    SELECT id INTO v_rol_admin FROM roles WHERE UPPER(nombre) = 'ADMIN' LIMIT 1;
-    SELECT id INTO v_rol_comercio FROM roles WHERE UPPER(nombre) = 'COMERCIO' LIMIT 1;
-    SELECT id INTO v_rol_cliente FROM roles WHERE UPPER(nombre) = 'CLIENTE' LIMIT 1;
+-- 2. CONFIGURACION_SISTEMA
+CREATE TABLE IF NOT EXISTS configuracion_sistema (
+    id_configuracion SERIAL PRIMARY KEY,
+    nombre_proyecto VARCHAR(150) NOT NULL DEFAULT 'Pasaporte Digital',
+    logo_principal VARCHAR(255),
+    logo_reducido VARCHAR(255),
+    correo_soporte VARCHAR(150),
+    telefono_soporte VARCHAR(20),
+    color_primario VARCHAR(20) DEFAULT '#9B1B30',
+    color_secundario VARCHAR(20) DEFAULT '#D4AF37',
+    fecha_actualizacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-    -- 1. Admin
-    INSERT INTO usuarios (id, rol_id, nivel_id, nombres, apellidos, username, email, password_hash, total_sellos, puntos_globales, aceptacion_tyc, email_verificado, estado)
-    VALUES (v_user_admin, v_rol_admin, NULL, 'Administrador', 'Principal', 'admin_master', 'cuentaunicaapk@gmail.com', v_hash_demo, 0, 0, TRUE, TRUE, 'ACTIVO')
-    ON CONFLICT (email) DO UPDATE 
-      SET rol_id = EXCLUDED.rol_id, 
-          nivel_id = NULL,
-          total_sellos = 0,
-          puntos_globales = 0,
-          username = COALESCE(usuarios.username, EXCLUDED.username),
-          password_hash = EXCLUDED.password_hash,
-          email_verificado = TRUE,
-          estado = 'ACTIVO';
+-- 3. USUARIOS
+CREATE TABLE IF NOT EXISTS usuarios (
+    id_usuario BIGSERIAL PRIMARY KEY,
+    id_rol INT NOT NULL REFERENCES roles(id_rol) ON UPDATE CASCADE ON DELETE RESTRICT,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    nombres VARCHAR(100) NOT NULL,
+    apellidos VARCHAR(100) NOT NULL,
+    telefono VARCHAR(20),
+    foto_perfil VARCHAR(255),
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1)),
+    ultimo_acceso TIMESTAMP WITH TIME ZONE,
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-    -- 2. Comercio
-    INSERT INTO usuarios (id, rol_id, nivel_id, nombres, apellidos, username, email, password_hash, total_sellos, puntos_globales, aceptacion_tyc, email_verificado, estado)
-    VALUES (v_user_comercio, v_rol_comercio, NULL, 'María', 'Validadora', 'comercio_cafe', 'comercio@cafecentral.com', v_hash_demo, 0, 0, TRUE, TRUE, 'ACTIVO')
-    ON CONFLICT (email) DO UPDATE 
-      SET rol_id = EXCLUDED.rol_id, 
-          nivel_id = NULL,
-          total_sellos = 0,
-          puntos_globales = 0,
-          username = COALESCE(usuarios.username, EXCLUDED.username),
-          password_hash = EXCLUDED.password_hash,
-          email_verificado = TRUE,
-          estado = 'ACTIVO';
+CREATE INDEX IF NOT EXISTS idx_usuarios_rol ON usuarios(id_rol);
 
-    -- 3. Cliente
-    INSERT INTO usuarios (id, rol_id, nivel_id, nombres, apellidos, username, email, password_hash, total_sellos, puntos_globales, aceptacion_tyc, email_verificado, estado)
-    VALUES (v_user_cliente, v_rol_cliente, NULL, 'Aldair', 'Viajero', 'aldair_travel', 'cliente@demo.com', v_hash_demo, 0, 0, TRUE, TRUE, 'ACTIVO')
-    ON CONFLICT (email) DO UPDATE 
-      SET rol_id = EXCLUDED.rol_id, 
-          nivel_id = NULL,
-          username = COALESCE(usuarios.username, EXCLUDED.username),
-          password_hash = EXCLUDED.password_hash,
-          email_verificado = TRUE,
-          estado = 'ACTIVO';
-END $$;
+-- 4. CLIENTES
+CREATE TABLE IF NOT EXISTS clientes (
+    id_cliente BIGSERIAL PRIMARY KEY,
+    id_usuario BIGINT UNIQUE NOT NULL REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    codigo_cliente VARCHAR(30) UNIQUE NOT NULL,
+    fecha_registro TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1))
+);
+
+-- 5. ESTABLECIMIENTOS
+CREATE TABLE IF NOT EXISTS establecimientos (
+    id_establecimiento BIGSERIAL PRIMARY KEY,
+    nombre_comercial VARCHAR(150) NOT NULL,
+    razon_social VARCHAR(180),
+    ruc VARCHAR(11) UNIQUE,
+    descripcion TEXT,
+    logo VARCHAR(255),
+    imagen_portada VARCHAR(255),
+    email VARCHAR(150),
+    telefono VARCHAR(20),
+    fecha_afiliacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'ACTIVO', 'SUSPENDIDO', 'INACTIVO'))
+);
+
+-- 6. SUCURSALES
+CREATE TABLE IF NOT EXISTS sucursales (
+    id_sucursal BIGSERIAL PRIMARY KEY,
+    id_establecimiento BIGINT NOT NULL REFERENCES establecimientos(id_establecimiento) ON UPDATE CASCADE ON DELETE RESTRICT,
+    nombre VARCHAR(120) NOT NULL,
+    direccion VARCHAR(255) NOT NULL,
+    referencia VARCHAR(255),
+    latitud NUMERIC(10,7),
+    longitud NUMERIC(10,7),
+    telefono VARCHAR(20),
+    es_principal SMALLINT NOT NULL DEFAULT 0 CHECK (es_principal IN (0,1)),
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1)),
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sucursales_establecimiento ON sucursales(id_establecimiento);
+
+-- 7. DOCUMENTOS_LEGALES
+CREATE TABLE IF NOT EXISTS documentos_legales (
+    id_documento BIGSERIAL PRIMARY KEY,
+    tipo_documento VARCHAR(40) NOT NULL CHECK (tipo_documento IN ('POLITICA_PRIVACIDAD', 'TERMINOS_CONDICIONES', 'POLITICA_COOKIES', 'CONSENTIMIENTO_MARKETING')),
+    titulo VARCHAR(180) NOT NULL,
+    version VARCHAR(20) NOT NULL,
+    contenido_url VARCHAR(255) NOT NULL,
+    fecha_publicacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_vigencia TIMESTAMP WITH TIME ZONE NOT NULL,
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1)),
+    CONSTRAINT uq_documentos_tipo_version UNIQUE (tipo_documento, version)
+);
+
+-- 8. ACEPTACIONES_LEGALES
+CREATE TABLE IF NOT EXISTS aceptaciones_legales (
+    id_aceptacion BIGSERIAL PRIMARY KEY,
+    id_usuario BIGINT NOT NULL REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_documento BIGINT NOT NULL REFERENCES documentos_legales(id_documento) ON UPDATE CASCADE ON DELETE RESTRICT,
+    fecha_aceptacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip VARCHAR(45),
+    user_agent VARCHAR(255),
+    CONSTRAINT uq_aceptacion_usuario_documento UNIQUE (id_usuario, id_documento)
+);
+
+-- 9. SOLICITUDES_DATOS_PERSONALES (ARCO)
+CREATE TABLE IF NOT EXISTS solicitudes_datos_personales (
+    id_solicitud BIGSERIAL PRIMARY KEY,
+    id_usuario BIGINT NOT NULL REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    tipo_solicitud VARCHAR(30) NOT NULL CHECK (tipo_solicitud IN ('ACCESO', 'RECTIFICACION', 'CANCELACION', 'OPOSICION')),
+    detalle TEXT NOT NULL,
+    fecha_solicitud TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_respuesta TIMESTAMP WITH TIME ZONE,
+    respuesta TEXT,
+    estado VARCHAR(20) NOT NULL DEFAULT 'REGISTRADA' CHECK (estado IN ('REGISTRADA', 'EN_REVISION', 'ATENDIDA', 'RECHAZADA', 'CERRADA'))
+);
+
+-- 10. RECLAMACIONES (Libro de Reclamaciones Indecopi)
+CREATE TABLE IF NOT EXISTS reclamaciones (
+    id_reclamacion BIGSERIAL PRIMARY KEY,
+    codigo_reclamacion VARCHAR(40) UNIQUE NOT NULL,
+    id_usuario BIGINT REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_establecimiento BIGINT REFERENCES establecimientos(id_establecimiento) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_sucursal BIGINT REFERENCES sucursales(id_sucursal) ON UPDATE CASCADE ON DELETE RESTRICT,
+    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('RECLAMO', 'QUEJA')),
+    nombres_consumidor VARCHAR(120) NOT NULL,
+    apellidos_consumidor VARCHAR(120) NOT NULL,
+    tipo_documento VARCHAR(20),
+    numero_documento VARCHAR(20),
+    telefono VARCHAR(20),
+    email VARCHAR(150) NOT NULL,
+    descripcion_bien_servicio TEXT,
+    monto_reclamado NUMERIC(10,2) CHECK (monto_reclamado IS NULL OR monto_reclamado >= 0),
+    detalle TEXT NOT NULL,
+    pedido_consumidor TEXT NOT NULL,
+    respuesta_proveedor TEXT,
+    fecha_registro TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_limite_respuesta DATE,
+    fecha_respuesta TIMESTAMP WITH TIME ZONE,
+    estado VARCHAR(20) NOT NULL DEFAULT 'REGISTRADO' CHECK (estado IN ('REGISTRADO', 'EN_REVISION', 'RESPONDIDO', 'CERRADO'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_reclamaciones_estado ON reclamaciones(estado);
+CREATE INDEX IF NOT EXISTS idx_reclamaciones_fecha ON reclamaciones(fecha_registro);
+CREATE INDEX IF NOT EXISTS idx_reclamaciones_establecimiento ON reclamaciones(id_establecimiento);
 
 -- =================================================================================
--- ROW LEVEL SECURITY
+-- BLOQUE 2: PERSONAL POR SEDE, HARDWARE NFC Y PROGRAMAS DE FIDELIZACIÓN
 -- =================================================================================
 
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM usuarios u
-    JOIN roles r ON u.rol_id = r.id
-    WHERE u.id = auth.uid()
-      AND UPPER(r.nombre) = 'ADMIN'
-      AND u.estado = 'ACTIVO'
-  );
-$$;
+-- 11. USUARIO_SUCURSAL
+CREATE TABLE IF NOT EXISTS usuario_sucursal (
+    id_usuario_sucursal BIGSERIAL PRIMARY KEY,
+    id_usuario BIGINT NOT NULL REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_sucursal BIGINT NOT NULL REFERENCES sucursales(id_sucursal) ON UPDATE CASCADE ON DELETE RESTRICT,
+    fecha_asignacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1)),
+    CONSTRAINT uq_usuario_sucursal UNIQUE (id_usuario, id_sucursal)
+);
 
--- Habilitar RLS en todas las tablas
-ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categorias_establecimiento ENABLE ROW LEVEL SECURITY;
-ALTER TABLE niveles_pasaporte ENABLE ROW LEVEL SECURITY;
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE auth_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE qr_consumidos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tarjetas_nfc ENABLE ROW LEVEL SECURITY;
-ALTER TABLE establecimientos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE personal_establecimiento ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reglas_sellos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE recompensas_plataforma ENABLE ROW LEVEL SECURITY;
-ALTER TABLE historial_canjes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE historial_visitas_sellos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE publicaciones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE historias ENABLE ROW LEVEL SECURITY;
-ALTER TABLE interacciones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE denuncias_moderacion ENABLE ROW LEVEL SECURITY;
-ALTER TABLE amistades ENABLE ROW LEVEL SECURITY;
-ALTER TABLE libro_reclamaciones ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_usuario_sucursal_usuario ON usuario_sucursal(id_usuario);
+CREATE INDEX IF NOT EXISTS idx_usuario_sucursal_sucursal ON usuario_sucursal(id_sucursal);
 
--- =====================================================
--- ADMIN → acceso total
--- =====================================================
-CREATE POLICY "Admin full access on roles" ON roles FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on categorias" ON categorias_establecimiento FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on niveles" ON niveles_pasaporte FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on usuarios" ON usuarios FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on auth_tokens" ON auth_tokens FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on qr_consumidos" ON qr_consumidos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on tarjetas_nfc" ON tarjetas_nfc FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on establecimientos" ON establecimientos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on personal" ON personal_establecimiento FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on reglas_sellos" ON reglas_sellos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on recompensas" ON recompensas_plataforma FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on historial_canjes" ON historial_canjes FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on historial_visitas" ON historial_visitas_sellos FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on publicaciones" ON publicaciones FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on historias" ON historias FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on interacciones" ON interacciones FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on denuncias" ON denuncias_moderacion FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on amistades" ON amistades FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "Admin full access on libro_reclamaciones" ON libro_reclamaciones FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+-- 12. TARJETAS_NFC
+CREATE TABLE IF NOT EXISTS tarjetas_nfc (
+    id_tarjeta BIGSERIAL PRIMARY KEY,
+    id_cliente BIGINT REFERENCES clientes(id_cliente) ON UPDATE CASCADE ON DELETE RESTRICT,
+    uid_nfc VARCHAR(100) UNIQUE NOT NULL,
+    codigo_interno VARCHAR(50) UNIQUE NOT NULL,
+    es_principal SMALLINT NOT NULL DEFAULT 0 CHECK (es_principal IN (0,1)),
+    estado VARCHAR(20) NOT NULL DEFAULT 'DISPONIBLE' CHECK (estado IN ('DISPONIBLE', 'ACTIVA', 'BLOQUEADA', 'PERDIDA', 'DANADA', 'REEMPLAZADA')),
+    fecha_activacion TIMESTAMP WITH TIME ZONE,
+    fecha_bloqueo TIMESTAMP WITH TIME ZONE,
+    motivo_bloqueo VARCHAR(255),
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
--- =====================================================
--- CLIENTE → solo lo necesario
--- =====================================================
+CREATE INDEX IF NOT EXISTS idx_tarjetas_cliente ON tarjetas_nfc(id_cliente);
+CREATE INDEX IF NOT EXISTS idx_tarjetas_estado ON tarjetas_nfc(estado);
 
--- 1. Ver y editar su propio perfil
-CREATE POLICY "Cliente ve su perfil"
-ON usuarios FOR SELECT
-USING (id = auth.uid());
+-- 13. HISTORIAL_TARJETA_NFC
+CREATE TABLE IF NOT EXISTS historial_tarjeta_nfc (
+    id_historial BIGSERIAL PRIMARY KEY,
+    id_tarjeta BIGINT NOT NULL REFERENCES tarjetas_nfc(id_tarjeta) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_usuario_accion BIGINT REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    accion VARCHAR(30) NOT NULL CHECK (accion IN ('REGISTRO', 'ASIGNACION', 'ACTIVACION', 'BLOQUEO', 'PERDIDA', 'DANO', 'REEMPLAZO', 'REACTIVACION')),
+    estado_anterior VARCHAR(20),
+    estado_nuevo VARCHAR(20) NOT NULL,
+    motivo VARCHAR(255),
+    fecha_hora TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE POLICY "Cliente edita sus datos personales"
-ON usuarios FOR UPDATE
-USING (id = auth.uid())
-WITH CHECK (id = auth.uid());
+CREATE INDEX IF NOT EXISTS idx_historial_tarjeta_id ON historial_tarjeta_nfc(id_tarjeta);
+CREATE INDEX IF NOT EXISTS idx_historial_usuario_id ON historial_tarjeta_nfc(id_usuario_accion);
 
--- 2. Ver y gestionar su propia tarjeta NFC (vincular + diseño)
-CREATE POLICY "Cliente ve su tarjeta NFC"
-ON tarjetas_nfc FOR SELECT
-USING (usuario_id = auth.uid());
+-- 14. PROGRAMAS_SELLOS
+CREATE TABLE IF NOT EXISTS programas_sellos (
+    id_programa BIGSERIAL PRIMARY KEY,
+    id_establecimiento BIGINT NOT NULL REFERENCES establecimientos(id_establecimiento) ON UPDATE CASCADE ON DELETE RESTRICT,
+    nombre VARCHAR(120) NOT NULL,
+    descripcion VARCHAR(255),
+    meta_sellos INT NOT NULL CHECK (meta_sellos > 0),
+    max_sellos_visita INT NOT NULL DEFAULT 1 CHECK (max_sellos_visita > 0),
+    max_sellos_dia INT,
+    nombre_sello VARCHAR(100),
+    imagen_sello VARCHAR(255) NOT NULL,
+    color_sello VARCHAR(20),
+    fecha_inicio TIMESTAMP WITH TIME ZONE NOT NULL,
+    fecha_fin TIMESTAMP WITH TIME ZONE,
+    estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('BORRADOR', 'ACTIVO', 'INACTIVO', 'FINALIZADO')),
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE POLICY "Cliente actualiza su tarjeta NFC"
-ON tarjetas_nfc FOR UPDATE
-USING (usuario_id = auth.uid())
-WITH CHECK (usuario_id = auth.uid());
+CREATE INDEX IF NOT EXISTS idx_programas_establecimiento ON programas_sellos(id_establecimiento);
+CREATE INDEX IF NOT EXISTS idx_programas_estado ON programas_sellos(estado);
 
-CREATE POLICY "Cliente vincula tarjeta NFC"
-ON tarjetas_nfc FOR INSERT
-WITH CHECK (usuario_id = auth.uid());
+-- 15. REGLAS_PUNTOS
+CREATE TABLE IF NOT EXISTS reglas_puntos (
+    id_regla BIGSERIAL PRIMARY KEY,
+    id_programa BIGINT NOT NULL REFERENCES programas_sellos(id_programa) ON UPDATE CASCADE ON DELETE RESTRICT,
+    nombre VARCHAR(120) NOT NULL,
+    tipo_regla VARCHAR(30) NOT NULL CHECK (tipo_regla IN ('POR_SELLO', 'POR_VISITA', 'POR_MONTO', 'BONIFICACION')),
+    valor NUMERIC(10,2) NOT NULL,
+    limite_diario NUMERIC(10,2),
+    fecha_inicio TIMESTAMP WITH TIME ZONE,
+    fecha_fin TIMESTAMP WITH TIME ZONE,
+    prioridad INT NOT NULL DEFAULT 1,
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1)),
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
--- 3. Ver recompensas disponibles
-CREATE POLICY "Cliente ve recompensas"
-ON recompensas_plataforma FOR SELECT
-USING (estado = 'ACTIVA');
+CREATE INDEX IF NOT EXISTS idx_reglas_programa ON reglas_puntos(id_programa);
 
--- 4. Reclamar regalos
-CREATE POLICY "Cliente ve sus canjes"
-ON historial_canjes FOR SELECT
-USING (usuario_id = auth.uid());
+-- =================================================================================
+-- BLOQUE 3: VISITAS, SELLOS DIGITALES Y MOVIMIENTOS DE PUNTOS
+-- =================================================================================
 
-CREATE POLICY "Cliente reclama regalos"
-ON historial_canjes FOR INSERT
-WITH CHECK (usuario_id = auth.uid());
+-- 16. VISITAS
+CREATE TABLE IF NOT EXISTS visitas (
+    id_visita BIGSERIAL PRIMARY KEY,
+    id_cliente BIGINT NOT NULL REFERENCES clientes(id_cliente) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_tarjeta BIGINT NOT NULL REFERENCES tarjetas_nfc(id_tarjeta) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_sucursal BIGINT NOT NULL REFERENCES sucursales(id_sucursal) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_usuario_validador BIGINT NOT NULL REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    fecha_hora TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    estado VARCHAR(20) NOT NULL DEFAULT 'CONFIRMADA' CHECK (estado IN ('CONFIRMADA', 'ANULADA')),
+    observacion VARCHAR(255),
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
--- 5. Ver niveles (para mostrar su rango)
-CREATE POLICY "Cliente ve niveles"
-ON niveles_pasaporte FOR SELECT
-USING (true);
+CREATE INDEX IF NOT EXISTS idx_visitas_cliente ON visitas(id_cliente);
+CREATE INDEX IF NOT EXISTS idx_visitas_tarjeta ON visitas(id_tarjeta);
+CREATE INDEX IF NOT EXISTS idx_visitas_sucursal ON visitas(id_sucursal);
+CREATE INDEX IF NOT EXISTS idx_visitas_validador ON visitas(id_usuario_validador);
+CREATE INDEX IF NOT EXISTS idx_visitas_fecha_hora ON visitas(fecha_hora);
+CREATE INDEX IF NOT EXISTS idx_visitas_estado ON visitas(estado);
+
+-- 17. SELLOS_DIGITALES
+CREATE TABLE IF NOT EXISTS sellos_digitales (
+    id_sello BIGSERIAL PRIMARY KEY,
+    id_visita BIGINT NOT NULL REFERENCES visitas(id_visita) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_programa BIGINT NOT NULL REFERENCES programas_sellos(id_programa) ON UPDATE CASCADE ON DELETE RESTRICT,
+    numero_sello INT,
+    cantidad INT NOT NULL DEFAULT 1,
+    fecha_otorgamiento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    estado VARCHAR(20) NOT NULL DEFAULT 'OTORGADO' CHECK (estado IN ('OTORGADO', 'ANULADO')),
+    fecha_anulacion TIMESTAMP WITH TIME ZONE,
+    motivo_anulacion VARCHAR(255),
+    CONSTRAINT uq_sello_visita_programa UNIQUE (id_visita, id_programa)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sellos_visita ON sellos_digitales(id_visita);
+CREATE INDEX IF NOT EXISTS idx_sellos_programa ON sellos_digitales(id_programa);
+CREATE INDEX IF NOT EXISTS idx_sellos_fecha ON sellos_digitales(fecha_otorgamiento);
+CREATE INDEX IF NOT EXISTS idx_sellos_estado ON sellos_digitales(estado);
+
+-- 19. RECOMPENSAS (Declarada antes de movimientos por referencia FK opcional de canjes)
+CREATE TABLE IF NOT EXISTS recompensas (
+    id_recompensa BIGSERIAL PRIMARY KEY,
+    id_establecimiento BIGINT NOT NULL REFERENCES establecimientos(id_establecimiento) ON UPDATE CASCADE ON DELETE RESTRICT,
+    nombre VARCHAR(150) NOT NULL,
+    descripcion VARCHAR(255),
+    imagen VARCHAR(255),
+    puntos_requeridos INT NOT NULL CHECK (puntos_requeridos > 0),
+    stock INT,
+    stock_ilimitado SMALLINT NOT NULL DEFAULT 0 CHECK (stock_ilimitado IN (0,1)),
+    max_canjes_cliente INT,
+    max_canjes_dia INT,
+    fecha_inicio TIMESTAMP WITH TIME ZONE NOT NULL,
+    fecha_fin TIMESTAMP WITH TIME ZONE,
+    estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVA' CHECK (estado IN ('BORRADOR', 'ACTIVA', 'INACTIVA', 'VENCIDA')),
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_recompensas_establecimiento ON recompensas(id_establecimiento);
+CREATE INDEX IF NOT EXISTS idx_recompensas_estado ON recompensas(estado);
+
+-- 20. RECOMPENSA_SUCURSAL
+CREATE TABLE IF NOT EXISTS recompensa_sucursal (
+    id_recompensa_sucursal BIGSERIAL PRIMARY KEY,
+    id_recompensa BIGINT NOT NULL REFERENCES recompensas(id_recompensa) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_sucursal BIGINT NOT NULL REFERENCES sucursales(id_sucursal) ON UPDATE CASCADE ON DELETE RESTRICT,
+    estado SMALLINT NOT NULL DEFAULT 1 CHECK (estado IN (0,1)),
+    CONSTRAINT uq_recompensa_sucursal UNIQUE (id_recompensa, id_sucursal)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rec_suc_recompensa ON recompensa_sucursal(id_recompensa);
+CREATE INDEX IF NOT EXISTS idx_rec_suc_sucursal ON recompensa_sucursal(id_sucursal);
+
+-- 21. CANJES
+CREATE TABLE IF NOT EXISTS canjes (
+    id_canje BIGSERIAL PRIMARY KEY,
+    id_cliente BIGINT NOT NULL REFERENCES clientes(id_cliente) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_recompensa BIGINT NOT NULL REFERENCES recompensas(id_recompensa) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_sucursal BIGINT REFERENCES sucursales(id_sucursal) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_usuario_validador BIGINT REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    codigo_canje VARCHAR(60) UNIQUE NOT NULL,
+    puntos_canje INT NOT NULL,
+    fecha_solicitud TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_expiracion TIMESTAMP WITH TIME ZONE,
+    fecha_validacion TIMESTAMP WITH TIME ZONE,
+    fecha_cancelacion TIMESTAMP WITH TIME ZONE,
+    estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'CANJEADO', 'CANCELADO', 'VENCIDO')),
+    motivo_cancelacion VARCHAR(255),
+    observacion VARCHAR(255)
+);
+
+CREATE INDEX IF NOT EXISTS idx_canjes_cliente ON canjes(id_cliente);
+CREATE INDEX IF NOT EXISTS idx_canjes_recompensa ON canjes(id_recompensa);
+CREATE INDEX IF NOT EXISTS idx_canjes_sucursal ON canjes(id_sucursal);
+CREATE INDEX IF NOT EXISTS idx_canjes_validador ON canjes(id_usuario_validador);
+CREATE INDEX IF NOT EXISTS idx_canjes_estado ON canjes(estado);
+CREATE INDEX IF NOT EXISTS idx_canjes_fecha_solicitud ON canjes(fecha_solicitud);
+
+-- 18. MOVIMIENTOS_PUNTOS
+CREATE TABLE IF NOT EXISTS movimientos_puntos (
+    id_movimiento BIGSERIAL PRIMARY KEY,
+    id_cliente BIGINT NOT NULL REFERENCES clientes(id_cliente) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_programa BIGINT REFERENCES programas_sellos(id_programa) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_visita BIGINT REFERENCES visitas(id_visita) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_sello BIGINT REFERENCES sellos_digitales(id_sello) ON UPDATE CASCADE ON DELETE RESTRICT,
+    id_canje BIGINT REFERENCES canjes(id_canje) ON UPDATE CASCADE ON DELETE RESTRICT,
+    tipo_movimiento VARCHAR(30) NOT NULL CHECK (tipo_movimiento IN ('GANANCIA_VISITA', 'GANANCIA_SELLO', 'BONIFICACION', 'CANJE', 'AJUSTE_POSITIVO', 'AJUSTE_NEGATIVO', 'REVERSO')),
+    cantidad INT NOT NULL,
+    saldo_anterior INT NOT NULL,
+    saldo_posterior INT NOT NULL,
+    descripcion VARCHAR(255),
+    fecha_movimiento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_usuario_accion BIGINT REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_movimientos_cliente ON movimientos_puntos(id_cliente);
+CREATE INDEX IF NOT EXISTS idx_movimientos_programa ON movimientos_puntos(id_programa);
+CREATE INDEX IF NOT EXISTS idx_movimientos_visita ON movimientos_puntos(id_visita);
+CREATE INDEX IF NOT EXISTS idx_movimientos_sello ON movimientos_puntos(id_sello);
+CREATE INDEX IF NOT EXISTS idx_movimientos_canje ON movimientos_puntos(id_canje);
+CREATE INDEX IF NOT EXISTS idx_movimientos_fecha ON movimientos_puntos(fecha_movimiento);
+CREATE INDEX IF NOT EXISTS idx_movimientos_tipo ON movimientos_puntos(tipo_movimiento);
+
+-- =================================================================================
+-- BLOQUE 5: NOTIFICACIONES Y AUDITORÍA GENERAL
+-- =================================================================================
+
+-- 22. NOTIFICACIONES
+CREATE TABLE IF NOT EXISTS notificaciones (
+    id_notificacion BIGSERIAL PRIMARY KEY,
+    id_usuario BIGINT NOT NULL REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE RESTRICT,
+    tipo_notificacion VARCHAR(40) NOT NULL CHECK (tipo_notificacion IN ('SELLO_OBTENIDO', 'PUNTOS_GANADOS', 'CANJE_GENERADO', 'CANJE_UTILIZADO', 'CANJE_VENCIMIENTO', 'RECOMPENSA_DISPONIBLE', 'TARJETA_BLOQUEADA', 'TARJETA_REEMPLAZADA', 'RECLAMACION_RESPONDIDA', 'SISTEMA')),
+    titulo VARCHAR(150) NOT NULL,
+    mensaje VARCHAR(500) NOT NULL,
+    canal VARCHAR(20) NOT NULL DEFAULT 'APP' CHECK (canal IN ('APP', 'EMAIL', 'PUSH')),
+    estado_envio VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE' CHECK (estado_envio IN ('PENDIENTE', 'ENVIADA', 'FALLIDA')),
+    leida SMALLINT NOT NULL DEFAULT 0 CHECK (leida IN (0,1)),
+    fecha_programada TIMESTAMP WITH TIME ZONE,
+    fecha_envio TIMESTAMP WITH TIME ZONE,
+    fecha_lectura TIMESTAMP WITH TIME ZONE,
+    referencia_tipo VARCHAR(30),
+    referencia_id BIGINT,
+    fecha_creacion TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notificaciones_usuario ON notificaciones(id_usuario);
+CREATE INDEX IF NOT EXISTS idx_notificaciones_tipo ON notificaciones(tipo_notificacion);
+CREATE INDEX IF NOT EXISTS idx_notificaciones_estado_envio ON notificaciones(estado_envio);
+CREATE INDEX IF NOT EXISTS idx_notificaciones_leida ON notificaciones(leida);
+CREATE INDEX IF NOT EXISTS idx_notificaciones_fecha_creacion ON notificaciones(fecha_creacion);
+
+-- 23. AUDITORIA
+CREATE TABLE IF NOT EXISTS auditoria (
+    id_auditoria BIGSERIAL PRIMARY KEY,
+    id_usuario BIGINT REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE SET NULL,
+    modulo VARCHAR(50) NOT NULL CHECK (modulo IN ('USUARIOS', 'CLIENTES', 'ESTABLECIMIENTOS', 'SUCURSALES', 'NFC', 'PROGRAMAS', 'VISITAS', 'SELLOS', 'PUNTOS', 'RECOMPENSAS', 'CANJES', 'RECLAMACIONES', 'DOCUMENTOS_LEGALES', 'CONFIGURACION')),
+    accion VARCHAR(50) NOT NULL CHECK (accion IN ('CREAR', 'EDITAR', 'ACTIVAR', 'DESACTIVAR', 'BLOQUEAR', 'REEMPLAZAR', 'CONFIRMAR', 'ANULAR', 'CANJEAR', 'RESPONDER', 'LOGIN', 'LOGIN_FALLIDO', 'CAMBIO_ESTADO', 'AJUSTE_PUNTOS')),
+    entidad VARCHAR(50),
+    id_entidad BIGINT,
+    descripcion VARCHAR(500),
+    datos_anteriores JSONB,
+    datos_nuevos JSONB,
+    ip VARCHAR(45),
+    user_agent VARCHAR(255),
+    fecha_hora TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria(id_usuario);
+CREATE INDEX IF NOT EXISTS idx_auditoria_modulo ON auditoria(modulo);
+CREATE INDEX IF NOT EXISTS idx_auditoria_accion ON auditoria(accion);
+CREATE INDEX IF NOT EXISTS idx_auditoria_fecha_hora ON auditoria(fecha_hora);

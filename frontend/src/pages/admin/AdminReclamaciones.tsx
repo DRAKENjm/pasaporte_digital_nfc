@@ -236,7 +236,7 @@ export const AdminReclamaciones: React.FC = () => {
       </div>
 
       {/* Tabla de Reclamaciones */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xs overflow-hidden">
+      <div className="table-card-container">
         {loading ? (
           <div className="py-16 flex flex-col items-center justify-center">
             <Spinner size={32} />

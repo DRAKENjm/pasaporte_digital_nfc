@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { EmailService } from "../services/email.service";
 import { UserModel } from "../models/user.model";
 import {
   ApiError,
@@ -10,30 +9,27 @@ import {
   sendResponse,
 } from "../utils";
 import { AuthenticatedRequest } from "../types";
+import { query } from "../config/database";
 
 export const AuthController = {
   async register(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email, password, nombres, apellidos, roleName } = req.body;
+      const { email, password, nombres, apellidos, telefono, roleName } = req.body;
 
       if (!email || !password || !nombres || !apellidos) {
         throw new ApiError(400, "Completa todos los campos obligatorios");
       }
 
       if (
-        ![email, password, nombres, apellidos].every(
-          (v) => typeof v === "string",
-        ) ||
         !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
         !nombres.trim() ||
         !apellidos.trim()
-      )
+      ) {
         throw new ApiError(400, "Datos de registro inválidos");
-      if (password.length < 8 || password.length > 72) {
-        throw new ApiError(
-          400,
-          "La contraseña debe tener entre 8 y 72 caracteres",
-        );
+      }
+
+      if (password.length < 6 || password.length > 72) {
+        throw new ApiError(400, "La contraseña debe tener al menos 6 caracteres");
       }
 
       const existing = await UserModel.findByEmail(email.toLowerCase().trim());
@@ -47,37 +43,38 @@ export const AuthController = {
         hashed,
         nombres.trim(),
         apellidos.trim(),
-        "CLIENTE",
+        roleName || "CLIENTE",
+        telefono,
       );
 
-      const verifyToken = jwt.sign(
-        { id: user.id, email: user.email, purpose: "verify-email" },
-        process.env.JWT_SECRET!,
-        { expiresIn: "1d" },
+      // Registrar auditoría
+      await query(
+        `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion, ip, user_agent)
+         VALUES ($1, 'USUARIOS', 'CREAR', 'usuarios', $1, 'Registro de nuevo usuario', $2, $3)`,
+        [user.id_usuario, req.ip || null, req.headers["user-agent"] || null],
       );
-      if (
-        process.env.REQUIRE_EMAIL_VERIFICATION === "false" &&
-        process.env.NODE_ENV !== "production"
-      )
-        await UserModel.verifyEmail(user.id);
-      else {
-        const delivery = await EmailService.sendVerificationEmail(
-          user.email,
-          verifyToken,
-        );
-        if (!delivery.success)
-          throw new ApiError(
-            503,
-            "La cuenta se creó, pero falló el correo. Contacta al administrador para verificarla.",
-          );
-      }
 
-      sendResponse(
-        res,
-        201,
-        null,
-        "Usuario registrado con éxito. Por favor, revisa tu correo electrónico para verificar tu cuenta.",
-      );
+      const token = generateToken({
+        id: user.id_usuario,
+        email: user.email,
+        role: user.rol_nombre,
+        nombres: user.nombres,
+        apellidos: user.apellidos,
+        id_cliente: user.id_cliente,
+      });
+
+      sendResponse(res, 201, {
+        user: {
+          id: user.id_usuario,
+          email: user.email,
+          nombres: user.nombres,
+          apellidos: user.apellidos,
+          role: user.rol_nombre,
+          id_cliente: user.id_cliente,
+          codigo_cliente: user.codigo_cliente,
+        },
+        token,
+      });
     } catch (error) {
       next(error);
     }
@@ -85,198 +82,125 @@ export const AuthController = {
 
   async login(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email, password } = req.body;
+      const email = req.body.email || req.body.identifier;
+      const { password } = req.body;
 
-      if (
-        typeof email !== "string" ||
-        typeof password !== "string" ||
-        !email ||
-        !password
-      ) {
-        throw new ApiError(400, "Ingresa correo y contraseña");
+      if (!email || !password) {
+        throw new ApiError(400, "Ingresa email y contraseña");
       }
 
-      const user = await UserModel.findByEmail(email.toLowerCase().trim());
-      if (!user || (user.estado !== undefined && user.estado !== "ACTIVO")) {
+      const user = await UserModel.findByEmail(String(email).toLowerCase().trim());
+      if (!user) {
         throw new ApiError(401, "Credenciales incorrectas");
+      }
+
+      if (user.estado !== 1) {
+        throw new ApiError(403, "Tu cuenta no está activa o se encuentra suspendida");
       }
 
       const valid = await comparePassword(password, user.password_hash);
       if (!valid) {
+        await query(
+          `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion, ip, user_agent)
+           VALUES ($1, 'USUARIOS', 'LOGIN_FALLIDO', 'usuarios', $1, 'Intento de login con contraseña incorrecta', $2, $3)`,
+          [user.id_usuario, req.ip || null, req.headers["user-agent"] || null],
+        );
         throw new ApiError(401, "Credenciales incorrectas");
       }
 
-      if (user.email_verificado === false) {
-        throw new ApiError(
-          401,
-          "Por favor, verifica tu correo electrónico para poder iniciar sesión.",
-        );
-      }
+      await UserModel.updateUltimoAcceso(user.id_usuario);
 
-      // Enviar notificación de seguridad
-      const ip =
-        req.headers["x-forwarded-for"] ||
-        req.socket.remoteAddress ||
-        "Desconocida";
-      const device = req.headers["user-agent"] || "Desconocido";
-      EmailService.sendLoginNotification(
-        user.email,
-        ip as string,
-        device,
-      ).catch((e) => console.error(e));
-
-      if (user.estado !== undefined && user.estado !== "ACTIVO")
-        throw new ApiError(403, "Cuenta bloqueada");
       const token = generateToken({
-        id: user.id,
+        id: user.id_usuario,
         email: user.email,
         role: user.rol_nombre,
         nombres: user.nombres,
         apellidos: user.apellidos,
+        id_cliente: user.id_cliente,
       });
 
-      sendResponse(
-        res,
-        200,
-        {
-          token,
-          user: {
-            id: user.id,
-            email: user.email,
-            nombres: user.nombres,
-            apellidos: user.apellidos,
-            rol: user.rol_nombre,
-            total_sellos: user.total_sellos,
-            puntos_globales: user.puntos_globales,
-            nivel: user.nivel_nombre,
-            avatar_url: user.avatar_url || null,
-          },
+      sendResponse(res, 200, {
+        user: {
+          id: user.id_usuario,
+          email: user.email,
+          nombres: user.nombres,
+          apellidos: user.apellidos,
+          role: user.rol_nombre,
+          id_cliente: user.id_cliente,
+          codigo_cliente: user.codigo_cliente,
         },
-        "Sesión iniciada",
-      );
+        token,
+      });
     } catch (error) {
       next(error);
     }
   },
 
-  async getProfile(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
+  async getProfile(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      if (!req.user) throw new ApiError(401, "No autenticado");
-      const user = await UserModel.findById(req.user.id);
-      if (!user) throw new ApiError(404, "Usuario no encontrado");
-      sendResponse(res, 200, user, "Perfil obtenido");
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  async googleLogin(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { credential, idToken } = req.body;
-      const tokenToVerify = credential || idToken;
-
-      if (!tokenToVerify) {
-        throw new ApiError(400, "Token de Google (credential) es requerido");
-      }
-
-      // Verificación real del token de Google
-      const { verifyGoogleIdToken } =
-        await import("../services/googleAuth.service");
-      const profile = await verifyGoogleIdToken(tokenToVerify);
-
-      const cleanEmail = profile.email.toLowerCase().trim();
-      const assignedRole = "CLIENTE";
-
-      let user = await UserModel.findByEmail(cleanEmail);
-
+      const user = await UserModel.findById(req.user!.id);
       if (!user) {
-        const dummyHash = await hashPassword(
-          `google_oauth_${Date.now()}_${Math.random()}`,
-        );
-        user = await UserModel.createUser(
-          cleanEmail,
-          dummyHash,
-          profile.nombres.trim(),
-          profile.apellidos.trim(),
-          assignedRole,
-        );
-        await UserModel.verifyEmail(user.id);
-        user.email_verificado = true;
+        throw new ApiError(404, "Usuario no encontrado");
       }
 
-      if (user.estado !== undefined && user.estado !== "ACTIVO")
-        throw new ApiError(403, "Cuenta bloqueada");
-      const token = generateToken({
-        id: user.id,
+      // Calcular nivel según cantidad de visitas
+      const visitas = user.total_visitas || 0;
+      let nivelNombre = "Iniciador";
+      let nivelColor = "#C5A059";
+      let visitasSiguienteNivel = 5;
+
+      if (visitas >= 15) {
+        nivelNombre = "Maestro Pasaporte";
+        nivelColor = "#800020";
+        visitasSiguienteNivel = 30;
+      } else if (visitas >= 5) {
+        nivelNombre = "Explorador";
+        nivelColor = "#D4AF37";
+        visitasSiguienteNivel = 15;
+      }
+
+      sendResponse(res, 200, {
+        id: user.id_usuario,
         email: user.email,
-        role: user.rol_nombre || assignedRole,
         nombres: user.nombres,
         apellidos: user.apellidos,
-      });
-
-      const ip =
-        req.headers["x-forwarded-for"] ||
-        req.socket.remoteAddress ||
-        "Desconocida";
-      const device = req.headers["user-agent"] || "Desconocido";
-      EmailService.sendLoginNotification(
-        user.email,
-        ip as string,
-        device,
-      ).catch((e) => console.error(e));
-
-      sendResponse(
-        res,
-        200,
-        {
-          token,
-          user: {
-            id: user.id,
-            email: user.email,
-            nombres: user.nombres,
-            apellidos: user.apellidos,
-            rol: user.rol_nombre || assignedRole,
-            total_sellos: user.total_sellos,
-            puntos_globales: user.puntos_globales,
-            nivel: user.nivel_nombre,
-            avatar_url: user.avatar_url || null,
-          },
+        telefono: user.telefono,
+        foto_perfil: user.foto_perfil,
+        role: user.rol_nombre,
+        id_cliente: user.id_cliente,
+        codigo_cliente: user.codigo_cliente,
+        puntos_actuales: user.puntos_actuales || 0,
+        total_visitas: user.total_visitas || 0,
+        total_sellos: user.total_sellos || 0,
+        locales_visitados: user.locales_visitados || 0,
+        tarjeta_activa: user.tarjeta_activa || null,
+        nivel: {
+          nombre: nivelNombre,
+          color: nivelColor,
+          visitas_actuales: visitas,
+          visitas_meta: visitasSiguienteNivel,
         },
-        "Sesión iniciada con Google",
-      );
+      });
     } catch (error) {
       next(error);
     }
   },
 
-  async verifyEmail(req: Request, res: Response, next: NextFunction) {
+  async updateProfile(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { token } = req.body;
-      if (!token) throw new ApiError(400, "Token de verificación requerido");
-
-      const secret = process.env.JWT_SECRET!;
-      let decoded: any;
-      try {
-        decoded = jwt.verify(token, secret);
-      } catch (err) {
-        throw new ApiError(401, "Token de verificación inválido o expirado");
-      }
-
-      if (decoded.purpose !== "verify-email")
-        throw new ApiError(401, "Token incorrecto");
-      const user = await UserModel.verifyEmail(decoded.id);
-      if (!user) throw new ApiError(404, "Usuario no encontrado");
-
-      sendResponse(
-        res,
-        200,
-        null,
-        "Correo electrónico verificado con éxito. Ya puedes iniciar sesión.",
+      const { nombres, apellidos, telefono, foto_perfil } = req.body;
+      const result = await query(
+        `UPDATE usuarios
+         SET nombres = COALESCE($2, nombres),
+             apellidos = COALESCE($3, apellidos),
+             telefono = COALESCE($4, telefono),
+             foto_perfil = COALESCE($5, foto_perfil),
+             fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_usuario = $1
+         RETURNING id_usuario, nombres, apellidos, telefono, foto_perfil`,
+        [req.user!.id, nombres?.trim() || null, apellidos?.trim() || null, telefono || null, foto_perfil || null],
       );
+      sendResponse(res, 200, result.rows[0]);
     } catch (error) {
       next(error);
     }

@@ -6,14 +6,21 @@ import { requireRoles } from "../middlewares/role.middleware";
 const router = Router();
 
 // Proteger todas las rutas administrativas
-router.use(authMiddleware, requireRoles("ADMIN"));
+router.use(authMiddleware, requireRoles("ADMIN", "ADMIN_GENERAL"));
 
 router.get("/dashboard", AdminController.dashboard);
 
 // Usuarios
 router.get("/usuarios", AdminController.listarUsuarios);
+router.post("/usuarios", AdminController.crearUsuario);
 router.patch("/usuarios/:id", AdminController.actualizarUsuario);
 router.delete("/usuarios/:id", AdminController.eliminarUsuario);
+
+// Locales y Establecimientos (Admin)
+router.get("/locales", AdminController.listarLocales);
+router.post("/locales", AdminController.crearLocal);
+router.patch("/locales/:id", AdminController.actualizarLocal);
+router.delete("/locales/:id", AdminController.eliminarLocal);
 
 // Tarjetas NFC
 router.get("/tarjetas", AdminController.listarTarjetas);
@@ -50,6 +57,12 @@ router.delete("/recompensas/:id", async (req, res, next) => {
 router.get("/niveles", AdminController.listarNiveles);
 router.get("/roles", AdminController.listarRoles);
 
+// ===== DISEÑO Y MODERACIÓN DE SELLOS DIGITALES =====
+router.get("/sellos", AdminController.listarSellos);
+router.post("/sellos", AdminController.crearSello);
+router.patch("/sellos/:id", AdminController.actualizarSello);
+router.delete("/sellos/:id", AdminController.eliminarSello);
+
 // ===== NUEVO: Reglas de sellos (puntos por sello, límites, temporada) =====
 router.get("/reglas-sellos", AdminController.listarReglasSellos);
 router.post("/reglas-sellos", AdminController.crearReglaSello);
@@ -66,8 +79,11 @@ router.delete("/categorias/:id", AdminController.eliminarCategoria);
 router.get("/canjes", AdminController.listarCanjes);
 router.patch("/canjes/:id/estado", AdminController.actualizarEstadoCanje);
 
-// ===== NOTIFICACIONES Y PENDIENTES =====
+// ===== NOTIFICACIONES, AUDITORÍA Y VISITAS =====
 router.get("/notificaciones", AdminController.resumenNotificaciones);
+router.get("/auditoria", AdminController.listarAuditoria);
+router.get("/documentos-legales", AdminController.listarDocumentosLegales);
+router.get("/visitas", AdminController.listarVisitas);
 
 // ===== SUBIDA DE ARCHIVOS / FOTOS (Locales, Recompensas, etc.) =====
 import multer from "multer";
@@ -107,7 +123,7 @@ const diskUpload = multer({
 router.post(
   "/upload",
   authMiddleware,
-  requireRoles("ADMIN"),
+  requireRoles("ADMIN", "ADMIN_GENERAL"),
   diskUpload.single("file"),
   (req, res, next) => {
     try {

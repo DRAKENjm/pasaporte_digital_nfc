@@ -276,7 +276,7 @@ export const AdminCategorias: React.FC = () => {
       </div>
 
       {/* Tabla de Categorías */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xs overflow-hidden">
+      <div className="table-card-container">
         {loading ? (
           <div className="py-16 flex flex-col items-center justify-center">
             <Spinner size={32} />
@@ -321,7 +321,7 @@ export const AdminCategorias: React.FC = () => {
                         {cat.nombre}
                       </p>
                       <p className="text-[11px] text-slate-400 font-mono">
-                        ID: {cat.id.slice(0, 8)}...
+                        ID: #{cat.id}
                       </p>
                     </td>
 

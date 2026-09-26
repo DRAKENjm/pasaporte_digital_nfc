@@ -12,11 +12,11 @@ router.post("/", ClaimsController.registrar);
 router.get("/track/:codigo", ClaimsController.consultarPorCodigo);
 
 // Endpoints protegidos para Administradores
-router.get("/", authMiddleware, requireRoles("ADMIN"), ClaimsController.listarAdmin);
+router.get("/", authMiddleware, requireRoles("ADMIN", "ADMIN_GENERAL"), ClaimsController.listarAdmin);
 router.patch(
   "/:id/responder",
   authMiddleware,
-  requireRoles("ADMIN"),
+  requireRoles("ADMIN", "ADMIN_GENERAL"),
   ClaimsController.responderAdmin,
 );
 

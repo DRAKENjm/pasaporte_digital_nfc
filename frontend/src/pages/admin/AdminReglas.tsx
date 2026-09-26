@@ -276,7 +276,7 @@ export const AdminReglas: React.FC = () => {
       </div>
 
       {/* Tabla de Reglas de Sellos */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xs overflow-hidden">
+      <div className="table-card-container">
         {loading ? (
           <div className="py-16 flex flex-col items-center justify-center">
             <Spinner size={32} />
@@ -327,7 +327,7 @@ export const AdminReglas: React.FC = () => {
                             {r.nombre_accion}
                           </p>
                           <p className="text-[10px] text-slate-400 font-mono">
-                            ID: {r.id.slice(0, 8)}...
+                            ID: #{r.id}
                           </p>
                         </div>
                       </div>

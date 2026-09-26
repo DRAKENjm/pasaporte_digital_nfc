@@ -49,6 +49,12 @@ export interface Establecimiento {
   ruc?: string;
   categoria_id?: string;
   categoria_nombre?: string;
+  categoria_icono?: string;
+  puntos_por_visita?: number;
+  nombre_sello?: string;
+  imagen_sello?: string;
+  color_sello?: string;
+  meta_sellos?: number;
   lat?: number;
   lng?: number;
   imagen_url?: string;
@@ -58,6 +64,9 @@ export interface Establecimiento {
   telefono?: string;
   horario?: string;
   google_maps_url?: string;
+  usuario_encargado_id?: string | number;
+  usuario_encargado_email?: string;
+  usuario_encargado_nombre?: string;
 }
 
 export interface ReglaSello {
@@ -104,6 +113,8 @@ export interface Recompensa {
   tipo_entrega?: string;
   direccion_recojo?: string;
   estado?: string;
+  id_establecimiento?: string | number | null;
+  establecimiento_nombre?: string | null;
 }
 
 export interface CanjeHistorial {

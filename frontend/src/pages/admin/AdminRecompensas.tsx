@@ -42,6 +42,7 @@ const emptyForm = {
   direccion_recojo: "",
   imagen_url: "",
   estado: "ACTIVA",
+  id_establecimiento: "",
 };
 
 export const AdminRecompensas: React.FC = () => {
@@ -54,6 +55,7 @@ export const AdminRecompensas: React.FC = () => {
   const [q, setQ] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [pagina, setPagina] = useState(1);
+  const [locales, setLocales] = useState<Array<{ id: string | number; nombre_comercial: string }>>([]);
 
   // Estado Canjes
   const [canjes, setCanjes] = useState<CanjeHistorial[]>([]);
@@ -95,9 +97,22 @@ export const AdminRecompensas: React.FC = () => {
   const loadCatalogo = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/admin/recompensas");
-      const rows = data?.data ?? data ?? [];
+      const [{ data: recompData }, localesRes] = await Promise.all([
+        api.get("/admin/recompensas"),
+        api.get("/admin/locales").catch(() => ({ data: [] })),
+      ]);
+      const rows = recompData?.data ?? recompData ?? [];
       setList(Array.isArray(rows) ? rows : []);
+
+      const locRows = localesRes?.data?.data ?? localesRes?.data ?? [];
+      if (Array.isArray(locRows)) {
+        setLocales(
+          locRows.map((l: any) => ({
+            id: l.id ?? l.id_establecimiento,
+            nombre_comercial: l.nombre_comercial ?? l.nombre ?? `Local #${l.id ?? l.id_establecimiento}`,
+          })),
+        );
+      }
     } catch {
       showToast("No se pudieron cargar las recompensas", "error");
     } finally {
@@ -202,6 +217,7 @@ export const AdminRecompensas: React.FC = () => {
       direccion_recojo: r.direccion_recojo ?? "",
       imagen_url: r.imagen_url ?? "",
       estado: r.estado ?? "ACTIVA",
+      id_establecimiento: r.id_establecimiento ? String(r.id_establecimiento) : "",
     });
     setErrors({});
     setModalEditar(true);
@@ -352,6 +368,36 @@ export const AdminRecompensas: React.FC = () => {
               setErrors({ ...errors, stock_disponible: "" });
           }}
         />
+      </div>
+
+      <div className="space-y-1.5 text-left">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Asignación o Ámbito *
+        </label>
+        <select
+          className="input-base text-xs w-full py-2.5 font-medium"
+          value={form.id_establecimiento}
+          onChange={(e) => {
+            const val = e.target.value;
+            setForm({
+              ...form,
+              id_establecimiento: val,
+              tipo_entrega: val ? "RETIRO_LOCAL" : "OFICINA_CENTRAL",
+            });
+          }}
+        >
+          <option value="">🏢 Oficina Central (Global / Pasaporte Digital)</option>
+          {locales.map((loc) => (
+            <option key={loc.id} value={loc.id}>
+              📍 {loc.nombre_comercial}
+            </option>
+          ))}
+        </select>
+        <p className="text-[11px] text-slate-400">
+          {form.id_establecimiento
+            ? "Recompensa exclusiva del local afiliado seleccionado."
+            : "Recompensa global gestionada directamente por Oficina Central."}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -559,7 +605,7 @@ export const AdminRecompensas: React.FC = () => {
           </div>
 
           {/* Tabla Catálogo */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xs overflow-hidden">
+          <div className="table-card-container">
             {loading ? (
               <div className="py-16 flex flex-col items-center justify-center">
                 <Spinner size={32} />
@@ -644,14 +690,28 @@ export const AdminRecompensas: React.FC = () => {
                         </td>
 
                         <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 font-medium">
-                            <Truck className="w-3.5 h-3.5 text-slate-400" />
-                            {r.tipo_entrega === "OFICINA_CENTRAL"
-                              ? "Oficina Central"
-                              : r.tipo_entrega === "ENVIO"
-                              ? "Envío a Domicilio"
-                              : "Retiro en Local"}
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1.5 text-xs text-slate-800 dark:text-slate-200 font-semibold">
+                              {r.establecimiento_nombre && r.establecimiento_nombre !== "General" ? (
+                                <>
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                  <span>{r.establecimiento_nombre}</span>
+                                </>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#7C0A1E]/10 text-[#7C0A1E] dark:bg-rose-950/40 dark:text-rose-300">
+                                  OFICINA CENTRAL
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                              <Truck className="w-3 h-3" />
+                              {r.tipo_entrega === "OFICINA_CENTRAL"
+                                ? "Presencial"
+                                : r.tipo_entrega === "ENVIO"
+                                ? "Envío a Domicilio"
+                                : "Retiro en Local"}
+                            </span>
+                          </div>
                         </td>
 
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
@@ -789,7 +849,7 @@ export const AdminRecompensas: React.FC = () => {
           </div>
 
           {/* Tabla Canjes */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xs overflow-hidden">
+          <div className="table-card-container">
             {loadingCanjes ? (
               <div className="py-16 flex flex-col items-center justify-center">
                 <Spinner size={32} />

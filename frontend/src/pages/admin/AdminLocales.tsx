@@ -26,6 +26,7 @@ import {
   Upload,
   X,
   Loader2,
+  ShieldCheck,
 } from "lucide-react";
 
 const ITEMS_PER_PAGE = 10;
@@ -40,7 +41,15 @@ const emptyForm = {
   horario: "",
   categoria_id: "",
   imagen_url: "",
+  puntos_por_visita: 20,
   estado: "ACTIVO",
+};
+
+const isValidGoogleMapsUrl = (url: string): boolean => {
+  if (!url.trim()) return false;
+  return /^(https?:\/\/)?([a-zA-Z0-9.-]+\.)?(google\.com(\.[a-z]+)?|goo\.gl)\/(maps|maps\/place|maps\/search|search\/|\?|app)?/i.test(
+    url.trim(),
+  ) || url.includes("maps.app.goo.gl") || url.includes("google.com/maps");
 };
 
 const parseGoogleMapsUrl = (url: string): { lat: number; lng: number } | null => {
@@ -48,7 +57,9 @@ const parseGoogleMapsUrl = (url: string): { lat: number; lng: number } | null =>
   const patterns = [
     /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
     /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+    /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
     /maps\?.*ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+    /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
     /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
   ];
   for (const pat of patterns) {
@@ -86,12 +97,56 @@ export const AdminLocales = () => {
   const [staff, setStaff] = useState("");
 
   const [categorias, setCategorias] = useState<
-    { id: string; nombre: string }[]
+    { id: string | number; nombre: string; icono_url?: string }[]
   >([]);
+
+  // Modal para creación rápida de usuario COMERCIO
+  const [modalNuevoUsuario, setModalNuevoUsuario] = useState(false);
+  const [nuevoUsuarioNombres, setNuevoUsuarioNombres] = useState("");
+  const [nuevoUsuarioApellidos, setNuevoUsuarioApellidos] = useState("");
+  const [nuevoUsuarioEmail, setNuevoUsuarioEmail] = useState("");
+  const [nuevoUsuarioTelefono, setNuevoUsuarioTelefono] = useState("");
+  const [nuevoUsuarioPassword, setNuevoUsuarioPassword] = useState("Local2026!");
+  const [creandoUsuario, setCreandoUsuario] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { showToast } = useUI();
+
+  const handleCrearUsuarioRapido = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevoUsuarioNombres.trim() || !nuevoUsuarioApellidos.trim() || !nuevoUsuarioEmail.trim()) {
+      showToast("Completa nombres, apellidos y correo electrónico", "error");
+      return;
+    }
+    setCreandoUsuario(true);
+    try {
+      const res = await api.post("/admin/usuarios", {
+        nombres: nuevoUsuarioNombres.trim(),
+        apellidos: nuevoUsuarioApellidos.trim(),
+        email: nuevoUsuarioEmail.trim().toLowerCase(),
+        telefono: nuevoUsuarioTelefono.trim() || null,
+        password: nuevoUsuarioPassword.trim() || "Local2026!",
+        rol: "COMERCIO",
+      });
+      const nuevo = res.data?.data || res.data;
+      if (nuevo) {
+        setUsers((prev) => [nuevo, ...prev]);
+        setStaff(String(nuevo.id));
+        showToast(`Usuario ${nuevo.nombres} registrado y seleccionado como encargado`, "success");
+        setModalNuevoUsuario(false);
+        setNuevoUsuarioNombres("");
+        setNuevoUsuarioApellidos("");
+        setNuevoUsuarioEmail("");
+        setNuevoUsuarioTelefono("");
+        setNuevoUsuarioPassword("Local2026!");
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "No se pudo registrar el usuario", "error");
+    } finally {
+      setCreandoUsuario(false);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -128,10 +183,12 @@ export const AdminLocales = () => {
     }
   };
 
+  const [modoEliminar, setModoEliminar] = useState<"SOFT" | "FORCE">("SOFT");
+
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/establishments");
+      const { data } = await api.get("/admin/locales");
       setLocales(data?.data ?? []);
     } catch {
       showToast("No se pudieron cargar los locales", "error");
@@ -142,12 +199,13 @@ export const AdminLocales = () => {
 
   useEffect(() => {
     load();
+    // Cargar usuarios de rol COMERCIO para asignación
     api
       .get("/admin/usuarios", { params: { rol: "COMERCIO" } })
       .then((r) => setUsers(r.data?.data ?? []))
       .catch(() => {});
     api
-      .get("/establishments/categorias")
+      .get("/admin/categorias")
       .then((r) => setCategorias(r.data?.data ?? []))
       .catch(() => {});
   }, []);
@@ -162,12 +220,32 @@ export const AdminLocales = () => {
       result = result.filter(
         (l) =>
           l.razon_social?.toLowerCase().includes(q) ||
+          l.nombre?.toLowerCase().includes(q) ||
           l.ruc?.toLowerCase().includes(q) ||
-          l.direccion?.toLowerCase().includes(q),
+          l.direccion?.toLowerCase().includes(q) ||
+          l.usuario_encargado_email?.toLowerCase().includes(q) ||
+          l.usuario_encargado_nombre?.toLowerCase().includes(q),
       );
     }
     return result;
   }, [locales, filtroEstado, search]);
+
+  // Filtrar usuarios comercio: excluir los que ya están asignados a otro local
+  const usuariosDisponibles = useMemo(() => {
+    const asignadosEnOtros = new Set(
+      locales
+        .filter((l) => {
+          if (!localSeleccionado) return true;
+          const idSel = String((localSeleccionado as any).id_establecimiento || localSeleccionado.id);
+          const lId = String((l as any).id_establecimiento || l.id);
+          return lId !== idSel;
+        })
+        .map((l) => String(l.usuario_encargado_id || ""))
+        .filter(Boolean),
+    );
+
+    return users.filter((u) => !asignadosEnOtros.has(String(u.id)));
+  }, [users, locales, localSeleccionado]);
 
   const totalPaginas = Math.max(1, Math.ceil(localesFiltrados.length / ITEMS_PER_PAGE));
   const paginaActual = Math.min(pagina, totalPaginas);
@@ -182,6 +260,7 @@ export const AdminLocales = () => {
 
   const openCrear = () => {
     setForm(emptyForm);
+    setStaff("");
     setLocalSeleccionado(null);
     setModalCrear(true);
   };
@@ -197,16 +276,18 @@ export const AdminLocales = () => {
       local.lat != null && local.lng != null
         ? `https://www.google.com/maps?q=${local.lat},${local.lng}`
         : "";
+    setStaff(local.usuario_encargado_id ? String(local.usuario_encargado_id) : "");
     setForm({
-      razon_social: local.razon_social ?? "",
+      razon_social: local.razon_social ?? local.nombre ?? "",
       ruc: local.ruc ?? "",
       direccion: local.direccion ?? "",
       google_maps_url: mapsUrl,
       descripcion: local.descripcion ?? "",
       telefono: local.telefono ?? "",
       horario: local.horario ?? "",
-      categoria_id: local.categoria_id ?? "",
+      categoria_id: local.categoria_id ? String(local.categoria_id) : "",
       imagen_url: local.imagen_url ?? "",
+      puntos_por_visita: (local as any).puntos_por_visita ?? 20,
       estado: local.estado ?? "ACTIVO",
     });
     setModalEditar(true);
@@ -214,12 +295,17 @@ export const AdminLocales = () => {
 
   const openPersonal = (local: Establecimiento) => {
     setLocalSeleccionado(local);
-    setStaff("");
+    setStaff(local.usuario_encargado_id ? String(local.usuario_encargado_id) : "");
+    api
+      .get("/admin/usuarios", { params: { rol: "COMERCIO" } })
+      .then((r) => setUsers(r.data?.data ?? []))
+      .catch(() => {});
     setModalPersonal(true);
   };
 
   const openEliminar = (local: Establecimiento) => {
     setLocalSeleccionado(local);
+    setModoEliminar("SOFT");
     setModalEliminar(true);
   };
 
@@ -246,13 +332,11 @@ export const AdminLocales = () => {
       e.direccion = "La dirección debe tener al menos 5 caracteres";
     }
 
-    if (data.telefono && !/^\d{0,15}$/.test(data.telefono.replace(/[\s\-\(\)]/g, ""))) {
-      e.telefono = "El teléfono solo puede contener números (máx. 15)";
-    }
-
-    if (data.google_maps_url && !parseGoogleMapsUrl(data.google_maps_url)) {
-      e.google_maps_url =
-        "No se pudieron extraer coordenadas. Pega un enlace válido de Google Maps";
+    if (data.google_maps_url) {
+      const trimmed = data.google_maps_url.trim();
+      if (!isValidGoogleMapsUrl(trimmed) && !trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+        e.google_maps_url = "Ingresa un enlace válido de Google Maps (ej. https://maps.app.goo.gl/...)";
+      }
     }
 
     setErrors(e);
@@ -265,7 +349,7 @@ export const AdminLocales = () => {
     setBusy(true);
     try {
       const coords = parseGoogleMapsUrl(form.google_maps_url);
-      await api.post("/establishments", {
+      await api.post("/admin/locales", {
         razon_social: form.razon_social,
         ruc: form.ruc,
         direccion: form.direccion,
@@ -276,6 +360,8 @@ export const AdminLocales = () => {
         descripcion: form.descripcion || null,
         horario: form.horario || null,
         imagen_url: form.imagen_url.trim() || null,
+        puntos_por_visita: Number(form.puntos_por_visita) || 20,
+        usuario_id: staff || null,
       });
       showToast("Local creado con éxito", "success");
       setModalCrear(false);
@@ -297,7 +383,7 @@ export const AdminLocales = () => {
     setBusy(true);
     try {
       const coords = parseGoogleMapsUrl(form.google_maps_url);
-      await api.patch(`/establishments/${localSeleccionado.id}`, {
+      await api.patch(`/admin/locales/${localSeleccionado.id}`, {
         razon_social: form.razon_social,
         direccion: form.direccion,
         lat: coords?.lat ?? null,
@@ -307,7 +393,9 @@ export const AdminLocales = () => {
         horario: form.horario || null,
         categoria_id: form.categoria_id || null,
         imagen_url: form.imagen_url.trim() || null,
+        puntos_por_visita: Number(form.puntos_por_visita) || 20,
         estado: form.estado,
+        usuario_id: staff || null,
       });
       showToast("Local actualizado", "success");
       setModalEditar(false);
@@ -327,11 +415,12 @@ export const AdminLocales = () => {
     if (!localSeleccionado) return;
     setBusy(true);
     try {
-      await api.post(`/establishments/${localSeleccionado.id}/personal`, {
-        usuario_id: staff,
+      await api.patch(`/admin/locales/${localSeleccionado.id}`, {
+        usuario_id: staff || null,
       });
-      showToast("Personal asignado", "success");
+      showToast("Personal asignado correctamente", "success");
       setModalPersonal(false);
+      await load();
     } catch (err: any) {
       showToast(
         err.response?.data?.message || "No se pudo asignar",
@@ -346,8 +435,15 @@ export const AdminLocales = () => {
     if (!localSeleccionado) return;
     setBusy(true);
     try {
-      await api.delete(`/establishments/${localSeleccionado.id}`);
-      showToast("Local eliminado", "success");
+      await api.delete(`/admin/locales/${localSeleccionado.id}`, {
+        data: { modo: modoEliminar },
+      });
+      showToast(
+        modoEliminar === "SOFT"
+          ? "Local desactivado (Historial preservado)"
+          : "Local eliminado permanentemente",
+        "success",
+      );
       setModalEliminar(false);
       await load();
     } catch (err: any) {
@@ -361,153 +457,240 @@ export const AdminLocales = () => {
   };
 
   const formCrear = (
-    <form onSubmit={handleCrear} className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-        <Input
-          label="Razón social *"
-          placeholder="Ej: Cafetería Central S.A.C."
-          value={form.razon_social}
-          required
-          error={errors.razon_social}
-          onChange={(e) => {
-            setForm({ ...form, razon_social: e.target.value });
-            if (errors.razon_social) setErrors({ ...errors, razon_social: "" });
-          }}
-        />
-        <Input
-          label="RUC *"
-          placeholder="11 dígitos"
-          value={form.ruc}
-          required
-          maxLength={11}
-          error={errors.ruc}
-          onChange={(e) => {
-            const val = e.target.value.replace(/\D/g, "").slice(0, 11);
-            setForm({ ...form, ruc: val });
-            if (errors.ruc) setErrors({ ...errors, ruc: "" });
-          }}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-        <label className="block space-y-1.5 w-full text-left">
-          <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Categoría
-          </span>
-          <select
-            className="input-base"
-            value={form.categoria_id}
-            onChange={(e) =>
-              setForm({ ...form, categoria_id: e.target.value })
-            }
-          >
-            <option value="">Selecciona una categoría...</option>
-            {categorias.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Input
-          label="Teléfono de contacto"
-          placeholder="Ej: 987654321 o (01) 456-7890"
-          value={form.telefono}
-          error={errors.telefono}
-          onChange={(e) => {
-            setForm({ ...form, telefono: e.target.value });
-            if (errors.telefono) setErrors({ ...errors, telefono: "" });
-          }}
-        />
-      </div>
-
-      <Input
-        label="Dirección *"
-        placeholder="Ej: Av. Larco 1234, Miraflores, Lima"
-        value={form.direccion}
-        required
-        error={errors.direccion}
-        onChange={(e) => {
-          setForm({ ...form, direccion: e.target.value });
-          if (errors.direccion) setErrors({ ...errors, direccion: "" });
-        }}
-      />
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-        <Input
-          label="Horario de atención"
-          placeholder="Ej: Lun a Sáb: 8:00 AM - 10:00 PM"
-          value={form.horario}
-          onChange={(e) => setForm({ ...form, horario: e.target.value })}
-        />
-        <Input
-          label="Enlace de Google Maps"
-          placeholder="https://maps.google.com/?q=..."
-          value={form.google_maps_url}
-          error={errors.google_maps_url}
-          onChange={(e) => {
-            setForm({ ...form, google_maps_url: e.target.value });
-            if (errors.google_maps_url)
-              setErrors({ ...errors, google_maps_url: "" });
-          }}
-        />
-      </div>
-
-      {/* Subida o URL de Imagen del Local */}
-      <div className="space-y-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 text-left">
-        <div className="flex items-center justify-between">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-            Foto / Imagen del Local
-          </label>
-          <span className="text-[10px] text-slate-400">
-            Formatos: JPG, PNG, WEBP (máx. 10 MB)
-          </span>
+    <form onSubmit={handleCrear} className="space-y-6">
+      {/* 1. Datos Principales del Local */}
+      <div className="bg-[#FAF8F5]/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-[#EFE7DE] dark:border-slate-800 space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b border-[#EFE7DE] dark:border-slate-800">
+          <Store className="w-4 h-4 text-[#7C0A1E] dark:text-[#C5A059]" />
+          <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D1A1E] dark:text-white">
+            Identificación del Lugar / Local
+          </h4>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
-          {/* Botón de subida desde el ordenador */}
-          <label className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed text-xs font-semibold cursor-pointer transition ${
-            uploading
-              ? "bg-slate-100 dark:bg-slate-800 border-slate-300 text-slate-400 cursor-not-allowed"
-              : "border-teal-500/50 bg-teal-50/50 hover:bg-teal-50 dark:bg-teal-500/10 dark:hover:bg-teal-500/15 text-teal-700 dark:text-teal-300"
-          }`}>
-            {uploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
-                <span>Subiendo foto...</span>
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                <span>Seleccionar del ordenador</span>
-              </>
-            )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input
+            label="Razón Social o Nombre del Lugar / Local *"
+            placeholder="Ej: Cafetería Central S.A.C."
+            value={form.razon_social}
+            required
+            error={errors.razon_social}
+            onChange={(e) => {
+              setForm({ ...form, razon_social: e.target.value });
+              if (errors.razon_social) setErrors({ ...errors, razon_social: "" });
+            }}
+          />
+          <Input
+            label="RUC *"
+            hint="11 dígitos numéricos"
+            placeholder="Ej: 20123456789"
+            value={form.ruc}
+            required
+            maxLength={11}
+            error={errors.ruc}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, "").slice(0, 11);
+              setForm({ ...form, ruc: val });
+              if (errors.ruc) setErrors({ ...errors, ruc: "" });
+            }}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5 w-full text-left">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+              Categoría del Lugar / Local *
+            </label>
+            <select
+              className="input-base"
+              value={form.categoria_id}
+              onChange={(e) =>
+                setForm({ ...form, categoria_id: e.target.value })
+              }
+            >
+              <option value="">Selecciona una categoría comercial...</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icono_url ? `${c.icono_url} ` : "☕ "}{c.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5 w-full text-left">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+              Puntos por Visita / Sello NFC *
+            </label>
             <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={uploading}
-              onChange={handleFileUpload}
+              type="number"
+              min="1"
+              max="500"
+              className="input-base font-black text-[#7C0A1E] dark:text-[#C5A059]"
+              value={form.puntos_por_visita || 20}
+              onChange={(e) =>
+                setForm({ ...form, puntos_por_visita: Math.max(1, Number(e.target.value)) })
+              }
+              required
             />
-          </label>
+            <span className="text-[10px] text-muted block">
+              Puntos acreditados al validar con NFC (por defecto 20 pts).
+            </span>
+          </div>
+        </div>
 
-          <span className="text-[11px] text-slate-400 flex items-center justify-center font-medium">o</span>
+        <div className="space-y-1.5 w-full text-left pt-1">
+          <div className="flex items-center justify-between gap-2 pb-0.5">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+              Usuario Encargado (Cuenta COMERCIO)
+            </label>
+            <button
+              type="button"
+              onClick={() => setModalNuevoUsuario(true)}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ Registrar nuevo usuario</span>
+            </button>
+          </div>
 
-          {/* Input para URL directa */}
-          <div className="flex-1">
+          {usuariosDisponibles.length === 0 ? (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-3 text-xs">
+              <div className="min-w-0">
+                <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">
+                  Sin usuarios COMERCIO disponibles
+                </p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300/80 truncate">
+                  Todos los usuarios existentes ya están asignados a otros locales.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalNuevoUsuario(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer flex items-center gap-1"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Crear cuenta ahora</span>
+              </button>
+            </div>
+          ) : (
+            <select
+              className="input-base"
+              value={staff}
+              onChange={(e) => setStaff(e.target.value)}
+            >
+              <option value="">Sin asignar por ahora (puedes asignarlo después)</option>
+              {usuariosDisponibles.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nombres} {u.apellidos} · {u.email}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <span className="text-[10px] text-muted block">
+            Este usuario podrá iniciar sesión en el portal Comercio para validar visitas y canjear premios. (Los usuarios ya asignados a otro local quedan excluidos automáticamente).
+          </span>
+        </div>
+      </div>
+
+      {/* 2. Ubicación y Horarios */}
+      <div className="bg-[#FAF8F5]/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-[#EFE7DE] dark:border-slate-800 space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b border-[#EFE7DE] dark:border-slate-800">
+          <MapPin className="w-4 h-4 text-[#7C0A1E] dark:text-[#C5A059]" />
+          <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D1A1E] dark:text-white">
+            Ubicación & Horarios de Atención
+          </h4>
+        </div>
+
+        <Input
+          label="Dirección Principal *"
+          placeholder="Ej: Av. Larco 1234, Miraflores, Lima"
+          value={form.direccion}
+          required
+          error={errors.direccion}
+          onChange={(e) => {
+            setForm({ ...form, direccion: e.target.value });
+            if (errors.direccion) setErrors({ ...errors, direccion: "" });
+          }}
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input
+            label="Horario de Atención"
+            placeholder="Ej: Lun a Sáb: 8:00 AM - 10:00 PM"
+            value={form.horario}
+            onChange={(e) => setForm({ ...form, horario: e.target.value })}
+          />
+          <Input
+            label="Enlace Google Maps (Opcional)"
+            placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
+            value={form.google_maps_url}
+            error={errors.google_maps_url}
+            onChange={(e) => {
+              setForm({ ...form, google_maps_url: e.target.value });
+              if (errors.google_maps_url)
+                setErrors({ ...errors, google_maps_url: "" });
+            }}
+          />
+        </div>
+      </div>
+
+      {/* 3. Foto / Portada del Local */}
+      <div className="bg-[#FAF8F5]/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-[#EFE7DE] dark:border-slate-800 space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-[#EFE7DE] dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <Upload className="w-4 h-4 text-[#7C0A1E] dark:text-[#C5A059]" />
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D1A1E] dark:text-white">
+              Fotografía o Fachada del Local
+            </h4>
+          </div>
+          <span className="text-[10px] text-[#8E7D7D]">JPG, PNG, WEBP (máx. 10 MB)</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+          <div className="sm:col-span-5">
+            <label
+              className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed text-xs font-bold cursor-pointer transition ${
+                uploading
+                  ? "bg-slate-100 dark:bg-slate-800 border-slate-300 text-slate-400 cursor-not-allowed"
+                  : "border-[#7C0A1E]/40 bg-[#7C0A1E]/5 hover:bg-[#7C0A1E]/10 text-[#7C0A1E] dark:text-[#E8D3A2]"
+              }`}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#7C0A1E]" />
+                  <span>Subiendo imagen...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  <span>Cargar desde PC</span>
+                </>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploading}
+                onChange={handleFileUpload}
+              />
+            </label>
+          </div>
+
+          <div className="sm:col-span-1 text-center text-xs font-bold text-[#8E7D7D]">o</div>
+
+          <div className="sm:col-span-6">
             <input
               type="text"
               placeholder="O pega una URL de imagen..."
               value={form.imagen_url}
               onChange={(e) => setForm({ ...form, imagen_url: e.target.value })}
-              className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-teal-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+              className="input-base"
             />
           </div>
         </div>
 
-        {/* Vista previa con opción de remover */}
         {form.imagen_url.trim() && (
-          <div className="relative w-full h-40 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900/10 dark:bg-slate-900/50 flex items-center justify-center mt-2 group">
+          <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-[#D9D0C7] dark:border-slate-700 bg-slate-900/10 mt-3 group">
             <img
               src={form.imagen_url}
               alt="Vista previa del local"
@@ -520,199 +703,299 @@ export const AdminLocales = () => {
               <button
                 type="button"
                 onClick={() => setForm({ ...form, imagen_url: "" })}
-                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition"
+                className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 shadow-md transition"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
                 <span>Quitar imagen</span>
               </button>
             </div>
-            <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-semibold backdrop-blur-xs">
+            <span className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[10px] font-bold backdrop-blur-xs">
               Vista previa
             </span>
           </div>
         )}
       </div>
 
+      {/* 4. Descripción */}
       <div className="space-y-1.5 w-full text-left">
         <div className="flex items-center justify-between">
-          <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Descripción del local
-          </span>
-          <span className="text-[11px] text-slate-400">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+            Descripción y Servicios del Local
+          </label>
+          <span className="text-[11px] text-[#8E7D7D] font-medium">
             {form.descripcion.length} caracteres
           </span>
         </div>
         <textarea
-          className="input-base min-h-[100px] w-full resize-y text-xs leading-relaxed"
-          rows={4}
-          placeholder="Cuéntanos más sobre el local, especialidades, ambiente o promociones especiales para los clientes..."
+          className="input-base min-h-[90px] w-full resize-y text-xs sm:text-sm leading-relaxed"
+          rows={3}
+          placeholder="Cuéntanos más sobre el local, especialidades, ambiente, pet-friendly o promociones para clientes..."
           value={form.descripcion}
           onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
         />
       </div>
 
-      <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-        <Button
+      {/* Botones de acción */}
+      <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#EFE7DE] dark:border-slate-800">
+        <button
           type="button"
-          variant="secondary"
-          fullWidth
           onClick={() => {
             setErrors({});
             setModalCrear(false);
           }}
+          className="px-5 py-2.5 rounded-xl border border-[#D9D0C7] dark:border-slate-700 text-[#5A4B4B] dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs sm:text-sm transition cursor-pointer"
         >
           Cancelar
-        </Button>
-        <Button type="submit" loading={busy} fullWidth>
-          Crear local
-        </Button>
+        </button>
+        <button
+          type="submit"
+          disabled={busy}
+          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] hover:bg-[#600616] text-white font-bold text-xs sm:text-sm shadow-md active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+        >
+          {busy ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Guardando...</span>
+            </>
+          ) : (
+            <span>Crear local</span>
+          )}
+        </button>
       </div>
     </form>
   );
 
   const formEditar = (
-    <form onSubmit={handleEditar} className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <Input
-          label="Razón social *"
-          value={form.razon_social}
-          required
-          error={errors.razon_social}
-          onChange={(e) => {
-            setForm({ ...form, razon_social: e.target.value });
-            if (errors.razon_social)
-              setErrors({ ...errors, razon_social: "" });
-          }}
-        />
-        <Input label="RUC" value={form.ruc} disabled />
-      </div>
-      <Input
-        label="Dirección *"
-        value={form.direccion}
-        required
-        error={errors.direccion}
-        onChange={(e) => {
-          setForm({ ...form, direccion: e.target.value });
-          if (errors.direccion) setErrors({ ...errors, direccion: "" });
-        }}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <Input
-          label="URL de Google Maps"
-          placeholder="https://www.google.com/maps?q=..."
-          value={form.google_maps_url}
-          error={errors.google_maps_url}
-          onChange={(e) => {
-            setForm({ ...form, google_maps_url: e.target.value });
-            if (errors.google_maps_url)
-              setErrors({ ...errors, google_maps_url: "" });
-          }}
-        />
-        <label className="block space-y-1.5 w-full text-left">
-          <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Estado
-          </span>
-          <select
-            className="input-base"
-            value={form.estado}
-            onChange={(e) => setForm({ ...form, estado: e.target.value })}
-          >
-            <option value="ACTIVO">Activo</option>
-            <option value="INACTIVO">Inactivo</option>
-            <option value="SUSPENDIDO">Suspendido</option>
-          </select>
-        </label>
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        <Input
-          label="Teléfono"
-          value={form.telefono}
-          error={errors.telefono}
-          onChange={(e) => {
-            setForm({ ...form, telefono: e.target.value });
-            if (errors.telefono) setErrors({ ...errors, telefono: "" });
-          }}
-        />
-        <Input
-          label="Horario"
-          value={form.horario}
-          onChange={(e) => setForm({ ...form, horario: e.target.value })}
-        />
-        <label className="block space-y-1.5 w-full text-left">
-          <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Categoría
-          </span>
-          <select
-            className="input-base"
-            value={form.categoria_id}
-            onChange={(e) =>
-              setForm({ ...form, categoria_id: e.target.value })
-            }
-          >
-            <option value="">Sin categoría</option>
-            {categorias.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {/* Subida o URL de Imagen del Local */}
-      <div className="space-y-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 text-left">
-        <div className="flex items-center justify-between">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-            Foto / Imagen del Local
-          </label>
-          <span className="text-[10px] text-slate-400">
-            JPG, PNG, WEBP (máx. 10 MB)
-          </span>
+    <form onSubmit={handleEditar} className="space-y-6">
+      {/* 1. Datos Principales */}
+      <div className="bg-[#FAF8F5]/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-[#EFE7DE] dark:border-slate-800 space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b border-[#EFE7DE] dark:border-slate-800">
+          <Store className="w-4 h-4 text-[#7C0A1E] dark:text-[#C5A059]" />
+          <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D1A1E] dark:text-white">
+            Identificación Comercial
+          </h4>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
-          {/* Botón de subida desde el ordenador */}
-          <label className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed text-xs font-semibold cursor-pointer transition ${
-            uploading
-              ? "bg-slate-100 dark:bg-slate-800 border-slate-300 text-slate-400 cursor-not-allowed"
-              : "border-teal-500/50 bg-teal-50/50 hover:bg-teal-50 dark:bg-teal-500/10 dark:hover:bg-teal-500/15 text-teal-700 dark:text-teal-300"
-          }`}>
-            {uploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
-                <span>Subiendo foto...</span>
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                <span>Subir nueva foto</span>
-              </>
-            )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input
+            label="Razón Social *"
+            value={form.razon_social}
+            required
+            error={errors.razon_social}
+            onChange={(e) => {
+              setForm({ ...form, razon_social: e.target.value });
+              if (errors.razon_social) setErrors({ ...errors, razon_social: "" });
+            }}
+          />
+          <Input label="RUC" value={form.ruc} disabled hint="No editable" />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-1.5 w-full text-left">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+              Categoría
+            </label>
+            <select
+              className="input-base"
+              value={form.categoria_id}
+              onChange={(e) =>
+                setForm({ ...form, categoria_id: e.target.value })
+              }
+            >
+              <option value="">Sin categoría asignada</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icono_url ? `${c.icono_url} ` : "☕ "}{c.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5 w-full text-left">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+              Puntos por Visita / Sello *
+            </label>
             <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={uploading}
-              onChange={handleFileUpload}
+              type="number"
+              min="1"
+              max="500"
+              className="input-base font-black text-[#7C0A1E] dark:text-[#C5A059]"
+              value={form.puntos_por_visita || 20}
+              onChange={(e) =>
+                setForm({ ...form, puntos_por_visita: Math.max(1, Number(e.target.value)) })
+              }
+              required
             />
-          </label>
+          </div>
 
-          <span className="text-[11px] text-slate-400 flex items-center justify-center font-medium">o</span>
+          <div className="space-y-1.5 w-full text-left">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+              Estado Operativo
+            </label>
+            <select
+              className="input-base"
+              value={form.estado}
+              onChange={(e) => setForm({ ...form, estado: e.target.value })}
+            >
+              <option value="ACTIVO">Activo</option>
+              <option value="INACTIVO">Inactivo</option>
+              <option value="SUSPENDIDO">Suspendido</option>
+            </select>
+          </div>
+        </div>
 
-          {/* Input para URL directa */}
-          <div className="flex-1">
+        <div className="space-y-1.5 w-full text-left pt-1">
+          <div className="flex items-center justify-between gap-2 pb-0.5">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+              Usuario Encargado (Cuenta COMERCIO)
+            </label>
+            <button
+              type="button"
+              onClick={() => setModalNuevoUsuario(true)}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ Registrar nuevo usuario</span>
+            </button>
+          </div>
+
+          {usuariosDisponibles.length === 0 ? (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-3 text-xs">
+              <div className="min-w-0">
+                <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">
+                  Sin usuarios COMERCIO disponibles
+                </p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300/80 truncate">
+                  Todos los usuarios existentes ya están asignados a otros locales.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalNuevoUsuario(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer flex items-center gap-1"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Crear cuenta ahora</span>
+              </button>
+            </div>
+          ) : (
+            <select
+              className="input-base"
+              value={staff}
+              onChange={(e) => setStaff(e.target.value)}
+            >
+              <option value="">Sin usuario asignado</option>
+              {usuariosDisponibles.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nombres} {u.apellidos} · {u.email}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <span className="text-[10px] text-muted block">
+            Puedes cambiar o reasignar qué cuenta de comercio administra y valida las visitas de este local.
+          </span>
+        </div>
+      </div>
+
+      {/* 2. Ubicación del Lugar / Local */}
+      <div className="bg-[#FAF8F5]/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-[#EFE7DE] dark:border-slate-800 space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b border-[#EFE7DE] dark:border-slate-800">
+          <MapPin className="w-4 h-4 text-[#7C0A1E] dark:text-[#C5A059]" />
+          <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D1A1E] dark:text-white">
+            Ubicación del Lugar / Local
+          </h4>
+        </div>
+
+        <Input
+          label="Dirección del Lugar / Local *"
+          value={form.direccion}
+          required
+          error={errors.direccion}
+          onChange={(e) => {
+            setForm({ ...form, direccion: e.target.value });
+            if (errors.direccion) setErrors({ ...errors, direccion: "" });
+          }}
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input
+            label="Horario de Atención"
+            value={form.horario}
+            onChange={(e) => setForm({ ...form, horario: e.target.value })}
+          />
+          <Input
+            label="Enlace Google Maps (Opcional)"
+            placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
+            value={form.google_maps_url}
+            error={errors.google_maps_url}
+            onChange={(e) => {
+              setForm({ ...form, google_maps_url: e.target.value });
+              if (errors.google_maps_url)
+                setErrors({ ...errors, google_maps_url: "" });
+            }}
+          />
+        </div>
+      </div>
+
+      {/* 3. Foto / Portada */}
+      <div className="bg-[#FAF8F5]/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-[#EFE7DE] dark:border-slate-800 space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-[#EFE7DE] dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <Upload className="w-4 h-4 text-[#7C0A1E] dark:text-[#C5A059]" />
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D1A1E] dark:text-white">
+              Fotografía del Local
+            </h4>
+          </div>
+          <span className="text-[10px] text-[#8E7D7D]">JPG, PNG, WEBP (máx. 10 MB)</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+          <div className="sm:col-span-5">
+            <label
+              className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed text-xs font-bold cursor-pointer transition ${
+                uploading
+                  ? "bg-slate-100 dark:bg-slate-800 border-slate-300 text-slate-400 cursor-not-allowed"
+                  : "border-[#7C0A1E]/40 bg-[#7C0A1E]/5 hover:bg-[#7C0A1E]/10 text-[#7C0A1E] dark:text-[#E8D3A2]"
+              }`}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#7C0A1E]" />
+                  <span>Subiendo foto...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  <span>Subir nueva foto</span>
+                </>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploading}
+                onChange={handleFileUpload}
+              />
+            </label>
+          </div>
+
+          <div className="sm:col-span-1 text-center text-xs font-bold text-[#8E7D7D]">o</div>
+
+          <div className="sm:col-span-6">
             <input
               type="text"
               placeholder="O pega una URL de imagen..."
               value={form.imagen_url}
               onChange={(e) => setForm({ ...form, imagen_url: e.target.value })}
-              className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-teal-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+              className="input-base"
             />
           </div>
         </div>
 
-        {/* Vista previa con opción de remover */}
         {form.imagen_url.trim() && (
-          <div className="relative w-full h-36 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900/10 dark:bg-slate-900/50 flex items-center justify-center mt-2 group">
+          <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-[#D9D0C7] dark:border-slate-700 bg-slate-900/10 mt-3 group">
             <img
               src={form.imagen_url}
               alt="Vista previa del local"
@@ -725,77 +1008,141 @@ export const AdminLocales = () => {
               <button
                 type="button"
                 onClick={() => setForm({ ...form, imagen_url: "" })}
-                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition"
+                className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 shadow-md transition"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
                 <span>Quitar imagen</span>
               </button>
             </div>
-            <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-semibold backdrop-blur-xs">
+            <span className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/70 text-white text-[10px] font-bold backdrop-blur-xs">
               Vista previa
             </span>
           </div>
         )}
       </div>
 
+      {/* 4. Descripción */}
       <div className="space-y-1.5 w-full text-left">
-        <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
           Descripción
-        </span>
+        </label>
         <textarea
-          className="input-base min-h-[80px] resize-y"
+          className="input-base min-h-[85px] w-full resize-y text-xs sm:text-sm leading-relaxed"
           rows={3}
           value={form.descripcion}
           onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
         />
       </div>
-      <div className="flex gap-2 pt-1">
-        <Button type="submit" loading={busy} fullWidth>
-          Guardar cambios
-        </Button>
-        <Button
-          variant="secondary"
-          fullWidth
+
+      <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#EFE7DE] dark:border-slate-800">
+        <button
+          type="button"
           onClick={() => {
             setErrors({});
             setModalEditar(false);
           }}
+          className="px-5 py-2.5 rounded-xl border border-[#D9D0C7] dark:border-slate-700 text-[#5A4B4B] dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs sm:text-sm transition cursor-pointer"
         >
           Cancelar
-        </Button>
+        </button>
+        <button
+          type="submit"
+          disabled={busy}
+          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] hover:bg-[#600616] text-white font-bold text-xs sm:text-sm shadow-md active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+        >
+          {busy ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Guardando...</span>
+            </>
+          ) : (
+            <span>Guardar cambios</span>
+          )}
+        </button>
       </div>
     </form>
   );
 
   const formPersonal = (
-    <form onSubmit={handleAsignarPersonal} className="space-y-3">
-      <p className="text-sm text-slate-600">
-        Asigna un usuario COMERCIO al local{" "}
-        <strong className="text-slate-800">
-          {localSeleccionado?.razon_social}
-        </strong>
-      </p>
-      <label className="block space-y-1.5 w-full text-left">
-        <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-          Selecciona un usuario
+    <form onSubmit={handleAsignarPersonal} className="space-y-4">
+      <div className="bg-[#FAF8F5] dark:bg-slate-800/60 p-3.5 rounded-2xl border border-[#EFE7DE] dark:border-slate-700">
+        <p className="text-xs text-[#8E7D7D] dark:text-slate-400">
+          Lugar / Local seleccionado:
+        </p>
+        <p className="text-sm font-bold text-[#2D1A1E] dark:text-white mt-0.5">
+          {localSeleccionado?.razon_social || localSeleccionado?.nombre}
+        </p>
+        {localSeleccionado?.usuario_encargado_email ? (
+          <div className="mt-2.5 pt-2 border-t border-[#EFE7DE] dark:border-slate-700 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-[#8E7D7D] dark:text-slate-400">Encargado actual:</span>
+            <span className="text-xs font-semibold text-[#7C0A1E] dark:text-[#C5A059] truncate">
+              {localSeleccionado.usuario_encargado_nombre} ({localSeleccionado.usuario_encargado_email})
+            </span>
+          </div>
+        ) : (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5 font-medium">
+            Sin personal asignado actualmente.
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-1.5 w-full text-left">
+        <div className="flex items-center justify-between gap-2 pb-0.5">
+          <span className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+            Seleccionar Usuario (Cuenta COMERCIO)
+          </span>
+          <button
+            type="button"
+            onClick={() => setModalNuevoUsuario(true)}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>+ Registrar nuevo</span>
+          </button>
+        </div>
+
+        {usuariosDisponibles.length === 0 ? (
+          <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-3 text-xs">
+            <div className="min-w-0">
+              <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">
+                Sin usuarios disponibles
+              </p>
+              <p className="text-[11px] text-amber-700 dark:text-amber-300/80 truncate">
+                Todos los usuarios están asignados a otros locales.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setModalNuevoUsuario(true)}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer flex items-center gap-1"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Crear cuenta</span>
+            </button>
+          </div>
+        ) : (
+          <select
+            className="input-base"
+            value={staff}
+            onChange={(e) => setStaff(e.target.value)}
+          >
+            <option value="">-- Sin encargado asignado / Desvincular --</option>
+            {usuariosDisponibles.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nombres} {u.apellidos} · {u.email}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <span className="text-[10px] text-muted block mt-1">
+          Esta cuenta podrá ingresar al portal de Comercio, validar visitas NFC y canjear premios de este lugar / local.
         </span>
-        <select
-          className="input-base"
-          required
-          value={staff}
-          onChange={(e) => setStaff(e.target.value)}
-        >
-          <option value="">Selecciona un usuario COMERCIO</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.nombres} {u.apellidos} · {u.email}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="flex gap-2 pt-1">
-        <Button type="submit" loading={busy} fullWidth disabled={!staff}>
-          Asignar al local
+      </div>
+
+      <div className="flex gap-2 pt-2">
+        <Button type="submit" loading={busy} fullWidth>
+          Guardar Asignación
         </Button>
         <Button
           variant="secondary"
@@ -809,22 +1156,88 @@ export const AdminLocales = () => {
   );
 
   const confirmarEliminar = (
-    <div className="space-y-3">
-      <p className="text-sm text-slate-600">
-        ¿Estás seguro de eliminar{" "}
-        <strong className="text-slate-800">
-          {localSeleccionado?.razon_social}
-        </strong>
-        ? Esta acción no se puede deshacer.
-      </p>
-      <div className="flex gap-2 pt-1">
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-[#2D1A1E] dark:text-white">
+          Gestión de eliminación para:{" "}
+          <span className="text-[#7C0A1E] dark:text-[#E8D3A2]">
+            {localSeleccionado?.razon_social || localSeleccionado?.nombre}
+          </span>
+        </p>
+        <p className="text-xs text-muted mt-1 leading-relaxed">
+          {localSeleccionado?.usuario_encargado_email ? (
+            <>
+              Encargado actual vinculado:{" "}
+              <strong className="text-slate-800 dark:text-slate-200">
+                {localSeleccionado.usuario_encargado_email}
+              </strong>
+            </>
+          ) : (
+            "Sin usuario comercio asignado actualmente."
+          )}
+        </p>
+      </div>
+
+      <div className="space-y-2.5">
+        <label
+          onClick={() => setModoEliminar("SOFT")}
+          className={`flex items-start gap-3 p-3 rounded-xl border text-xs cursor-pointer transition ${
+            modoEliminar === "SOFT"
+              ? "bg-[#7C0A1E]/5 border-[#7C0A1E] dark:border-[#C5A059] dark:bg-[#7C0A1E]/20"
+              : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+          }`}
+        >
+          <input
+            type="radio"
+            name="modoEliminar"
+            checked={modoEliminar === "SOFT"}
+            onChange={() => setModoEliminar("SOFT")}
+            className="mt-0.5"
+          />
+          <div>
+            <strong className="block text-slate-900 dark:text-white font-bold">
+              Desactivar local (Recomendado)
+            </strong>
+            <span className="text-slate-500 dark:text-slate-400">
+              Cambia el estado a INACTIVO. El usuario vinculado se mantiene intacto y se preserva el historial de visitas, sellos y puntos de clientes.
+            </span>
+          </div>
+        </label>
+
+        <label
+          onClick={() => setModoEliminar("FORCE")}
+          className={`flex items-start gap-3 p-3 rounded-xl border text-xs cursor-pointer transition ${
+            modoEliminar === "FORCE"
+              ? "bg-rose-50 border-rose-500 dark:bg-rose-950/30 dark:border-rose-700"
+              : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+          }`}
+        >
+          <input
+            type="radio"
+            name="modoEliminar"
+            checked={modoEliminar === "FORCE"}
+            onChange={() => setModoEliminar("FORCE")}
+            className="mt-0.5"
+          />
+          <div>
+            <strong className="block text-rose-600 dark:text-rose-400 font-bold">
+              Eliminar local permanentemente
+            </strong>
+            <span className="text-slate-500 dark:text-slate-400">
+              Borra el local y desvincula a su usuario encargado (la cuenta del usuario no se elimina, queda libre para otro local).
+            </span>
+          </div>
+        </label>
+      </div>
+
+      <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
         <Button
-          variant="danger"
+          variant={modoEliminar === "FORCE" ? "danger" : "primary"}
           loading={busy}
           fullWidth
           onClick={handleEliminar}
         >
-          Eliminar
+          {modoEliminar === "SOFT" ? "Desactivar Local" : "Eliminar Definitivamente"}
         </Button>
         <Button
           variant="secondary"
@@ -841,33 +1254,33 @@ export const AdminLocales = () => {
     <div className="space-y-5 animate-fadeIn">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Gestión de locales</h1>
+          <h1 className="text-xl font-bold">Gestión de Lugares / Locales</h1>
           <p className="text-xs text-muted">
             Administra los comercios afiliados, direcciones, horarios y personal asignado
           </p>
         </div>
         <Button onClick={openCrear}>
           <Plus className="w-4 h-4" />
-          Nuevo local
+          Nuevo Lugar / Local
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+      <div className="flex flex-col sm:flex-row items-center gap-3">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8E7D7D] pointer-events-none z-10" />
           <input
-            className="input-base pl-10"
+            className="input-base input-with-search"
             placeholder="Buscar por nombre, RUC o dirección..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="input-base w-auto min-w-[140px]"
+          className="input-base w-full sm:w-44 text-xs font-semibold shrink-0"
           value={filtroEstado}
           onChange={(e) => setFiltroEstado(e.target.value)}
         >
-          <option value="TODOS">Todos</option>
+          <option value="TODOS">Todos los estados</option>
           <option value="ACTIVO">Activo</option>
           <option value="INACTIVO">Inactivo</option>
           <option value="SUSPENDIDO">Suspendido</option>
@@ -892,19 +1305,21 @@ export const AdminLocales = () => {
         />
       ) : (
         <div className="space-y-4">
-          <div className="bg-[rgb(var(--app-surface))] border border-[rgb(var(--app-border))] rounded-2xl overflow-hidden shadow-xs">
+          <div className="table-card-container">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-[rgb(var(--app-border))] bg-slate-50 dark:bg-slate-900/50 text-muted font-bold uppercase">
+                  <tr className="border-b border-[#EFE7DE]/70 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-900/40 text-muted font-bold uppercase">
                     <th className="p-3.5">Establecimiento / Razón Social</th>
                     <th className="p-3.5">RUC / Categoría</th>
-                    <th className="p-3.5">Dirección & Contacto</th>
+                    <th className="p-3.5">Sello & Puntos</th>
+                    <th className="p-3.5">Dirección</th>
+                    <th className="p-3.5">Encargado (Comercio)</th>
                     <th className="p-3.5">Estado</th>
                     <th className="p-3.5 text-right">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[rgb(var(--app-border))]">
+                <tbody className="divide-y divide-[#EFE7DE]/60 dark:divide-slate-800/60">
                   {localesPaginados.map((l) => (
                     <tr key={l.id} className="hover:bg-slate-500/5 transition">
                       <td className="p-3.5">
@@ -935,15 +1350,52 @@ export const AdminLocales = () => {
                       <td className="p-3.5">
                         <span className="font-mono font-semibold block">{l.ruc}</span>
                         {l.categoria_nombre && (
-                          <span className="inline-block mt-0.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                            {l.categoria_nombre}
+                          <span className="inline-flex items-center gap-1.5 mt-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700">
+                            <span>{l.categoria_icono || "🏷️"}</span>
+                            <span>{l.categoria_nombre}</span>
                           </span>
                         )}
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl shrink-0 select-none">
+                            {(l as any).imagen_sello || l.categoria_icono || "🏛️"}
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-black text-[#7C0A1E] dark:text-[#C5A059] text-xs block">
+                              +{(l as any).puntos_por_visita || 20} pts
+                            </span>
+                            <span className="text-[10px] text-muted block truncate max-w-[120px]">
+                              {(l as any).nombre_sello || "Sello Oficial"}
+                            </span>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-3.5">
                         <p className="text-slate-700 dark:text-slate-300">{l.direccion || "Sin dirección registrada"}</p>
                         {l.telefono && (
                           <p className="text-[10px] text-muted mt-0.5">{l.telefono}</p>
+                        )}
+                      </td>
+                      <td className="p-3.5">
+                        {l.usuario_encargado_email ? (
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 dark:text-white block truncate max-w-[170px]">
+                              {l.usuario_encargado_nombre || "Encargado"}
+                            </span>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono block truncate max-w-[170px]">
+                              {l.usuario_encargado_email}
+                            </span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openPersonal(l)}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>Sin asignar</span>
+                          </button>
                         )}
                       </td>
                       <td className="p-3.5">
@@ -1002,7 +1454,7 @@ export const AdminLocales = () => {
             </div>
 
             {/* Paginación y Resumen */}
-            <div className="p-3.5 border-t border-[rgb(var(--app-border))] bg-slate-50 dark:bg-slate-900/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="p-3.5 border-t border-[#EFE7DE]/70 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-900/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
               <span className="text-muted">
                 Mostrando {Math.min((paginaActual - 1) * ITEMS_PER_PAGE + 1, localesFiltrados.length)} -{" "}
                 {Math.min(paginaActual * ITEMS_PER_PAGE, localesFiltrados.length)} de{" "}
@@ -1045,8 +1497,9 @@ export const AdminLocales = () => {
           setErrors({});
           setModalCrear(false);
         }}
-        title="Nuevo local"
-        size="lg"
+        title="Nuevo Lugar / Local"
+        subtitle="Registra un nuevo establecimiento aliado para emisión de sellos y visitas"
+        size="xl"
       >
         {formCrear}
       </Modal>
@@ -1054,7 +1507,7 @@ export const AdminLocales = () => {
       <Modal
         open={modalVer}
         onClose={() => setModalVer(false)}
-        title="Detalles del Local"
+        title="Detalles del Lugar / Local"
         size="lg"
       >
         {localSeleccionado && (
@@ -1116,12 +1569,40 @@ export const AdminLocales = () => {
                     RUC: {localSeleccionado.ruc}
                   </span>
                   {localSeleccionado.categoria_nombre && (
-                    <span className="inline-flex items-center gap-1 text-teal-600 dark:text-teal-400 font-medium">
-                      <Tag className="w-3.5 h-3.5" />
-                      {localSeleccionado.categoria_nombre}
+                    <span className="inline-flex items-center gap-1.5 text-teal-700 dark:text-teal-300 font-semibold bg-teal-50 dark:bg-teal-500/10 px-2.5 py-0.5 rounded-full border border-teal-200/60 dark:border-teal-500/20">
+                      <span>{localSeleccionado.categoria_icono || "🏷️"}</span>
+                      <span>{localSeleccionado.categoria_nombre}</span>
                     </span>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* Sello Digital & Puntos Asignados */}
+            <div className="p-4 rounded-2xl bg-[#FAF8F5] dark:bg-slate-850 border border-[#EFE7DE] dark:border-slate-800 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-800 border border-[#EFE7DE] dark:border-slate-700 flex items-center justify-center text-2xl shadow-xs shrink-0 select-none">
+                  {(localSeleccionado as any).imagen_sello || localSeleccionado.categoria_icono || "🏛️"}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider block">
+                    Sello Digital Vinculado
+                  </span>
+                  <h4 className="text-sm font-bold text-[#2D1A1E] dark:text-white truncate">
+                    {(localSeleccionado as any).nombre_sello || "Sello Oficial"}
+                  </h4>
+                  <p className="text-[11px] text-[#8E7D7D] truncate">
+                    Meta: {(localSeleccionado as any).meta_sellos || 8} sellos para completar pasaporte
+                  </p>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider block">
+                  Puntos por Visita
+                </span>
+                <span className="inline-block mt-0.5 px-3 py-1 rounded-xl bg-[#7C0A1E]/10 text-[#7C0A1E] dark:text-[#E8D3A2] dark:bg-[#7C0A1E]/30 font-black text-sm">
+                  +{(localSeleccionado as any).puntos_por_visita || 20} pts
+                </span>
               </div>
             </div>
 
@@ -1167,7 +1648,7 @@ export const AdminLocales = () => {
               </div>
 
               {/* Horario */}
-              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3 sm:col-span-2">
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3">
                 <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
                   <Clock className="w-4 h-4" />
                 </div>
@@ -1178,6 +1659,26 @@ export const AdminLocales = () => {
                   <p className="text-xs font-medium text-slate-800 dark:text-slate-200 mt-0.5 leading-relaxed">
                     {localSeleccionado.horario || "No especificado"}
                   </p>
+                </div>
+              </div>
+
+              {/* Usuario Encargado */}
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0 mt-0.5">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Usuario Encargado (Comercio)
+                  </p>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
+                    {localSeleccionado.usuario_encargado_nombre || "Sin usuario asignado"}
+                  </p>
+                  {localSeleccionado.usuario_encargado_email && (
+                    <p className="text-[11px] text-muted font-mono truncate">
+                      {localSeleccionado.usuario_encargado_email}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1226,7 +1727,8 @@ export const AdminLocales = () => {
           setErrors({});
           setModalEditar(false);
         }}
-        title="Editar local"
+        title="Editar Lugar / Local"
+        subtitle="Actualiza la información comercial, ubicación y estado operativo"
         size="xl"
       >
         {formEditar}
@@ -1235,7 +1737,7 @@ export const AdminLocales = () => {
       <Modal
         open={modalPersonal}
         onClose={() => setModalPersonal(false)}
-        title="Asignar personal"
+        title="Asignar Encargado a Lugar / Local"
         size="sm"
       >
         {formPersonal}
@@ -1244,10 +1746,113 @@ export const AdminLocales = () => {
       <Modal
         open={modalEliminar}
         onClose={() => setModalEliminar(false)}
-        title="Eliminar local"
+        title="Eliminar o Desactivar Lugar / Local"
         size="sm"
       >
         {confirmarEliminar}
+      </Modal>
+
+      {/* Modal Crear Nuevo Usuario Encargado (Comercio) */}
+      <Modal
+        open={modalNuevoUsuario}
+        onClose={() => setModalNuevoUsuario(false)}
+        title="Nuevo Usuario Encargado (Comercio)"
+        size="md"
+      >
+        <form onSubmit={handleCrearUsuarioRapido} className="space-y-4">
+          <div className="bg-[#FAF8F5] dark:bg-slate-800/70 p-3.5 rounded-2xl border border-[#EFE7DE] dark:border-slate-700 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#7C0A1E]/10 text-[#7C0A1E] dark:text-[#E8D3A2] flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs font-bold text-[#2D1A1E] dark:text-white uppercase tracking-wider">
+                Rol Automático: COMERCIO
+              </h4>
+              <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400 mt-0.5 leading-snug">
+                El usuario se registrará con acceso al portal de validación NFC y se seleccionará de inmediato como encargado de este local.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <Input
+              label="Nombres *"
+              placeholder="Ej: Carlos"
+              value={nuevoUsuarioNombres}
+              onChange={(e) => setNuevoUsuarioNombres(e.target.value)}
+              required
+            />
+            <Input
+              label="Apellidos *"
+              placeholder="Ej: Mendoza"
+              value={nuevoUsuarioApellidos}
+              onChange={(e) => setNuevoUsuarioApellidos(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <Input
+              label="Correo Electrónico *"
+              type="email"
+              placeholder="encargado@comercio.com"
+              value={nuevoUsuarioEmail}
+              onChange={(e) => setNuevoUsuarioEmail(e.target.value)}
+              required
+            />
+            <Input
+              label="Teléfono Móvil (Opcional)"
+              type="tel"
+              placeholder="+51 987 654 321"
+              value={nuevoUsuarioTelefono}
+              onChange={(e) => setNuevoUsuarioTelefono(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+                Contraseña Temporal *
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const pass = "Local" + Math.floor(1000 + Math.random() * 9000) + "!";
+                  setNuevoUsuarioPassword(pass);
+                }}
+                className="text-[10px] font-semibold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
+              >
+                Generar aleatoria
+              </button>
+            </div>
+            <input
+              type="text"
+              className="input-base font-mono text-xs font-bold"
+              value={nuevoUsuarioPassword}
+              onChange={(e) => setNuevoUsuarioPassword(e.target.value)}
+              required
+            />
+            <span className="text-[10px] text-muted block mt-1">
+              Mínimo 6 caracteres. El usuario podrá cambiarla luego desde su perfil.
+            </span>
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#EFE7DE] dark:border-slate-800">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setModalNuevoUsuario(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              loading={creandoUsuario}
+            >
+              Crear y Asignar al Local
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

@@ -4,31 +4,33 @@ import { ApiError, sendResponse } from "../utils";
 import { AuthRequest } from "../types";
 
 export class ClaimsController {
-  // 1. Registrar nuevo reclamo o queja (Público o Cliente Autenticado)
+  // 1. Registrar nuevo reclamo o queja en Libro de Reclamaciones
   static async registrar(req: Request, res: Response, next: NextFunction) {
     try {
       const authReq = req as AuthRequest;
-      const usuario_id = authReq.user?.id || null;
+      const idUsuario = authReq.user?.id || null;
 
       const {
-        establecimiento_id,
-        nombres_reclamante,
-        apellidos_reclamante,
+        id_establecimiento,
+        id_sucursal,
+        nombres_consumidor,
+        apellidos_consumidor,
         tipo_documento = "DNI",
         numero_documento,
+        es_menor_edad = false,
+        nombre_apoderado,
         email,
         telefono,
-        direccion,
-        tipo_bien_contratado = "SERVICIO",
-        tipo_registro = "RECLAMO",
-        monto_reclamado = 0.0,
+        tipo = "RECLAMO",
+        descripcion_bien_servicio,
+        monto_reclamado = null,
         detalle,
         pedido_consumidor,
       } = req.body;
 
       if (
-        !nombres_reclamante ||
-        !apellidos_reclamante ||
+        !nombres_consumidor ||
+        !apellidos_consumidor ||
         !numero_documento ||
         !email ||
         !detalle ||
@@ -36,44 +38,52 @@ export class ClaimsController {
       ) {
         throw new ApiError(
           400,
-          "Todos los campos obligatorios del reclamante deben ser completados.",
+          "Todos los campos obligatorios del consumidor deben ser completados.",
         );
       }
 
-      // Generar código de seguimiento único: REC-YYYY-XXXX
+      // Código de reclamación: LR-YYYY-XXXXXX
       const anio = new Date().getFullYear();
-      const countResult = await query(
-        `SELECT COUNT(*) as total FROM libro_reclamaciones WHERE EXTRACT(YEAR FROM created_at) = $1`,
-        [anio],
-      );
-      const correlativo = parseInt(countResult.rows[0].total, 10) + 1;
-      const codigo_seguimiento = `REC-${anio}-${String(correlativo).padStart(4, "0")}`;
+      const correlativo = Date.now().toString().slice(-6);
+      const codigoReclamacion = `LR-${anio}-${correlativo}`;
+
+      // Fecha límite: +15 días hábiles (aprox 21 días calendario)
+      const fechaLimite = new Date();
+      fechaLimite.setDate(fechaLimite.getDate() + 21);
 
       const insertResult = await query(
-        `INSERT INTO libro_reclamaciones (
-          codigo_seguimiento, usuario_id, establecimiento_id,
-          nombres_reclamante, apellidos_reclamante, tipo_documento, numero_documento,
-          email, telefono, direccion, tipo_bien_contratado, tipo_registro,
-          monto_reclamado, detalle, pedido_consumidor, estado
+        `INSERT INTO reclamaciones (
+          codigo_reclamacion, id_usuario, id_establecimiento, id_sucursal,
+          tipo, nombres_consumidor, apellidos_consumidor, tipo_documento,
+          numero_documento, es_menor_edad, nombre_apoderado, telefono,
+          email, descripcion_bien_servicio, monto_reclamado, detalle,
+          pedido_consumidor, fecha_limite_respuesta, estado
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'PENDIENTE'
-        ) RETURNING *`,
+          $1, $2, $3, $4,
+          $5, $6, $7, $8,
+          $9, $10, $11, $12,
+          $13, $14, $15, $16,
+          $17, $18, 'REGISTRADO'
+        ) RETURNING id_reclamacion, codigo_reclamacion, fecha_registro, fecha_limite_respuesta`,
         [
-          codigo_seguimiento,
-          usuario_id,
-          establecimiento_id || null,
-          nombres_reclamante,
-          apellidos_reclamante,
+          codigoReclamacion,
+          idUsuario,
+          id_establecimiento || null,
+          id_sucursal || null,
+          tipo,
+          nombres_consumidor,
+          apellidos_consumidor,
           tipo_documento,
           numero_documento,
-          email,
+          es_menor_edad ? 1 : 0,
+          nombre_apoderado || null,
           telefono || null,
-          direccion || null,
-          tipo_bien_contratado,
-          tipo_registro,
-          monto_reclamado,
+          email,
+          descripcion_bien_servicio || "Servicio de Pasaporte Digital",
+          monto_reclamado || null,
           detalle,
           pedido_consumidor,
+          fechaLimite,
         ],
       );
 
@@ -81,14 +91,14 @@ export class ClaimsController {
         res,
         201,
         insertResult.rows[0],
-        `Reclamo registrado exitosamente con código: ${codigo_seguimiento}`,
+        `Reclamación registrada exitosamente con código: ${codigoReclamacion}`,
       );
     } catch (error) {
       next(error);
     }
   }
 
-  // 2. Consultar reclamo por código de seguimiento (Público)
+  // 2. Consultar reclamación por código
   static async consultarPorCodigo(
     req: Request,
     res: Response,
@@ -97,103 +107,72 @@ export class ClaimsController {
     try {
       const { codigo } = req.params;
       const result = await query(
-        `SELECT lr.id, lr.codigo_seguimiento, lr.tipo_registro, lr.estado, lr.detalle, 
-                lr.pedido_consumidor, lr.respuesta_admin, lr.fecha_respuesta, lr.created_at,
-                e.nombre AS establecimiento_nombre
-         FROM libro_reclamaciones lr
-         LEFT JOIN establecimientos e ON e.id = lr.establecimiento_id
-         WHERE lr.codigo_seguimiento = $1`,
+        `SELECT r.id_reclamacion, r.codigo_reclamacion, r.tipo, r.estado, r.detalle,
+                r.pedido_consumidor, r.respuesta_proveedor, r.fecha_respuesta, r.fecha_registro,
+                r.fecha_limite_respuesta,
+                e.nombre_comercial AS establecimiento_nombre,
+                s.nombre AS sucursal_nombre
+         FROM reclamaciones r
+         LEFT JOIN establecimientos e ON e.id_establecimiento = r.id_establecimiento
+         LEFT JOIN sucursales s ON s.id_sucursal = r.id_sucursal
+         WHERE r.codigo_reclamacion = $1`,
         [codigo.toUpperCase()],
       );
 
       if (result.rows.length === 0) {
         throw new ApiError(
           404,
-          `No se encontró ningún reclamo con el código ${codigo}`,
+          `No se encontró ninguna reclamación con el código ${codigo}`,
         );
       }
 
-      return sendResponse(res, 200, result.rows[0], "Consulta exitosa");
+      sendResponse(res, 200, result.rows[0]);
     } catch (error) {
       next(error);
     }
   }
 
-  // 3. Listar reclamos para el Administrador (Filtros por estado y local)
-  static async listarAdmin(
-    req: AuthRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
+  // 3. Listar reclamos para Administradores
+  static async listarAdmin(req: Request, res: Response, next: NextFunction) {
     try {
-      const { estado, establecimiento_id } = req.query;
-      let queryStr = `
-        SELECT lr.*, 
-               e.nombre AS establecimiento_nombre,
-               admin.nombres || ' ' || admin.apellidos AS admin_responsable_nombre
-        FROM libro_reclamaciones lr
-        LEFT JOIN establecimientos e ON e.id = lr.establecimiento_id
-        LEFT JOIN usuarios admin ON admin.id = lr.admin_responsable_id
-        WHERE 1=1
-      `;
-      const params: any[] = [];
-
-      if (estado) {
-        params.push(estado);
-        queryStr += ` AND lr.estado = $${params.length}`;
-      }
-
-      if (establecimiento_id) {
-        params.push(establecimiento_id);
-        queryStr += ` AND lr.establecimiento_id = $${params.length}`;
-      }
-
-      queryStr += ` ORDER BY lr.created_at DESC`;
-
-      const result = await query(queryStr, params);
-      return sendResponse(res, 200, result.rows, "Listado de reclamaciones");
+      const result = await query(
+        `SELECT r.*, e.nombre_comercial AS establecimiento_nombre, s.nombre AS sucursal_nombre
+         FROM reclamaciones r
+         LEFT JOIN establecimientos e ON e.id_establecimiento = r.id_establecimiento
+         LEFT JOIN sucursales s ON s.id_sucursal = r.id_sucursal
+         ORDER BY r.fecha_registro DESC`,
+      );
+      sendResponse(res, 200, result.rows);
     } catch (error) {
       next(error);
     }
   }
 
-  // 4. Responder y resolver reclamo (Solo Admin)
-  static async responderAdmin(
-    req: AuthRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
+  // 4. Responder reclamo (Admin)
+  static async responderAdmin(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const { respuesta_admin, estado = "ATENDIDO" } = req.body;
-      const admin_id = req.user!.id;
+      const { respuesta_proveedor, estado = "RESPONDIDO" } = req.body;
 
-      if (!respuesta_admin || respuesta_admin.trim() === "") {
-        throw new ApiError(400, "Debe ingresar una respuesta oficial para el reclamo.");
+      if (!respuesta_proveedor) {
+        throw new ApiError(400, "La respuesta del proveedor es obligatoria");
       }
 
       const result = await query(
-        `UPDATE libro_reclamaciones
-         SET respuesta_admin = $1,
-             estado = $2,
-             fecha_respuesta = CURRENT_TIMESTAMP,
-             admin_responsable_id = $3,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $4
+        `UPDATE reclamaciones
+         SET respuesta_proveedor = $2,
+             estado = $3,
+             fecha_respuesta = CURRENT_TIMESTAMP
+         WHERE id_reclamacion = $1
          RETURNING *`,
-        [respuesta_admin, estado, admin_id, id],
+        [id, respuesta_proveedor, estado],
       );
 
-      if (result.rows.length === 0) {
-        throw new ApiError(404, "Reclamo no encontrado.");
+      if (!result.rows[0]) {
+        throw new ApiError(404, "Reclamación no encontrada");
       }
 
-      return sendResponse(
-        res,
-        200,
-        result.rows[0],
-        "Reclamo atendido y actualizado correctamente.",
-      );
+      sendResponse(res, 200, result.rows[0], "Respuesta registrada exitosamente");
     } catch (error) {
       next(error);
     }

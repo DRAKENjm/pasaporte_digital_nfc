@@ -9,6 +9,7 @@ import { useUI } from "../../hooks/useUI";
 import {
   Search,
   Users,
+  UserPlus,
   ChevronLeft,
   ChevronRight,
   SquarePen,
@@ -40,14 +41,20 @@ interface URow {
   avatar_url?: string;
 }
 
-export const AdminUsuarios: React.FC = () => {
+interface AdminUsuariosProps {
+  modo?: "CLIENTES" | "USUARIOS";
+}
+
+export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" }) => {
+  const isClientes = modo === "CLIENTES";
   const [rows, setRows] = useState<URow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [filtroRol, setFiltroRol] = useState("TODOS");
+  const [filtroRol, setFiltroRol] = useState(isClientes ? "CLIENTE" : "TODOS");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [pagina, setPagina] = useState(1);
 
+  const [modalCrear, setModalCrear] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
   const [modalVer, setModalVer] = useState(false);
   const [modalEliminar, setModalEliminar] = useState(false);
@@ -55,17 +62,35 @@ export const AdminUsuarios: React.FC = () => {
     null,
   );
   const [form, setForm] = useState({ nombres: "", apellidos: "", email: "", rol: "", estado: "" });
+  const [formCrear, setFormCrear] = useState({
+    nombres: "",
+    apellidos: "",
+    email: "",
+    telefono: "",
+    password: "",
+    rol: isClientes ? "CLIENTE" : "COMERCIO",
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errorsCrear, setErrorsCrear] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   const { showToast } = useUI();
+
+  // Resetear filtros si cambia el modo
+  useEffect(() => {
+    setFiltroRol(isClientes ? "CLIENTE" : "TODOS");
+    setFiltroEstado("TODOS");
+    setQ("");
+    setPagina(1);
+  }, [modo]);
 
   const load = async () => {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
       if (q.trim()) params.q = q.trim();
-      if (filtroRol !== "TODOS") params.rol = filtroRol;
+      const rolParam = isClientes ? "CLIENTE" : filtroRol;
+      if (rolParam !== "TODOS") params.rol = rolParam;
       if (filtroEstado !== "TODOS") params.estado = filtroEstado;
       const { data } = await api.get("/admin/usuarios", { params });
       const list = data?.data ?? data ?? [];
@@ -79,7 +104,7 @@ export const AdminUsuarios: React.FC = () => {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [modo]);
 
   useEffect(() => {
     setPagina(1);
@@ -87,8 +112,9 @@ export const AdminUsuarios: React.FC = () => {
 
   const rowsFiltrados = useMemo(() => {
     let result = rows;
-    if (filtroRol !== "TODOS") {
-      result = result.filter((u) => u.rol_nombre === filtroRol);
+    const rolEfectivo = isClientes ? "CLIENTE" : filtroRol;
+    if (rolEfectivo !== "TODOS") {
+      result = result.filter((u) => u.rol_nombre === rolEfectivo);
     }
     if (filtroEstado !== "TODOS") {
       result = result.filter((u) => u.estado === filtroEstado);
@@ -103,7 +129,7 @@ export const AdminUsuarios: React.FC = () => {
       );
     }
     return result;
-  }, [rows, filtroRol, filtroEstado, q]);
+  }, [rows, filtroRol, filtroEstado, q, isClientes]);
 
   const totalPaginas = Math.max(
     1,
@@ -114,6 +140,81 @@ export const AdminUsuarios: React.FC = () => {
     (paginaActual - 1) * ITEMS_PER_PAGE,
     paginaActual * ITEMS_PER_PAGE,
   );
+
+  const openCrear = () => {
+    setFormCrear({
+      nombres: "",
+      apellidos: "",
+      email: "",
+      telefono: "",
+      password: "",
+      rol: isClientes ? "CLIENTE" : "COMERCIO",
+    });
+    setErrorsCrear({});
+    setModalCrear(true);
+  };
+
+  const validateCrear = (data: typeof formCrear): boolean => {
+    const e: Record<string, string> = {};
+
+    if (!data.nombres.trim()) {
+      e.nombres = "Los nombres son obligatorios";
+    } else if (data.nombres.trim().length < 2) {
+      e.nombres = "Debe tener al menos 2 caracteres";
+    }
+
+    if (!data.apellidos.trim()) {
+      e.apellidos = "Los apellidos son obligatorios";
+    } else if (data.apellidos.trim().length < 2) {
+      e.apellidos = "Debe tener al menos 2 caracteres";
+    }
+
+    if (!data.email.trim()) {
+      e.email = "El correo electrónico es obligatorio";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) {
+      e.email = "Ingresa un correo electrónico válido";
+    }
+
+    if (data.password && data.password.trim().length < 6) {
+      e.password = "La contraseña debe tener al menos 6 caracteres";
+    }
+
+    setErrorsCrear(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleCrear = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateCrear(formCrear)) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/usuarios", {
+        nombres: formCrear.nombres.trim(),
+        apellidos: formCrear.apellidos.trim(),
+        email: formCrear.email.trim(),
+        telefono: formCrear.telefono.trim() || undefined,
+        password: formCrear.password.trim() || undefined,
+        rol: isClientes ? "CLIENTE" : formCrear.rol,
+      });
+
+      const tempPass = data?.data?.temporary_password;
+      showToast(
+        tempPass
+          ? `${isClientes ? "Cliente" : "Usuario"} registrado con éxito. Clave temporal: ${tempPass}`
+          : `${isClientes ? "Cliente" : "Usuario"} registrado con éxito`,
+        "success",
+      );
+      setModalCrear(false);
+      await load();
+    } catch (err: any) {
+      showToast(
+        err.response?.data?.message || `No se pudo registrar el ${isClientes ? "cliente" : "usuario"}`,
+        "error",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openEditar = (u: URow) => {
     setUsuarioSeleccionado(u);
@@ -203,6 +304,122 @@ export const AdminUsuarios: React.FC = () => {
       setBusy(false);
     }
   };
+
+  const formCrearModal = (
+    <form onSubmit={handleCrear} className="space-y-4">
+      <div className="p-3 bg-[#FAF8F5] dark:bg-slate-800/60 rounded-xl border border-[#EFE7DE] dark:border-slate-700 text-xs text-[#8E7D7D] dark:text-slate-400">
+        {isClientes
+          ? "Registra un nuevo cliente para la plataforma. Se le generará automáticamente su código único de pasaporte digital."
+          : "Crea un nuevo usuario administrativo o comercial con credenciales de acceso seguras."}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Input
+          label="Nombres *"
+          placeholder="Ej. Carlos"
+          value={formCrear.nombres}
+          required
+          error={errorsCrear.nombres}
+          onChange={(e) => {
+            setFormCrear({ ...formCrear, nombres: e.target.value });
+            if (errorsCrear.nombres) setErrorsCrear({ ...errorsCrear, nombres: "" });
+          }}
+        />
+        <Input
+          label="Apellidos *"
+          placeholder="Ej. Mendoza"
+          value={formCrear.apellidos}
+          required
+          error={errorsCrear.apellidos}
+          onChange={(e) => {
+            setFormCrear({ ...formCrear, apellidos: e.target.value });
+            if (errorsCrear.apellidos) setErrorsCrear({ ...errorsCrear, apellidos: "" });
+          }}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Input
+          label="Correo Electrónico *"
+          type="email"
+          placeholder="correo@ejemplo.pe"
+          value={formCrear.email}
+          required
+          error={errorsCrear.email}
+          onChange={(e) => {
+            setFormCrear({ ...formCrear, email: e.target.value });
+            if (errorsCrear.email) setErrorsCrear({ ...errorsCrear, email: "" });
+          }}
+        />
+        <Input
+          label="Teléfono / Celular"
+          type="tel"
+          placeholder="Ej. 987654321"
+          value={formCrear.telefono}
+          onChange={(e) => {
+            setFormCrear({ ...formCrear, telefono: e.target.value });
+          }}
+        />
+      </div>
+
+      {!isClientes ? (
+        <label className="block space-y-1.5 w-full text-left">
+          <span className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+            Rol en el Sistema *
+          </span>
+          <select
+            className="input-base"
+            value={formCrear.rol}
+            onChange={(e) => setFormCrear({ ...formCrear, rol: e.target.value })}
+          >
+            <option value="COMERCIO">Comercio (Encargado / Personal de Establecimiento)</option>
+            <option value="ADMIN">Administrador General de la Plataforma</option>
+            <option value="CLIENTE">Cliente / Pasaporte Digital</option>
+          </select>
+          <span className="text-[10px] text-muted block mt-1">
+            Los usuarios COMERCIO pueden asignarse a locales para validar visitas y canjear premios NFC.
+          </span>
+        </label>
+      ) : (
+        <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
+          <span className="font-semibold">Rol Asignado:</span>
+          <span className="font-bold uppercase tracking-wider bg-emerald-600 text-white px-2.5 py-0.5 rounded-full text-[10px]">
+            Cliente (Pasaporte Digital)
+          </span>
+        </div>
+      )}
+
+      <div>
+        <Input
+          label="Contraseña de Acceso"
+          type="password"
+          placeholder="Opcional (Dejar en blanco para asignar: Pass1234!)"
+          value={formCrear.password}
+          error={errorsCrear.password}
+          onChange={(e) => {
+            setFormCrear({ ...formCrear, password: e.target.value });
+            if (errorsCrear.password) setErrorsCrear({ ...errorsCrear, password: "" });
+          }}
+        />
+        <span className="text-[10px] text-[#8E7D7D] dark:text-slate-400 block mt-1">
+          Si no ingresas una contraseña, se asignará la temporal <strong>Pass1234!</strong> que el usuario podrá cambiar al iniciar sesión.
+        </span>
+      </div>
+
+      <div className="flex gap-2 pt-2">
+        <Button type="submit" loading={busy} fullWidth>
+          {isClientes ? "Registrar Cliente" : "Crear Usuario"}
+        </Button>
+        <Button
+          variant="secondary"
+          fullWidth
+          onClick={() => setModalCrear(false)}
+        >
+          Cancelar
+        </Button>
+      </div>
+    </form>
+  );
 
   const formEditar = (
     <form onSubmit={handleEditar} className="space-y-3">
@@ -314,43 +531,69 @@ export const AdminUsuarios: React.FC = () => {
   return (
     <div className="space-y-5 animate-fadeIn">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">Usuarios</h1>
-        <span className="text-sm text-slate-500">
-          {rowsFiltrados.length} usuario{rowsFiltrados.length !== 1 ? "s" : ""}
-        </span>
+        <div>
+          <h1 className="text-xl font-black text-[#2D1A1E]">
+            {isClientes ? "Gestión de Clientes" : "Gestión de Usuarios"}
+          </h1>
+          <p className="text-xs text-[#8E7D7D] mt-0.5">
+            {isClientes
+              ? "Clientes registrados con pasaporte digital y sellos acumulados"
+              : "Administración general de accesos y roles del sistema"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-bold text-[#8E7D7D] bg-white border border-[#E8DFD5] px-3 py-1.5 rounded-xl shadow-2xs">
+            {rowsFiltrados.length} {isClientes ? (rowsFiltrados.length !== 1 ? "clientes" : "cliente") : (rowsFiltrados.length !== 1 ? "usuarios" : "usuario")}
+          </span>
+          <button
+            type="button"
+            onClick={openCrear}
+            className="flex items-center gap-2 px-3.5 py-1.5 bg-[#7C0A1E] hover:bg-[#600616] text-white text-xs font-bold rounded-xl shadow-xs transition-all duration-200 active:scale-95 cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>{isClientes ? "Nuevo Cliente" : "Nuevo Usuario"}</span>
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+      {/* Barra de Filtros: Buscador a la izquierda + Filtros a la derecha en la misma fila */}
+      <div className="flex flex-col sm:flex-row items-center gap-3">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8E7D7D] pointer-events-none z-10" />
           <input
-            className="input-base pl-10"
-            placeholder="Buscar por nombre o email..."
+            className="input-base input-with-search"
+            placeholder={isClientes ? "Buscar cliente por nombre o email..." : "Buscar usuario por nombre o email..."}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load()}
           />
         </div>
-        <select
-          className="input-base w-auto min-w-[130px]"
-          value={filtroRol}
-          onChange={(e) => setFiltroRol(e.target.value)}
-        >
-          <option value="TODOS">Todos los roles</option>
-          <option value="CLIENTE">Cliente</option>
-          <option value="COMERCIO">Comercio</option>
-          <option value="ADMIN">Admin</option>
-        </select>
-        <select
-          className="input-base w-auto min-w-[130px]"
-          value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value)}
-        >
-          <option value="TODOS">Todos</option>
-          <option value="ACTIVO">Activo</option>
-          <option value="INACTIVO">Inactivo</option>
-          <option value="BLOQUEADO">Bloqueado</option>
-        </select>
+
+        <div className="flex items-center gap-3 w-full sm:w-auto shrink-0">
+          {!isClientes && (
+            <select
+              className="input-base w-full sm:w-44 text-xs font-semibold"
+              value={filtroRol}
+              onChange={(e) => setFiltroRol(e.target.value)}
+            >
+              <option value="TODOS">Todos los roles</option>
+              <option value="CLIENTE">Cliente</option>
+              <option value="COMERCIO">Comercio</option>
+              <option value="ADMIN">Admin</option>
+            </select>
+          )}
+
+          <select
+            className="input-base w-full sm:w-44 text-xs font-semibold"
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+          >
+            <option value="TODOS">Todos los estados</option>
+            <option value="ACTIVO">Activo</option>
+            <option value="INACTIVO">Inactivo</option>
+            <option value="BLOQUEADO">Bloqueado</option>
+          </select>
+        </div>
       </div>
 
       {loading ? (
@@ -369,11 +612,11 @@ export const AdminUsuarios: React.FC = () => {
         />
       ) : (
         <div className="space-y-4">
-          <div className="bg-[rgb(var(--app-surface))] border border-[rgb(var(--app-border))] rounded-2xl overflow-hidden shadow-xs">
+          <div className="table-card-container">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-[rgb(var(--app-border))] bg-slate-50 dark:bg-slate-900/50 text-muted font-bold uppercase">
+                  <tr className="border-b border-[#EFE7DE]/70 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-900/40 text-muted font-bold uppercase">
                     <th className="p-3.5">Usuario / Nombre</th>
                     <th className="p-3.5">Correo Electrónico</th>
                     <th className="p-3.5">Rol de Sistema</th>
@@ -382,7 +625,7 @@ export const AdminUsuarios: React.FC = () => {
                     <th className="p-3.5 text-right">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[rgb(var(--app-border))]">
+                <tbody className="divide-y divide-[#EFE7DE]/60 dark:divide-slate-800/60">
                   {rowsPaginados.map((u) => (
                     <tr key={u.id} className="hover:bg-slate-500/5 transition">
                       <td className="p-3.5">
@@ -464,7 +707,7 @@ export const AdminUsuarios: React.FC = () => {
                           >
                             <SquarePen className="w-4 h-4" />
                           </button>
-                          {u.rol_nombre !== "ADMIN" && (
+                          {u.rol_nombre !== "ADMIN" && u.rol_nombre !== "ADMIN_GENERAL" && (
                             <button
                               type="button"
                               onClick={() => openEliminar(u)}
@@ -483,7 +726,7 @@ export const AdminUsuarios: React.FC = () => {
             </div>
 
             {/* Paginación y Resumen */}
-            <div className="p-3.5 border-t border-[rgb(var(--app-border))] bg-slate-50 dark:bg-slate-900/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="p-3.5 border-t border-[#EFE7DE]/70 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-900/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
               <span className="text-muted">
                 Mostrando {Math.min((paginaActual - 1) * ITEMS_PER_PAGE + 1, rowsFiltrados.length)} -{" "}
                 {Math.min(paginaActual * ITEMS_PER_PAGE, rowsFiltrados.length)} de{" "}
@@ -670,6 +913,15 @@ export const AdminUsuarios: React.FC = () => {
         size="sm"
       >
         {modalEliminarContent}
+      </Modal>
+
+      <Modal
+        open={modalCrear}
+        onClose={() => setModalCrear(false)}
+        title={isClientes ? "Registrar Nuevo Cliente" : "Registrar Nuevo Usuario"}
+        size="md"
+      >
+        {formCrearModal}
       </Modal>
     </div>
   );
