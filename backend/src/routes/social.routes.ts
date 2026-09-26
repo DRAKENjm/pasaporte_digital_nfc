@@ -44,6 +44,5 @@ router.post(
   SocialController.crearPublicacion,
 );
 router.post("/interacciones", authMiddleware, SocialController.reaccionar);
-router.post("/upload-url", authMiddleware, SocialController.getUploadUrl);
 
 export default router;

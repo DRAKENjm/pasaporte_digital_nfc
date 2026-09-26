@@ -1,142 +1,268 @@
-import React from "react";
-import { Outlet, NavLink } from "react-router-dom";
+import React, { useState } from "react";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Building2,
-  Award,
   Users,
   CreditCard,
+  Award,
   Gift,
-  FileText,
-  Shield,
+  Tag,
+  BarChart3,
+  ShieldCheck,
+  Settings,
   LogOut,
+  Bell,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  ShieldAlert,
+  Menu,
+  X,
+  Sparkles,
+  Stamp,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { initials } from "../utils/levels";
 
 export const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  // Por defecto extendido, pero permite colapsar al presionar el logo o botón
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const nav = (
-    <>
-      <NavItem to="/admin" end label="Resumen" icon={LayoutDashboard} />
-      <NavItem to="/admin/locales" label="Locales Aliados" icon={Building2} />
-      <NavItem to="/admin/reglas" label="Reglas de Sellos" icon={Award} />
-      <NavItem to="/admin/usuarios" label="Usuarios & Roles" icon={Users} />
-      <NavItem to="/admin/tarjetas" label="Tarjetas NFC" icon={CreditCard} />
-      <NavItem to="/admin/recompensas" label="Recompensas" icon={Gift} />
-      <NavItem to="/admin/reclamaciones" label="Reclamaciones" icon={FileText} />
-    </>
-  );
+  const handleLogout = () => {
+    logout();
+    navigate("/auth/login");
+  };
+
+  const navGroups: Array<{
+    group: string;
+    items: Array<{ to: string; end?: boolean; label: string; icon: any }>;
+  }> = [
+    {
+      group: "Principal",
+      items: [
+        { to: "/admin", end: true, label: "Resumen", icon: LayoutDashboard },
+      ],
+    },
+    {
+      group: "Entidades",
+      items: [
+        { to: "/admin/clientes", label: "Clientes", icon: Users },
+        { to: "/admin/locales", label: "Lugares / Locales", icon: Building2 },
+        { to: "/admin/usuarios", label: "Usuarios", icon: ShieldCheck },
+        { to: "/admin/tarjetas", label: "Tarjetas NFC", icon: CreditCard },
+      ],
+    },
+    {
+      group: "Fidelización",
+      items: [
+        { to: "/admin/sellos", label: "Diseño de Sellos", icon: Stamp },
+        { to: "/admin/reglas", label: "Reglas de Sellos", icon: Award },
+        { to: "/admin/recompensas", label: "Recompensas", icon: Gift },
+        { to: "/admin/categorias", label: "Categorías", icon: Tag },
+      ],
+    },
+    {
+      group: "Supervisión",
+      items: [
+        { to: "/admin/reportes", label: "Reportes", icon: BarChart3 },
+        { to: "/admin/reclamaciones", label: "Reclamaciones", icon: ShieldAlert },
+        { to: "/admin/legal", label: "Documentos", icon: FileText },
+        { to: "/admin/auditoria", label: "Auditoría", icon: ShieldCheck },
+        { to: "/admin/configuracion", label: "Configuración", icon: Settings },
+      ],
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-[rgb(var(--app-bg))] text-[rgb(var(--app-text))]">
-      <div className="lg:flex lg:max-w-7xl lg:mx-auto">
-        {/* Sidebar Desktop */}
-        <aside className="hidden lg:flex lg:w-64 flex-col border-r border-[rgb(var(--app-border))] sticky top-0 h-screen p-5 bg-[rgb(var(--app-surface))]">
-          <div className="flex items-center gap-3 mb-8 px-2">
-            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="font-bold text-sm leading-tight text-slate-900 dark:text-white">
-                Administración
-              </p>
-              <p className="text-[11px] font-semibold text-sky-700 tracking-wide uppercase">
-                Pasaporte NFC
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-[#F0ECE6] text-[#2D1A1E] p-2 sm:p-4 lg:p-5 flex gap-4 font-sans selection:bg-[#7C0A1E]/20 selection:text-[#7C0A1E]">
+      {/* Mobile Backdrop */}
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-xs"
+        />
+      )}
 
-          <nav className="flex flex-col gap-1.5 flex-1">{nav}</nav>
-
-          <div className="pt-4 border-t border-[rgb(var(--app-border))] space-y-2">
-            <div className="px-3 py-2 bg-slate-100 dark:bg-slate-800/50 rounded-xl flex items-center gap-3">
-              <span className="w-8 h-8 rounded-lg bg-slate-900 text-white text-xs font-bold flex items-center justify-center shrink-0">
-                {initials(user)}
-              </span>
+      {/* Floating Rojo Tinto / Borgoña Sidebar (Refined & Clear) */}
+      <aside
+        className={`
+          fixed lg:sticky top-4 h-[calc(100vh-2rem)] z-50 bg-gradient-to-b from-[#7C0A1E] via-[#6D0819] to-[#580614] border border-[#9B1B30]/30 rounded-3xl text-white flex flex-col shrink-0 shadow-2xl transition-all duration-300 select-none overflow-hidden
+          ${mobileOpen ? "translate-x-0 w-64 left-4" : "-translate-x-full lg:translate-x-0"}
+          ${collapsed ? "lg:w-[76px]" : "lg:w-64"}
+        `}
+      >
+        {/* Brand / Logo (Clicking triggers collapse/expand) */}
+        <div className="p-3.5 border-b border-white/10 flex items-center justify-between">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="flex items-center gap-3 overflow-hidden text-left group w-full cursor-pointer focus:outline-none"
+            title={collapsed ? "Click para expandir menú" : "Click para contraer menú"}
+          >
+            <div className="w-11 h-11 rounded-2xl overflow-hidden shrink-0 shadow-md group-hover:scale-105 transition-all duration-200 border border-[#C5A059]/30">
+              <img
+                src="/logo-icon.png"
+                alt="Pasaporte Digital Logo"
+                className="w-full h-full object-cover"
+              />
+            </div>
+            {!collapsed && (
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold truncate">
-                  {user?.nombres || user?.email?.split("@")[0]}
-                </p>
-                <p className="text-[10px] text-muted truncate">{user?.email}</p>
+                <h2 className="font-bold text-xs tracking-wider text-white uppercase truncate flex items-center gap-1.5">
+                  PASAPORTE
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#C5A059]" />
+                </h2>
+                <span className="text-[10px] font-semibold tracking-wide text-[#E8D3A2] block truncate uppercase">
+                  Administrador
+                </span>
               </div>
-            </div>
+            )}
+          </button>
 
-            <button
-              type="button"
-              onClick={logout}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-500/10 text-xs font-semibold transition"
-            >
-              <LogOut className="w-4 h-4" />
-              Cerrar sesión
-            </button>
-          </div>
-        </aside>
-
-        {/* Contenido Principal */}
-        <div className="min-w-0 flex-1 flex flex-col min-h-screen">
-          {/* Header Mobile / Tablet */}
-          <header className="sticky top-0 z-40 bg-[rgb(var(--app-surface))]/95 backdrop-blur-sm border-b border-[rgb(var(--app-border))] px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Shield className="w-5 h-5 text-slate-900 dark:text-white lg:hidden" />
-              <div>
-                <p className="font-bold text-sm">Panel de Control</p>
-                <p className="text-[10px] text-muted lg:hidden truncate max-w-[40vw]">
-                  {user?.email}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase bg-slate-900 text-white px-2.5 py-0.5 rounded-full">
-                ADMIN
-              </span>
-              <button
-                type="button"
-                onClick={logout}
-                className="lg:hidden p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                title="Cerrar sesión"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          </header>
-
-          <main className="flex-1 p-4 lg:p-8 min-w-0">
-            <div className="max-w-5xl mx-auto">
-              <Outlet />
-            </div>
-          </main>
-
-          {/* Bottom Nav Mobile */}
-          <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-[rgb(var(--app-surface))] border-t border-[rgb(var(--app-border))] safe-area-pb overflow-x-auto z-40">
-            <div className="flex justify-around min-w-max px-2 py-1">{nav}</div>
-          </nav>
+          {/* Mobile close */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+          >
+            <X size={16} />
+          </button>
         </div>
+
+        {/* Links de Navegación por Grupos */}
+        <nav className="flex-1 p-2.5 space-y-3.5 overflow-y-auto custom-dark-scrollbar">
+          {navGroups.map((g, gIdx) => (
+            <div key={gIdx} className="space-y-1">
+              {!collapsed && (
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#E8D3A2]/80 px-3 block">
+                  {g.group}
+                </span>
+              )}
+              {g.items.map((item) => (
+                <NavLink
+                  key={item.label + item.to}
+                  to={item.to}
+                  end={item.end}
+                  onClick={() => setMobileOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-all duration-200 ${
+                      isActive
+                        ? "bg-[#580614] text-white shadow-inner border border-[#C5A059]/50"
+                        : "text-white/80 hover:text-white hover:bg-white/10"
+                    } ${collapsed ? "justify-center px-0 w-11 h-11 mx-auto" : ""}`
+                  }
+                  title={collapsed ? item.label : undefined}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <item.icon
+                        className={`w-4 h-4 shrink-0 transition-colors ${
+                          isActive ? "text-[#C5A059]" : "text-white/70"
+                        }`}
+                      />
+                      {!collapsed && <span className="truncate">{item.label}</span>}
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer & Toggle / Logout */}
+        <div className="p-2.5 border-t border-white/10 space-y-1 bg-black/15">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className={`hidden lg:flex w-full items-center gap-3 px-3 py-2 rounded-2xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors ${
+              collapsed ? "justify-center px-0 w-11 h-11 mx-auto" : ""
+            }`}
+            title={collapsed ? "Expandir" : "Contraer"}
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {!collapsed && <span>{collapsed ? "Expandir" : "Contraer menú"}</span>}
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-xs font-medium text-white/80 hover:text-rose-200 hover:bg-rose-500/20 transition-colors ${
+              collapsed ? "justify-center px-0 w-11 h-11 mx-auto" : ""
+            }`}
+            title={collapsed ? "Cerrar sesión" : undefined}
+          >
+            <LogOut className="w-4 h-4 shrink-0 text-white/70" />
+            {!collapsed && <span>Cerrar sesión</span>}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Container Area with Rounded Canvas (Fondo Claro y Textos Nítidos) */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#FAF8F5] border border-[#E8DFD5] rounded-3xl shadow-xl overflow-hidden min-h-[calc(100vh-2rem)]">
+        {/* Top Navbar */}
+        <header className="px-5 sm:px-8 py-4 bg-white/90 backdrop-blur-md border-b border-[#E8DFD5] flex items-center justify-between gap-4 sticky top-0 z-30">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="lg:hidden p-2 rounded-2xl bg-[#FAF8F5] border border-[#E8DFD5] text-[#2D1A1E] hover:bg-[#F0ECE6]"
+            >
+              <Menu size={18} />
+            </button>
+
+            {/* Title / Brand Display */}
+            <div>
+              <h1 className="text-base sm:text-lg font-black text-[#2D1A1E] tracking-tight flex items-center gap-2">
+                Panel General
+                <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#7C0A1E]/10 text-[#7C0A1E] border border-[#7C0A1E]/20">
+                  En Vivo
+                </span>
+              </h1>
+            </div>
+          </div>
+
+          {/* Quick Search and Top Icons */}
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2 bg-[#F5EFEB] border border-[#E8DFD5] px-3.5 py-2 rounded-2xl w-64 focus-within:border-[#7C0A1E]/40 focus-within:bg-white transition-all">
+              <Search className="w-3.5 h-3.5 text-[#8E7D7D]" />
+              <input
+                type="text"
+                placeholder="Buscar módulo, cliente, NFC..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent border-none text-xs text-[#2D1A1E] focus:outline-none w-full placeholder:text-[#8E7D7D]"
+              />
+            </div>
+
+            {/* Notification & Profile Icons */}
+            <button
+              onClick={() => navigate("/admin/reclamaciones")}
+              className="w-9 h-9 rounded-2xl bg-white border border-[#E8DFD5] hover:border-[#7C0A1E]/40 flex items-center justify-center text-[#5A4B4B] hover:text-[#7C0A1E] transition-all relative shadow-2xs"
+              title="Notificaciones y reclamaciones"
+            >
+              <Bell className="w-4 h-4" />
+              <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#7C0A1E]" />
+            </button>
+
+            {/* User Avatar */}
+            <div className="flex items-center gap-2.5 pl-2 border-l border-[#E8DFD5]">
+              <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#7C0A1E] to-[#9B1B30] text-white font-black text-xs flex items-center justify-center shadow-xs">
+                AG
+              </div>
+              <div className="hidden lg:block text-left">
+                <p className="text-xs font-bold text-[#2D1A1E] leading-tight">Admin General</p>
+                <p className="text-[10px] text-[#8E7D7D] truncate max-w-[130px] font-medium">{user?.email || "admin@pasaporte.pe"}</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Content Body */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          <Outlet />
+        </main>
       </div>
     </div>
   );
 };
 
-const NavItem: React.FC<{
-  to: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  end?: boolean;
-}> = ({ to, label, icon: Icon, end }) => (
-  <NavLink
-    to={to}
-    end={end}
-    className={({ isActive }) =>
-      `flex flex-col lg:flex-row items-center lg:gap-3 min-w-[70px] min-h-[48px] px-2.5 py-2 rounded-xl text-[10px] lg:text-xs font-semibold transition ${
-        isActive
-          ? "bg-slate-900 text-white shadow-xs"
-          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800"
-      }`
-    }
-  >
-    <Icon className="w-4 h-4 lg:w-4 lg:h-4 shrink-0" />
-    <span className="leading-tight text-center lg:text-left">{label}</span>
-  </NavLink>
-);

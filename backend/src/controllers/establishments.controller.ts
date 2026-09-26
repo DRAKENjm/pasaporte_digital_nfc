@@ -4,28 +4,79 @@ import { ApiError, sendResponse } from "../utils";
 import { AuthenticatedRequest } from "../types";
 
 export const EstablishmentsController = {
-  /** Listar establecimientos activos (descubrimiento) */
+  /** Listar establecimientos y sus sucursales (para la pantalla Explorar) */
   async listar(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { categoria_id, q } = req.query;
+      const { q, categoria } = req.query;
+
       let sql = `
-        SELECT e.*, c.nombre AS categoria_nombre
+        SELECT 
+          e.id_establecimiento,
+          e.nombre_comercial,
+          e.razon_social,
+          e.descripcion,
+          e.logo,
+          e.imagen_portada,
+          e.telefono,
+          e.email,
+          e.estado,
+          -- Programa de sellos activo
+          ps.id_programa,
+          ps.nombre AS programa_nombre,
+          ps.meta_sellos,
+          ps.nombre_sello,
+          ps.imagen_sello,
+          ps.color_sello,
+          COALESCE(rp.valor, 20) AS puntos_por_visita,
+          -- Sucursales agrupadas en JSON
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id_sucursal', s.id_sucursal,
+                'nombre', s.nombre,
+                'direccion', s.direccion,
+                'latitud', s.latitud,
+                'longitud', s.longitud,
+                'telefono', s.telefono,
+                'es_principal', s.es_principal
+              )
+            ) FILTER (WHERE s.id_sucursal IS NOT NULL),
+            '[]'::json
+          ) AS sucursales
         FROM establecimientos e
-        LEFT JOIN categorias_establecimiento c ON c.id = e.categoria_id
+        LEFT JOIN sucursales s ON s.id_establecimiento = e.id_establecimiento AND s.estado = 1
+        LEFT JOIN LATERAL (
+          SELECT id_programa, nombre, meta_sellos, nombre_sello, imagen_sello, color_sello, puntos_por_visita
+          FROM programas_sellos
+          WHERE id_establecimiento = e.id_establecimiento AND estado = 'ACTIVO'
+          ORDER BY id_programa DESC
+          LIMIT 1
+        ) ps ON true
+        LEFT JOIN LATERAL (
+          SELECT valor
+          FROM reglas_puntos
+          WHERE id_programa = ps.id_programa AND tipo_regla = 'POR_SELLO' AND estado = 1
+          LIMIT 1
+        ) rp ON true
         WHERE e.estado = 'ACTIVO'
       `;
-      const params: any[] = [];
 
-      if (categoria_id) {
-        params.push(categoria_id);
-        sql += ` AND e.categoria_id = $${params.length}`;
-      }
+      const params: any[] = [];
       if (q && String(q).trim()) {
         params.push(`%${String(q).trim()}%`);
-        sql += ` AND (e.razon_social ILIKE $${params.length} OR e.direccion ILIKE $${params.length})`;
+        sql += ` AND (e.nombre_comercial ILIKE $${params.length} OR e.descripcion ILIKE $${params.length} OR s.direccion ILIKE $${params.length})`;
       }
 
-      sql += " ORDER BY e.razon_social ASC";
+      if (categoria && String(categoria).trim() && String(categoria) !== "Todos") {
+        params.push(`%${String(categoria).trim()}%`);
+        sql += ` AND (e.descripcion ILIKE $${params.length} OR e.nombre_comercial ILIKE $${params.length})`;
+      }
+
+      sql += `
+        GROUP BY e.id_establecimiento, ps.id_programa, ps.nombre, ps.meta_sellos, ps.nombre_sello, ps.imagen_sello, ps.color_sello, rp.valor
+        ORDER BY e.nombre_comercial ASC
+      `;
+
       const result = await query(sql, params);
       sendResponse(res, 200, result.rows, "Establecimientos");
     } catch (error) {
@@ -33,129 +84,16 @@ export const EstablishmentsController = {
     }
   },
 
-  /** Detalle de un establecimiento + reglas activas */
-  async detalle(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const est = await query(
-        `SELECT e.*, c.nombre AS categoria_nombre
-         FROM establecimientos e
-         LEFT JOIN categorias_establecimiento c ON c.id = e.categoria_id
-         WHERE e.id = $1`,
-        [id],
-      );
-      if (!est.rows[0])
-        throw new ApiError(404, "Establecimiento no encontrado");
-
-      const reglas = await query(
-        `SELECT * FROM reglas_sellos
-         WHERE establecimiento_id = $1 AND estado = 'ACTIVA'
-         ORDER BY created_at DESC`,
-        [id],
-      );
-
-      sendResponse(
-        res,
-        200,
-        { ...est.rows[0], reglas: reglas.rows },
-        "Detalle del establecimiento",
-      );
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /** Crear establecimiento (ADMIN o COMERCIO) */
-  async crear(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-    try {
-      if (!req.user) throw new ApiError(401, "No autenticado");
-      const { categoria_id, ruc, razon_social, direccion } = req.body;
-
-      if (!ruc || !razon_social) {
-        throw new ApiError(400, "RUC y razón social son obligatorios");
-      }
-
-      const result = await query(
-        `INSERT INTO establecimientos (categoria_id, ruc, razon_social, direccion, estado)
-         VALUES ($1, $2, $3, $4, 'ACTIVO')
-         RETURNING *`,
-        [categoria_id || null, ruc, razon_social, direccion || null],
-      );
-
-      sendResponse(res, 201, result.rows[0], "Establecimiento creado");
-    } catch (error: any) {
-      if (error.code === "23505") {
-        return next(
-          new ApiError(409, "Ya existe un establecimiento con ese RUC"),
-        );
-      }
-      next(error);
-    }
-  },
-
-  /** Actualizar establecimiento */
-  async actualizar(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
-    try {
-      if (!req.user) throw new ApiError(401, "No autenticado");
-      const { id } = req.params;
-      const { categoria_id, razon_social, direccion, estado } = req.body;
-      const { lat, lng, descripcion, telefono, horario, imagen_url } = req.body;
-      for (const [v, max] of [
-        [lat, 90],
-        [lng, 180],
-      ])
-        if (
-          v !== undefined &&
-          v !== null &&
-          (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > max)
-        )
-          throw new ApiError(400, "Coordenadas inválidas");
-
-      const result = await query(
-        `UPDATE establecimientos SET
-           categoria_id = COALESCE($2, categoria_id),
-           razon_social = COALESCE($3, razon_social),
-           direccion = COALESCE($4, direccion),
-           estado = COALESCE($5, estado),
-           lat=COALESCE($6,lat),lng=COALESCE($7,lng),descripcion=COALESCE($8,descripcion),telefono=COALESCE($9,telefono),horario=COALESCE($10,horario),imagen_url=COALESCE($11,imagen_url)
-         WHERE id = $1
-         RETURNING *`,
-        [
-          id,
-          categoria_id,
-          razon_social,
-          direccion,
-          estado,
-          lat,
-          lng,
-          descripcion,
-          telefono,
-          horario,
-          imagen_url,
-        ],
-      );
-
-      if (!result.rows[0])
-        throw new ApiError(404, "Establecimiento no encontrado");
-      sendResponse(res, 200, result.rows[0], "Establecimiento actualizado");
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /** Categorías */
-  async categorias(
-    _req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
+  /** Listar categorías de establecimientos */
+  async listarCategorias(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const result = await query(
-        `SELECT * FROM categorias_establecimiento WHERE estado = TRUE ORDER BY nombre`,
+        `SELECT c.*, COUNT(e.id_establecimiento)::int AS total_locales
+         FROM categorias_establecimiento c
+         LEFT JOIN establecimientos e ON e.categoria_id = c.id
+         WHERE c.estado = true
+         GROUP BY c.id
+         ORDER BY c.nombre ASC`,
       );
       sendResponse(res, 200, result.rows, "Categorías");
     } catch (error) {
@@ -163,195 +101,461 @@ export const EstablishmentsController = {
     }
   },
 
-  /** Crear / listar reglas de sellos de un establecimiento */
-  async listarReglas(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
+  /** Detalle de un establecimiento específico */
+  async detalle(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const result = await query(
-        `SELECT * FROM reglas_sellos WHERE establecimiento_id = $1 ORDER BY created_at DESC`,
+        `SELECT 
+          e.*,
+          ps.id_programa,
+          ps.nombre AS programa_nombre,
+          ps.meta_sellos,
+          ps.nombre_sello,
+          ps.imagen_sello,
+          ps.color_sello,
+          COALESCE(rp.valor, 20) AS puntos_por_visita
+         FROM establecimientos e
+         LEFT JOIN programas_sellos ps ON ps.id_establecimiento = e.id_establecimiento AND ps.estado = 'ACTIVO'
+         LEFT JOIN reglas_puntos rp ON rp.id_programa = ps.id_programa AND rp.tipo_regla = 'POR_SELLO' AND rp.estado = 1
+         WHERE e.id_establecimiento = $1`,
         [id],
       );
-      sendResponse(res, 200, result.rows, "Reglas de sellos");
-    } catch (error) {
-      next(error);
-    }
-  },
 
-  async crearRegla(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
-    try {
-      if (!req.user) throw new ApiError(401, "No autenticado");
-      const { id } = req.params; // establecimiento_id
-      const {
-        nombre_accion,
-        valor_puntos_por_sello,
-        limite_diario_por_usuario,
-      } = req.body;
+      if (!result.rows[0]) {
+        throw new ApiError(404, "Establecimiento no encontrado");
+      }
 
-      if (!nombre_accion)
-        throw new ApiError(400, "nombre_accion es obligatorio");
-
-      const result = await query(
-        `INSERT INTO reglas_sellos
-           (establecimiento_id, nombre_accion, valor_puntos_por_sello, limite_diario_por_usuario, estado)
-         VALUES ($1, $2, $3, $4, 'ACTIVA')
-         RETURNING *`,
-        [
-          id,
-          nombre_accion,
-          valor_puntos_por_sello ?? 10,
-          limite_diario_por_usuario ?? 1,
-        ],
-      );
-
-      sendResponse(res, 201, result.rows[0], "Regla creada");
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  async actualizarRegla(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
-    try {
-      const { reglaId } = req.params;
-      const {
-        nombre_accion,
-        valor_puntos_por_sello,
-        limite_diario_por_usuario,
-        estado,
-      } = req.body;
-
-      const result = await query(
-        `UPDATE reglas_sellos SET
-           nombre_accion = COALESCE($2, nombre_accion),
-           valor_puntos_por_sello = COALESCE($3, valor_puntos_por_sello),
-           limite_diario_por_usuario = COALESCE($4, limite_diario_por_usuario),
-           estado = COALESCE($5, estado),
-           lat=COALESCE($6,lat),lng=COALESCE($7,lng),descripcion=COALESCE($8,descripcion),telefono=COALESCE($9,telefono),horario=COALESCE($10,horario),imagen_url=COALESCE($11,imagen_url)
-         WHERE id = $1
-         RETURNING *`,
-        [
-          reglaId,
-          nombre_accion,
-          valor_puntos_por_sello,
-          limite_diario_por_usuario,
-          estado,
-        ],
-      );
-
-      if (!result.rows[0]) throw new ApiError(404, "Regla no encontrada");
-      sendResponse(res, 200, result.rows[0], "Regla actualizada");
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /** Vincular personal del comercio al establecimiento */
-  async agregarPersonal(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
-    try {
-      if (!req.user) throw new ApiError(401, "No autenticado");
-      const { id } = req.params; // establecimiento_id
-      const { usuario_id, pin_validacion } = req.body;
-
-      if (!usuario_id) throw new ApiError(400, "usuario_id es obligatorio");
-
-      const result = await query(
-        `INSERT INTO personal_establecimiento (usuario_id, establecimiento_id, pin_validacion, estado)
-         VALUES ($1, $2, $3, TRUE)
-         ON CONFLICT (usuario_id, establecimiento_id) DO UPDATE
-           SET estado = TRUE, pin_validacion = COALESCE(EXCLUDED.pin_validacion, personal_establecimiento.pin_validacion)
-         RETURNING *`,
-        [usuario_id, id, pin_validacion || null],
-      );
-
-      sendResponse(res, 201, result.rows[0], "Personal vinculado");
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /** Eliminar establecimiento (solo si no tiene personal vinculado) */
-  async eliminar(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
-    try {
-      if (!req.user) throw new ApiError(401, "No autenticado");
-      const { id } = req.params;
-
-      const check = await query(
-        `SELECT id FROM personal_establecimiento WHERE establecimiento_id = $1 AND estado = TRUE LIMIT 1`,
+      const sucursales = await query(
+        `SELECT * FROM sucursales WHERE id_establecimiento = $1 AND estado = 1 ORDER BY es_principal DESC`,
         [id],
       );
-      if (check.rows[0]) {
-        throw new ApiError(
-          409,
-          "No se puede eliminar: tiene personal vinculado. Desvincula el personal primero.",
-        );
+
+      const recompensas = await query(
+        `SELECT * FROM recompensas WHERE id_establecimiento = $1 AND estado = 'ACTIVA' ORDER BY puntos_requeridos ASC`,
+        [id],
+      );
+
+      sendResponse(res, 200, {
+        ...result.rows[0],
+        sucursales: sucursales.rows,
+        recompensas: recompensas.rows,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Estadísticas y análisis para el Panel de Comercio (Local) */
+  async misStats(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+
+      // Obtener sucursales del usuario autenticado
+      const sucRes = await query(
+        `SELECT us.id_sucursal, s.nombre, s.id_establecimiento, e.nombre_comercial
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+         WHERE us.id_usuario = $1 AND us.estado = 1`,
+        [idUsuario],
+      );
+
+      const sucursales = sucRes.rows;
+      if (sucursales.length === 0) {
+        return sendResponse(res, 200, {
+          establecimiento: { nombre: "Mi Local" },
+          visitas_hoy: 0,
+          visitas_mes: 0,
+          puntos_hoy: 0,
+          clientes_unicos: 0,
+          visitas_ultimos_dias: [],
+          ultimas_visitas: []
+        });
+      }
+
+      const sucursalIds = sucursales.map((s: any) => s.id_sucursal);
+
+      // Visitas hoy
+      const visitasHoyRes = await query(
+        `SELECT COUNT(*)::int AS total, (COUNT(*) * 20)::int AS puntos
+         FROM visitas
+         WHERE id_sucursal = ANY($1) AND estado = 'CONFIRMADA' AND DATE(fecha_hora) = CURRENT_DATE`,
+        [sucursalIds],
+      );
+
+      // Visitas mes
+      const visitasMesRes = await query(
+        `SELECT COUNT(*)::int AS total
+         FROM visitas
+         WHERE id_sucursal = ANY($1) AND estado = 'CONFIRMADA'
+           AND DATE_TRUNC('month', fecha_hora) = DATE_TRUNC('month', CURRENT_DATE)`,
+        [sucursalIds],
+      );
+
+      // Clientes únicos
+      const clientesUnicosRes = await query(
+        `SELECT COUNT(DISTINCT id_cliente)::int AS total
+         FROM visitas
+         WHERE id_sucursal = ANY($1) AND estado = 'CONFIRMADA'`,
+        [sucursalIds],
+      );
+
+      // Histórico de visitas últimos 7 días
+      const tendenciaRes = await query(
+        `SELECT 
+           TO_CHAR(d.fecha, 'Dy') AS dia,
+           TO_CHAR(d.fecha, 'YYYY-MM-DD') AS fecha,
+           COUNT(v.id_visita)::int AS total
+         FROM generate_series(
+           CURRENT_DATE - INTERVAL '6 days',
+           CURRENT_DATE,
+           '1 day'::interval
+         ) d(fecha)
+         LEFT JOIN visitas v ON DATE(v.fecha_hora) = DATE(d.fecha) AND v.id_sucursal = ANY($1) AND v.estado = 'CONFIRMADA'
+         GROUP BY d.fecha
+         ORDER BY d.fecha ASC`,
+        [sucursalIds],
+      );
+
+      // Últimas 5 visitas validadas en el local
+      const ultimasRes = await query(
+        `SELECT v.id_visita, v.fecha_hora, u.nombres, u.apellidos, u.foto_perfil, s.nombre AS sucursal_nombre
+         FROM visitas v
+         JOIN clientes c ON c.id_cliente = v.id_cliente
+         JOIN usuarios u ON u.id_usuario = c.id_usuario
+         JOIN sucursales s ON s.id_sucursal = v.id_sucursal
+         WHERE v.id_sucursal = ANY($1) AND v.estado = 'CONFIRMADA'
+         ORDER BY v.fecha_hora DESC
+         LIMIT 6`,
+        [sucursalIds],
+      );
+
+      sendResponse(res, 200, {
+        establecimiento: {
+          nombre: sucursales[0].nombre_comercial,
+          sucursal: sucursales[0].nombre
+        },
+        visitas_hoy: visitasHoyRes.rows[0]?.total || 0,
+        visitas_mes: visitasMesRes.rows[0]?.total || 0,
+        puntos_hoy: visitasHoyRes.rows[0]?.puntos || 0,
+        clientes_unicos: clientesUnicosRes.rows[0]?.total || 0,
+        visitas_ultimos_dias: tendenciaRes.rows || [],
+        ultimas_visitas: ultimasRes.rows || []
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Historial completo de visitas para el local */
+  async misVisitas(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+
+      const sucRes = await query(
+        `SELECT us.id_sucursal
+         FROM usuario_sucursal us
+         WHERE us.id_usuario = $1 AND us.estado = 1`,
+        [idUsuario],
+      );
+
+      const sucursalIds = sucRes.rows.map((s: any) => s.id_sucursal);
+      if (sucursalIds.length === 0) {
+        return sendResponse(res, 200, []);
       }
 
       const result = await query(
-        `DELETE FROM establecimientos WHERE id = $1 RETURNING id`,
-        [id],
+        `SELECT v.id_visita AS id, v.fecha_hora, 20 AS puntos_ganados, 'NFC' AS metodo_validacion,
+                u.nombres AS usuario_nombres, u.apellidos AS usuario_apellidos,
+                u.nombres || ' ' || COALESCE(u.apellidos, '') AS cliente_nombre,
+                s.nombre AS sucursal_nombre, v.observacion, v.estado
+         FROM visitas v
+         JOIN clientes c ON c.id_cliente = v.id_cliente
+         JOIN usuarios u ON u.id_usuario = c.id_usuario
+         JOIN sucursales s ON s.id_sucursal = v.id_sucursal
+         WHERE v.id_sucursal = ANY($1)
+         ORDER BY v.fecha_hora DESC
+         LIMIT 200`,
+        [sucursalIds],
       );
-      if (!result.rows[0])
-        throw new ApiError(404, "Establecimiento no encontrado");
 
-      sendResponse(res, 200, null, "Establecimiento eliminado");
+      sendResponse(res, 200, result.rows, "Historial de visitas del local");
     } catch (error) {
       next(error);
     }
   },
 
-  /** Estadísticas básicas del establecimiento */
-  async estadisticas(
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction,
-  ) {
+  /** Clientes exclusivos que han visitado este local */
+  async misClientes(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
+      const idUsuario = req.user!.id;
 
-      const visitas = await query(
-        `SELECT COUNT(*)::int AS total_visitas,
-                COALESCE(SUM(puntos_ganados), 0)::int AS puntos_entregados,
-                COUNT(DISTINCT usuario_id)::int AS usuarios_unicos
-         FROM historial_visitas_sellos
-         WHERE establecimiento_id = $1`,
-        [id],
+      const sucRes = await query(
+        `SELECT us.id_sucursal, s.id_establecimiento
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         WHERE us.id_usuario = $1 AND us.estado = 1`,
+        [idUsuario],
       );
 
-      const ultimos7 = await query(
-        `SELECT DATE(fecha_hora) AS dia, COUNT(*)::int AS visitas
-         FROM historial_visitas_sellos
-         WHERE establecimiento_id = $1
-           AND fecha_hora >= CURRENT_DATE - INTERVAL '7 days'
-         GROUP BY DATE(fecha_hora)
-         ORDER BY dia`,
-        [id],
+      const sucursalIds = sucRes.rows.map((s: any) => s.id_sucursal);
+      const estId = sucRes.rows[0]?.id_establecimiento;
+      if (sucursalIds.length === 0 || !estId) {
+        return sendResponse(res, 200, []);
+      }
+
+      const result = await query(
+        `SELECT 
+           c.id_cliente,
+           c.codigo_cliente,
+           u.nombres,
+           u.apellidos,
+           u.foto_perfil,
+           u.email,
+           COUNT(DISTINCT v.id_visita)::int AS total_visitas,
+           MAX(v.fecha_hora) AS ultima_visita,
+           COUNT(DISTINCT s.id_sello)::int AS total_sellos,
+           (COUNT(DISTINCT v.id_visita) * 20)::int AS puntos_en_local
+         FROM visitas v
+         JOIN clientes c ON c.id_cliente = v.id_cliente
+         JOIN usuarios u ON u.id_usuario = c.id_usuario
+         LEFT JOIN sellos_digitales s ON s.id_visita = v.id_visita AND s.estado = 'OTORGADO'
+         WHERE v.id_sucursal = ANY($1) AND v.estado = 'CONFIRMADA'
+         GROUP BY c.id_cliente, c.codigo_cliente, u.nombres, u.apellidos, u.foto_perfil, u.email
+         ORDER BY ultima_visita DESC`,
+        [sucursalIds],
       );
 
-      sendResponse(
-        res,
-        200,
-        { resumen: visitas.rows[0], por_dia: ultimos7.rows },
-        "Estadísticas del establecimiento",
+      sendResponse(res, 200, result.rows, "Clientes del local");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Recompensas activas del establecimiento */
+  async misRecompensas(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+
+      const sucRes = await query(
+        `SELECT s.id_establecimiento
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         WHERE us.id_usuario = $1 AND us.estado = 1
+         LIMIT 1`,
+        [idUsuario],
       );
+
+      const estId = sucRes.rows[0]?.id_establecimiento;
+      if (!estId) {
+        return sendResponse(res, 200, []);
+      }
+
+      const result = await query(
+        `SELECT r.id_recompensa, r.nombre, r.descripcion, r.imagen,
+                r.puntos_requeridos, r.stock, r.stock_ilimitado, r.estado,
+                r.fecha_inicio, r.fecha_fin,
+                (SELECT COUNT(*)::int FROM canjes c WHERE c.id_recompensa = r.id_recompensa AND c.estado IN ('CONFIRMADO', 'ENTREGADO')) AS total_canjeados
+         FROM recompensas r
+         WHERE r.id_establecimiento = $1
+         ORDER BY r.puntos_requeridos ASC`,
+        [estId],
+      );
+
+      sendResponse(res, 200, result.rows, "Recompensas del local");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Canjes solicitados en este establecimiento */
+  async misCanjes(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const { estado } = req.query;
+
+      const sucRes = await query(
+        `SELECT s.id_establecimiento, us.id_sucursal
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         WHERE us.id_usuario = $1 AND us.estado = 1`,
+        [idUsuario],
+      );
+
+      const estId = sucRes.rows[0]?.id_establecimiento;
+      if (!estId) {
+        return sendResponse(res, 200, []);
+      }
+
+      let sql = `
+        SELECT 
+          c.id_canje AS id,
+          c.codigo_canje,
+          c.puntos_canje AS puntos_gastados,
+          c.estado,
+          c.fecha_solicitud,
+          c.fecha_validacion AS fecha_entrega,
+          u.nombres || ' ' || COALESCE(u.apellidos, '') AS cliente_nombre,
+          u.foto_perfil AS cliente_avatar,
+          u.email AS cliente_email,
+          r.nombre AS recompensa_nombre,
+          r.imagen AS recompensa_imagen,
+          r.puntos_requeridos
+        FROM canjes c
+        JOIN clientes cl ON cl.id_cliente = c.id_cliente
+        JOIN usuarios u ON u.id_usuario = cl.id_usuario
+        JOIN recompensas r ON r.id_recompensa = c.id_recompensa
+        WHERE r.id_establecimiento = $1
+      `;
+      const params: any[] = [estId];
+
+      if (estado && estado !== "TODOS") {
+        params.push(estado);
+        sql += ` AND c.estado = $${params.length}`;
+      }
+
+      sql += ` ORDER BY c.fecha_solicitud DESC LIMIT 200`;
+      const result = await query(sql, params);
+      sendResponse(res, 200, result.rows, "Canjes del establecimiento");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Consultar diseño del sello propio del establecimiento del usuario comercio */
+  async miSello(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      // Obtener el establecimiento del usuario
+      const sucRes = await query(
+        `SELECT s.id_establecimiento, e.nombre_comercial, e.razon_social, e.logo
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+         WHERE us.id_usuario = $1 AND us.estado = 1
+         LIMIT 1`,
+        [idUsuario],
+      );
+
+      if (!sucRes.rows[0]) {
+        throw new ApiError(404, "No tienes una sucursal o establecimiento asignado");
+      }
+
+      const est = sucRes.rows[0];
+
+      // Auto-crear si no existe
+      await query(
+        `INSERT INTO programas_sellos (
+           id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita,
+           nombre_sello, imagen_sello, color_sello, estado
+         ) VALUES ($1, $2, $3, 8, 1, $4, $5, '#7C0A1E', 'ACTIVO')
+         ON CONFLICT DO NOTHING`,
+        [
+          est.id_establecimiento,
+          `Pasaporte ${est.nombre_comercial}`,
+          `Sellos de ${est.nombre_comercial}`,
+          `Sello ${est.nombre_comercial}`,
+          est.logo || '☕',
+        ],
+      );
+
+      const progRes = await query(
+        `SELECT 
+           ps.*,
+           e.nombre_comercial AS establecimiento_nombre,
+           e.razon_social,
+           (SELECT COUNT(*)::int FROM sellos_digitales sd WHERE sd.id_programa = ps.id_programa AND sd.estado = 'OTORGADO') AS total_sellos_otorgados
+         FROM programas_sellos ps
+         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+         WHERE ps.id_establecimiento = $1
+         ORDER BY ps.fecha_actualizacion DESC
+         LIMIT 1`,
+        [est.id_establecimiento],
+      );
+
+      sendResponse(res, 200, progRes.rows[0], "Diseño de sello del establecimiento");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Actualizar diseño de sello digital por parte del establecimiento */
+  async actualizarMiSello(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const {
+        nombre_sello,
+        imagen_sello,
+        color_sello,
+        descripcion,
+        meta_sellos,
+      } = req.body;
+
+      const sucRes = await query(
+        `SELECT s.id_establecimiento, e.nombre_comercial
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+         WHERE us.id_usuario = $1 AND us.estado = 1
+         LIMIT 1`,
+        [idUsuario],
+      );
+
+      if (!sucRes.rows[0]) {
+        throw new ApiError(404, "No tienes una sucursal o establecimiento asignado");
+      }
+
+      const idEstablecimiento = sucRes.rows[0].id_establecimiento;
+      const nombreComercial = sucRes.rows[0].nombre_comercial;
+
+      const progCheck = await query(
+        `SELECT id_programa FROM programas_sellos WHERE id_establecimiento = $1 LIMIT 1`,
+        [idEstablecimiento],
+      );
+
+      let result;
+      if (progCheck.rows[0]) {
+        result = await query(
+          `UPDATE programas_sellos
+           SET 
+             nombre_sello = COALESCE($2, nombre_sello),
+             imagen_sello = COALESCE($3, imagen_sello),
+             color_sello = COALESCE($4, color_sello),
+             descripcion = COALESCE($5, descripcion),
+             meta_sellos = CASE WHEN $6 IS NOT NULL THEN $6::int ELSE meta_sellos END,
+             fecha_actualizacion = CURRENT_TIMESTAMP
+           WHERE id_programa = $1
+           RETURNING *`,
+          [
+            progCheck.rows[0].id_programa,
+            nombre_sello !== undefined ? nombre_sello.trim() : null,
+            imagen_sello !== undefined ? imagen_sello.trim() : null,
+            color_sello !== undefined ? color_sello.trim() : null,
+            descripcion !== undefined ? descripcion.trim() : null,
+            meta_sellos !== undefined ? Number(meta_sellos) : null,
+          ],
+        );
+      } else {
+        result = await query(
+          `INSERT INTO programas_sellos (
+             id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita,
+             nombre_sello, imagen_sello, color_sello, estado, fecha_actualizacion
+           ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7, 'ACTIVO', CURRENT_TIMESTAMP)
+           RETURNING *`,
+          [
+            idEstablecimiento,
+            `Pasaporte ${nombreComercial}`,
+            descripcion || null,
+            meta_sellos ? Number(meta_sellos) : 8,
+            nombre_sello || `Sello ${nombreComercial}`,
+            imagen_sello || "☕",
+            color_sello || "#7C0A1E",
+          ],
+        );
+      }
+
+      sendResponse(res, 200, result.rows[0], "Sello digital guardado exitosamente");
     } catch (error) {
       next(error);
     }

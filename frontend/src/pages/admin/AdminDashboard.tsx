@@ -1,53 +1,39 @@
 import React, { useEffect, useState } from "react";
-import { Settings2, Plus, RefreshCw } from "lucide-react";
+import {
+  Users,
+  Building2,
+  CreditCard,
+  Award,
+  ArrowUpRight,
+  TrendingUp,
+  RefreshCw,
+  Gift,
+  Flame,
+  CheckCircle2,
+  Calendar,
+  Sparkles,
+  ChevronRight,
+  MapPin,
+  Clock
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
-import { ReglaSello, Establecimiento } from "../../types";
 import { Spinner } from "../../components/common/Spinner";
-import { Button } from "../../components/common/Button";
-import { Input } from "../../components/common/Input";
 import { useUI } from "../../hooks/useUI";
 
-interface Stats {
-  usuarios?: number;
-  establecimientos_activos?: number;
-  visitas_totales?: number;
-  canjes_totales?: number;
-}
-
 export const AdminDashboard: React.FC = () => {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [reglas, setReglas] = useState<ReglaSello[]>([]);
-  const [locales, setLocales] = useState<Establecimiento[]>([]);
+  const navigate = useNavigate();
+  const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [showForm, setShowForm] = useState(false);
   const { showToast } = useUI();
-
-  const [form, setForm] = useState({
-    establecimiento_id: "",
-    nombre_accion: "Visita estándar",
-    valor_puntos_por_sello: 10,
-    limite_diario_por_usuario: 1,
-    estado: "ACTIVA",
-    fecha_inicio: "",
-    fecha_fin: "",
-  });
 
   const load = async () => {
     setLoading(true);
     try {
-      const [dash, reg, est] = await Promise.all([
-        api.get("/admin/dashboard").catch(() => ({ data: {} })),
-        api.get("/admin/reglas-sellos").catch(() => ({ data: { data: [] } })),
-        api.get("/establishments").catch(() => ({ data: { data: [] } })),
-      ]);
-      setStats(dash.data?.data ?? dash.data ?? {});
-      const r = reg.data?.data ?? reg.data ?? [];
-      setReglas(Array.isArray(r) ? r : []);
-      const e = est.data?.data ?? est.data ?? [];
-      setLocales(Array.isArray(e) ? e : []);
+      const res = await api.get("/admin/dashboard");
+      setData(res.data?.data ?? res.data ?? {});
     } catch {
-      showToast("Error cargando panel admin", "error");
+      showToast("Error cargando métricas del sistema", "error");
     } finally {
       setLoading(false);
     }
@@ -57,266 +43,327 @@ export const AdminDashboard: React.FC = () => {
     load();
   }, []);
 
-  const crearRegla = async () => {
-    if (!form.establecimiento_id || !form.nombre_accion) {
-      showToast("Completa local y nombre de la acción", "error");
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.post("/admin/reglas-sellos", {
-        establecimiento_id: form.establecimiento_id,
-        nombre_accion: form.nombre_accion,
-        valor_puntos_por_sello: Number(form.valor_puntos_por_sello),
-        limite_diario_por_usuario: Number(form.limite_diario_por_usuario),
-        estado: form.estado,
-        fecha_inicio: form.fecha_inicio || null,
-        fecha_fin: form.fecha_fin || null,
-      });
-      showToast("Regla de sello creada", "success");
-      setShowForm(false);
-      await load();
-    } catch (err: any) {
-      showToast(
-        err?.response?.data?.message || "No se pudo crear la regla",
-        "error",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleEstado = async (regla: ReglaSello) => {
-    const nuevo = regla.estado === "ACTIVA" ? "INACTIVA" : "ACTIVA";
-    try {
-      await api.patch(`/admin/reglas-sellos/${regla.id}`, { estado: nuevo });
-      showToast(`Regla ${nuevo.toLowerCase()}`, "success");
-      await load();
-    } catch (err: any) {
-      showToast(err?.response?.data?.message || "Error al actualizar", "error");
-    }
-  };
-
-  const actualizarPuntos = async (regla: ReglaSello, valor: number) => {
-    try {
-      await api.patch(`/admin/reglas-sellos/${regla.id}`, {
-        valor_puntos_por_sello: valor,
-      });
-      showToast("Puntos por sello actualizados", "success");
-      await load();
-    } catch (err: any) {
-      showToast(err?.response?.data?.message || "Error al actualizar", "error");
-    }
-  };
-
   if (loading) {
     return (
-      <div className="flex justify-center py-20">
-        <Spinner size={32} />
+      <div className="flex flex-col items-center justify-center py-32">
+        <Spinner size={36} />
+        <p className="text-xs text-slate-400 mt-4 font-medium tracking-wide">
+          Sincronizando métricas en tiempo real...
+        </p>
       </div>
     );
   }
 
+  const usuarios = data?.usuarios ?? 0;
+  const establecimientos = data?.establecimientos_activos ?? 0;
+  const visitas = data?.visitas_totales ?? 0;
+  const puntosHoy = data?.puntos_hoy ?? 0;
+  const canjesTotales = data?.canjes_totales ?? 0;
+  const tarjetasNfc = data?.tarjetas_nfc ?? 0;
+  const actividad = Array.isArray(data?.actividad_reciente) ? data.actividad_reciente : [];
+  const topLocales = Array.isArray(data?.top_establecimientos) ? data.top_establecimientos : [];
+
   return (
-    <div className="space-y-5 max-w-lg mx-auto animate-fadeIn pb-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 max-w-7xl mx-auto animate-fadeIn pb-6">
+      {/* Top Title & Quick Refresh */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold">Administración</h1>
-          <p className="text-xs text-muted">
-            Reglas de sellos, puntos y temporada
+          <h2 className="text-xl sm:text-2xl font-black text-[#2D1A1E] tracking-tight">
+            Métricas de la Red Pasaporte
+          </h2>
+          <p className="text-xs text-[#8E7D7D] mt-0.5 font-medium">
+            Supervisión global de clientes, sellos NFC y canjes en establecimientos
           </p>
         </div>
-        <button
-          type="button"
-          onClick={load}
-          className="min-h-touch min-w-touch flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2.5">
-        {[
-          ["Usuarios", stats?.usuarios],
-          ["Locales", stats?.establecimientos_activos],
-          ["Visitas", stats?.visitas_totales],
-          ["Canjes", stats?.canjes_totales],
-        ].map(([label, val]) => (
-          <div key={String(label)} className="card !py-3">
-            <p className="text-[11px] text-muted">{label}</p>
-            <p className="text-xl font-bold tabular-nums">{val ?? "—"}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Reglas de sellos */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Settings2 className="w-4 h-4 text-sky-500" />
-            <h2 className="font-bold text-sm">Reglas de sellos / puntos</h2>
-          </div>
-          <Button size="sm" onClick={() => setShowForm(!showForm)}>
-            <Plus className="w-4 h-4" />
-            Nueva
-          </Button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={load}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white hover:bg-[#F5EFEB] border border-[#E8DFD5] text-xs font-bold text-[#5A4B4B] hover:text-[#7C0A1E] transition-all shadow-2xs cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-[#7C0A1E]" />
+            <span>Actualizar</span>
+          </button>
         </div>
+      </div>
 
-        <p className="text-[11px] text-muted leading-relaxed">
-          Define cuántos puntos vale cada sello por local, límite diario y
-          vigencia (temporada). El comercio solo valida; el valor lo fija admin.
-        </p>
+      {/* Grid Superior: Hero Feature Card + Right Widgets */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Main Hero Card (Large feature with rich burgundy gradient & stat pill) */}
+        <div className="lg:col-span-8 bg-gradient-to-br from-[#7C0A1E] via-[#630717] to-[#45030E] border border-[#9B1B30]/30 rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-xl flex flex-col justify-between min-h-[340px] text-white">
+          {/* Ambient Glows */}
+          <div className="absolute top-0 right-0 w-80 h-80 bg-[#C5A059]/15 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+          <div className="absolute bottom-0 left-1/3 w-60 h-60 bg-white/5 rounded-full blur-3xl pointer-events-none" />
 
-        {showForm && (
-          <div className="card space-y-3">
-            <div>
-              <label className="text-xs font-semibold uppercase text-muted">
-                Local
-              </label>
-              <select
-                className="input-base mt-1"
-                value={form.establecimiento_id}
-                onChange={(e) =>
-                  setForm({ ...form, establecimiento_id: e.target.value })
-                }
+          {/* Top content */}
+          <div className="relative z-10 max-w-md space-y-3">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-white/10 border border-white/15 text-[#E8D3A2]">
+              <Sparkles className="w-3.5 h-3.5 text-[#C5A059]" />
+              Fidelización & NFC Inteligente
+            </span>
+
+            <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white leading-tight">
+              Controla las Métricas de tu Red
+            </h3>
+            <p className="text-xs sm:text-sm text-white/80 leading-relaxed font-normal">
+              Monitorea clientes activos, visitas validadas en comercios y stock de tarjetas NFC en tiempo real.
+            </p>
+
+            <div className="pt-2">
+              <button
+                onClick={() => navigate("/admin/clientes")}
+                className="px-5 py-2.5 rounded-2xl bg-white text-[#7C0A1E] hover:bg-[#FAF8F5] font-black text-xs transition-all shadow-lg hover:shadow-xl cursor-pointer"
               >
-                <option value="">Seleccionar establecimiento</option>
-                {locales.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.razon_social || l.nombre}
-                  </option>
-                ))}
-              </select>
+                Ver Clientes Activos
+              </button>
             </div>
-            <Input
-              label="Nombre de la acción"
-              value={form.nombre_accion}
-              onChange={(e) =>
-                setForm({ ...form, nombre_accion: e.target.value })
-              }
-              placeholder="Ej. Visita, Happy hour, Promo verano"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                label="Puntos por sello"
-                type="number"
-                min={1}
-                value={form.valor_puntos_por_sello}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    valor_puntos_por_sello: Number(e.target.value),
-                  })
-                }
-              />
-              <Input
-                label="Límite diario / usuario"
-                type="number"
-                min={1}
-                value={form.limite_diario_por_usuario}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    limite_diario_por_usuario: Number(e.target.value),
-                  })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                label="Inicio temporada"
-                type="date"
-                value={form.fecha_inicio}
-                onChange={(e) =>
-                  setForm({ ...form, fecha_inicio: e.target.value })
-                }
-              />
-              <Input
-                label="Fin temporada"
-                type="date"
-                value={form.fecha_fin}
-                onChange={(e) =>
-                  setForm({ ...form, fecha_fin: e.target.value })
-                }
-              />
-            </div>
-            <Button fullWidth loading={saving} onClick={crearRegla}>
-              Guardar regla
-            </Button>
           </div>
-        )}
 
-        {reglas.length === 0 ? (
-          <p className="text-sm text-muted text-center py-6">
-            No hay reglas. Crea una para cada local o promoción.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {reglas.map((r) => (
-              <li key={r.id} className="card space-y-2 !p-3.5">
-                <div className="flex justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate">
-                      {r.nombre_accion}
-                    </p>
-                    <p className="text-[11px] text-muted truncate">
-                      {r.establecimiento_nombre || r.establecimiento_id}
-                    </p>
-                  </div>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full h-fit ${
-                      r.estado === "ACTIVA"
-                        ? "bg-emerald-500/15 text-emerald-600"
-                        : "bg-slate-500/15 text-slate-500"
-                    }`}
-                  >
-                    {r.estado}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <label className="flex items-center gap-1.5">
-                    <span className="text-muted">Pts/sello</span>
-                    <input
-                      type="number"
-                      className="w-16 rounded-lg border border-[rgb(var(--app-border))] bg-[rgb(var(--app-elevated))] px-2 py-1 text-sm font-semibold"
-                      defaultValue={r.valor_puntos_por_sello}
-                      min={1}
-                      onBlur={(e) => {
-                        const v = Number(e.target.value);
-                        if (v && v !== r.valor_puntos_por_sello)
-                          actualizarPuntos(r, v);
-                      }}
-                    />
-                  </label>
-                  <span className="text-muted">
-                    Límite: {r.limite_diario_por_usuario}/día
-                  </span>
-                  {(r.fecha_inicio || r.fecha_fin) && (
-                    <span className="text-muted">
-                      Temporada:{" "}
-                      {r.fecha_inicio
-                        ? new Date(r.fecha_inicio).toLocaleDateString("es-PE")
-                        : "—"}{" "}
-                      →{" "}
-                      {r.fecha_fin
-                        ? new Date(r.fecha_fin).toLocaleDateString("es-PE")
-                        : "—"}
-                    </span>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => toggleEstado(r)}
+          {/* Floating Pill Banner (Glassmorphism stat pill) */}
+          <div className="relative z-10 mt-6 bg-black/35 backdrop-blur-md border border-white/15 rounded-2xl p-4 sm:p-5 grid grid-cols-2 sm:grid-cols-4 gap-4 items-center">
+            <div className="space-y-0.5 border-r border-white/15 pr-2">
+              <p className="text-lg sm:text-2xl font-black text-white tabular-nums">
+                {usuarios.toLocaleString("es-PE")}
+              </p>
+              <p className="text-[11px] text-white/70 font-semibold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-sky-300 inline-block" />
+                Clientes
+              </p>
+            </div>
+
+            <div className="space-y-0.5 border-r border-white/15 pr-2">
+              <p className="text-lg sm:text-2xl font-black text-white tabular-nums">
+                {establecimientos.toLocaleString("es-PE")}
+              </p>
+              <p className="text-[11px] text-white/70 font-semibold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-300 inline-block" />
+                Locales
+              </p>
+            </div>
+
+            <div className="space-y-0.5 border-r border-white/15 pr-2">
+              <p className="text-lg sm:text-2xl font-black text-[#E8D3A2] tabular-nums">
+                {visitas.toLocaleString("es-PE")}
+              </p>
+              <p className="text-[11px] text-white/70 font-semibold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-[#C5A059] inline-block" />
+                Visitas Totales
+              </p>
+            </div>
+
+            <div className="space-y-0.5">
+              <p className="text-lg sm:text-2xl font-black text-white tabular-nums">
+                {tarjetasNfc.toLocaleString("es-PE")}
+              </p>
+              <p className="text-[11px] text-white/70 font-semibold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-purple-300 inline-block" />
+                Tarjetas NFC
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: 2 Sleek Metric Widgets */}
+        <div className="lg:col-span-4 space-y-5">
+          {/* Card 1: Active Activity Curve */}
+          <div className="bg-white border border-[#E8DFD5] rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between h-44">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-[#2D1A1E] flex items-center gap-1.5">
+                Visitas & Actividad 💡
+              </p>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#7C0A1E]/10 text-[#7C0A1E] border border-[#7C0A1E]/20">
+                +18% este mes
+              </span>
+            </div>
+
+            {/* Custom SVG Mini Curve with Tinto & Gold tones */}
+            <div className="py-2">
+              <svg className="w-full h-16 overflow-visible" viewBox="0 0 240 60">
+                <defs>
+                  <linearGradient id="gradCurveTinto" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#7C0A1E" stopOpacity="0.2" />
+                    <stop offset="100%" stopColor="#7C0A1E" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M0,45 Q40,15 80,35 T160,20 T240,10"
+                  fill="none"
+                  stroke="#7C0A1E"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M0,50 Q45,35 90,48 T170,30 T240,25"
+                  fill="none"
+                  stroke="#C5A059"
+                  strokeWidth="2"
+                  strokeDasharray="4 4"
+                  strokeLinecap="round"
+                  opacity="0.8"
+                />
+                <circle cx="210" cy="14" r="4" fill="#7C0A1E" className="animate-ping" />
+                <circle cx="210" cy="14" r="3.5" fill="#C5A059" />
+              </svg>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-[#8E7D7D] font-bold px-1">
+              <span>Lun</span>
+              <span>Mié</span>
+              <span>Vie</span>
+              <span className="text-[#7C0A1E] font-black">Hoy</span>
+            </div>
+          </div>
+
+          {/* Card 2: Recompensas y Canjes Widget */}
+          <div className="bg-white border border-[#E8DFD5] rounded-3xl p-5 shadow-sm flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#8E7D7D] block">
+                Puntos & Recompensas
+              </span>
+              <p className="text-2xl font-black text-[#7C0A1E] tabular-nums">
+                +{puntosHoy.toLocaleString("es-PE")} <span className="text-xs text-[#8E7D7D] font-semibold">pts hoy</span>
+              </p>
+              <p className="text-[11px] text-[#5A4B4B] font-medium">
+                {canjesTotales} canjes canjeados a la fecha
+              </p>
+            </div>
+
+            <div className="w-14 h-14 rounded-2xl bg-[#7C0A1E]/10 border border-[#7C0A1E]/20 flex items-center justify-center shrink-0 shadow-2xs">
+              <Gift className="w-7 h-7 text-[#7C0A1E]" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Seccion Inferior: Tabla de Actividad Reciente & Top Locales */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Actividad Reciente (8 cols) */}
+        <div className="lg:col-span-8 bg-white border border-[#E8DFD5] rounded-3xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h4 className="text-sm font-bold text-[#2D1A1E] tracking-wide">
+                Últimas Visitas y Validaciones NFC
+              </h4>
+              <p className="text-[11px] text-[#8E7D7D]">
+                Registros confirmados en terminales afiliados
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/admin/reportes")}
+              className="text-xs font-bold text-[#7C0A1E] hover:text-[#9B1B30] flex items-center gap-1 transition-colors"
+            >
+              <span>Ver reporte</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {actividad.length === 0 ? (
+            <div className="py-12 text-center text-[#8E7D7D] text-xs">
+              No hay visitas registradas recientemente
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {actividad.slice(0, 5).map((act: any) => (
+                <div
+                  key={act.id}
+                  className="bg-[#FAF8F5] hover:bg-[#F5EFEB] border border-[#E8DFD5] rounded-2xl p-3.5 flex items-center justify-between gap-3 transition-all duration-150"
                 >
-                  {r.estado === "ACTIVA" ? "Desactivar" : "Activar"}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-[#7C0A1E]/10 border border-[#7C0A1E]/20 flex items-center justify-center text-[#7C0A1E] font-black text-xs shrink-0">
+                      {act.usuario_nombre?.charAt(0)?.toUpperCase() || "C"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-[#2D1A1E] truncate">
+                        {act.usuario_nombre}
+                      </p>
+                      <p className="text-[11px] text-[#8E7D7D] flex items-center gap-1 truncate font-medium">
+                        <MapPin className="w-3 h-3 text-[#7C0A1E]" />
+                        {act.establecimiento_nombre}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 shrink-0 text-right">
+                    <div>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        +{act.puntos_ganados || 20} pts
+                      </span>
+                      <p className="text-[10px] text-[#8E7D7D] mt-0.5 font-mono">
+                        {act.fecha_hora
+                          ? new Date(act.fecha_hora).toLocaleTimeString("es-PE", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "Reciente"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Top Locales Afiliados (4 cols) */}
+        <div className="lg:col-span-4 bg-white border border-[#E8DFD5] rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-bold text-[#2D1A1E] tracking-wide">
+                Locales Más Activos
+              </h4>
+              <button
+                onClick={() => navigate("/admin/locales")}
+                className="text-[11px] text-[#8E7D7D] hover:text-[#7C0A1E] font-semibold"
+              >
+                Ver todos
+              </button>
+            </div>
+
+            {topLocales.length === 0 ? (
+              <div className="py-8 text-center text-[#8E7D7D] text-xs">
+                Sin datos de establecimientos aún
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {topLocales.slice(0, 4).map((loc: any, idx: number) => (
+                  <div
+                    key={loc.id}
+                    className="flex items-center justify-between gap-3 p-2.5 rounded-2xl hover:bg-[#FAF8F5] transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-6 text-center text-xs font-black text-[#7C0A1E]">
+                        #{idx + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-[#2D1A1E] truncate">
+                          {loc.nombre}
+                        </p>
+                        <p className="text-[10px] text-[#8E7D7D]">
+                          {loc.total_sellos ?? 0} visitas validadas
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-[#C5A059] shrink-0 font-mono">
+                      {loc.total_puntos ?? 0} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="pt-4 border-t border-[#E8DFD5] mt-4">
+            <button
+              onClick={() => navigate("/admin/tarjetas")}
+              className="w-full py-2.5 px-4 rounded-2xl bg-[#FAF8F5] hover:bg-[#F5EFEB] border border-[#E8DFD5] text-xs font-bold text-[#2D1A1E] hover:text-[#7C0A1E] transition-all text-center flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+            >
+              <CreditCard className="w-3.5 h-3.5 text-[#7C0A1E]" />
+              <span>Gestionar Tarjetas NFC</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
+

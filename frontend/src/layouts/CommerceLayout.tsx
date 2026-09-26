@@ -1,112 +1,181 @@
-import React from "react";
-import { Outlet, NavLink } from "react-router-dom";
+import React, { useState } from "react";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   ScanLine,
+  Users,
   History,
-  LogOut,
+  Gift,
+  TicketCheck,
+  BarChart3,
   Store,
+  Settings,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  X,
+  Bell,
+  Wifi,
+  Stamp,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { initials } from "../utils/levels";
 
-/** Layout exclusivo COMERCIO — validación NFC y métricas del local */
 export const CommerceLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const nav = (
-    <>
-      <NavItem to="/commerce" end label="Panel" icon={LayoutDashboard} />
-      <NavItem to="/commerce/validar" label="Validar" icon={ScanLine} />
-      <NavItem to="/commerce/historial" label="Historial" icon={History} />
-    </>
-  );
+  const handleLogout = () => {
+    logout();
+    navigate("/auth/login");
+  };
+
+  const navItems = [
+    { to: "/commerce", end: true, label: "Inicio", icon: LayoutDashboard },
+    { to: "/commerce/validar", label: "Validar visita", icon: ScanLine, highlight: true },
+    { to: "/commerce/sello", label: "Mi Sello Digital", icon: Stamp },
+    { to: "/commerce/clientes", label: "Clientes", icon: Users },
+    { to: "/commerce/historial", label: "Historial", icon: History },
+    { to: "/commerce/recompensas", label: "Recompensas", icon: Gift },
+    { to: "/commerce/canjes", label: "Canjes", icon: TicketCheck },
+    { to: "/commerce/estadisticas", label: "Estadísticas", icon: BarChart3 },
+    { to: "/commerce/perfil", label: "Perfil del local", icon: Store },
+    { to: "/commerce/configuracion", label: "Configuración", icon: Settings },
+  ];
 
   return (
-    <div className="min-h-screen bg-[rgb(var(--app-bg))] text-[rgb(var(--app-text))]">
-      <div className="lg:flex lg:max-w-6xl lg:mx-auto">
-        <aside className="hidden lg:flex lg:w-56 flex-col border-r border-[rgb(var(--app-border))] sticky top-0 h-screen p-4">
-          <div className="flex items-center gap-2 mb-6 px-2">
-            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center">
-              <Store className="w-5 h-5" />
+    <div className="min-h-screen bg-[#FAF8F5] text-[#2D1A1E] flex flex-row">
+      {/* Mobile Drawer Overlay */}
+      {mobileOpen && (
+        <div 
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-xs"
+        />
+      )}
+
+      {/* Sidebar (Desktop Collapsible & Mobile Drawer) */}
+      <aside
+        className={`
+          fixed lg:sticky top-0 h-screen z-50 bg-[#7C0A1E] text-white flex flex-col shrink-0 shadow-2xl transition-all duration-300 select-none
+          ${mobileOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0"}
+          ${collapsed ? "lg:w-20" : "lg:w-64"}
+        `}
+      >
+        {/* Brand / Local Header */}
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="w-10 h-10 rounded-2xl overflow-hidden shrink-0 shadow-md border border-[#C5A059]/30">
+              <img
+                src="/logo-icon.png"
+                alt="Pasaporte Digital"
+                className="w-full h-full object-cover"
+              />
             </div>
-            <div>
-              <p className="font-extrabold text-sm">Panel Local</p>
-              <p className="text-[10px] text-muted">COMERCIO</p>
+            {!collapsed && (
+              <div className="min-w-0">
+                <h2 className="font-serif font-black text-xs tracking-wider text-[#FAF8F5] uppercase truncate">
+                  PANEL COMERCIO
+                </h2>
+                <span className="text-[9px] font-bold tracking-widest text-[#C5A059] uppercase block truncate">
+                  TERMINAL DE LOCAL
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Collapse Button */}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="hidden lg:flex w-7 h-7 rounded-xl bg-white/10 hover:bg-white/20 items-center justify-center text-white/80 transition-colors"
+            title={collapsed ? "Expandir menú" : "Colapsar menú"}
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
+
+          {/* Mobile Close Button */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center text-white"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Navigation Links */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.label + item.to}
+              to={item.to}
+              end={item.end}
+              onClick={() => setMobileOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  isActive
+                    ? "bg-[#600616] text-[#FAF8F5] shadow-sm border-l-4 border-[#C5A059]"
+                    : item.highlight
+                    ? "bg-white/10 text-white hover:bg-white/20"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                } ${collapsed ? "justify-center px-0" : ""}`
+              }
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon className={`w-4 h-4 shrink-0 ${item.highlight ? "text-[#C5A059]" : "text-white/90"}`} />
+              {!collapsed && <span>{item.label}</span>}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* User Footer & Logout */}
+        <div className="p-3 border-t border-white/10">
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-white/80 hover:bg-white/10 hover:text-rose-300 transition-colors ${
+              collapsed ? "justify-center px-0" : ""
+            }`}
+            title={collapsed ? "Cerrar sesión" : undefined}
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!collapsed && <span>Cerrar sesión</span>}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Navbar */}
+        <header className="sticky top-0 z-30 bg-white border-b border-[#EFE7DE] px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="lg:hidden p-2 rounded-xl text-[#2D1A1E] hover:bg-slate-100"
+            >
+              <Menu size={20} />
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-xs font-bold text-[#2D1A1E]">Terminal NFC Conectada</p>
             </div>
           </div>
-          <nav className="flex flex-col gap-1 flex-1">{nav}</nav>
-          <button
-            type="button"
-            onClick={logout}
-            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-rose-500 hover:bg-rose-500/10 text-sm font-medium"
-          >
-            <LogOut className="w-4 h-4" /> Salir
-          </button>
-        </aside>
 
-        <div className="min-w-0 flex-1 flex flex-col min-h-screen max-w-md lg:max-w-none mx-auto w-full">
-          <header className="sticky top-0 z-40 bg-[rgb(var(--app-bg))]/90 backdrop-blur border-b border-[rgb(var(--app-border))] px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center lg:hidden">
-                <Store className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="font-bold text-sm">Panel del local</p>
-                <p className="text-[11px] text-muted truncate max-w-[180px]">
-                  {user?.nombres || user?.email}
-                </p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-bold text-[#2D1A1E]">{user?.nombres || "Encargado de Local"}</p>
+              <p className="text-[10px] text-[#8E7D7D] font-medium">{user?.email}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase bg-amber-500/15 text-amber-600 px-2 py-0.5 rounded-full">
-                Comercio
-              </span>
-              <span className="w-8 h-8 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">
-                {initials(user)}
-              </span>
-              <button
-                type="button"
-                onClick={logout}
-                className="lg:hidden text-rose-500 p-2"
-                aria-label="Salir"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+            <div className="w-9 h-9 rounded-full bg-rose-50 border border-[#7C0A1E]/30 text-[#7C0A1E] font-black text-xs flex items-center justify-center">
+              {user?.nombres?.charAt(0) || "L"}
             </div>
-          </header>
+          </div>
+        </header>
 
-          <main className="flex-1 px-4 lg:px-8 py-4 pb-24 lg:pb-8 min-w-0">
-            <div className="max-w-2xl">
-              <Outlet />
-            </div>
-          </main>
-
-          <nav className="lg:hidden fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[rgb(var(--app-card))] border-t border-[rgb(var(--app-border))] safe-area-pb">
-            <div className="flex justify-around py-1">{nav}</div>
-          </nav>
-        </div>
+        {/* View Body */}
+        <main className="flex-1 p-4 sm:p-8">
+          <Outlet />
+        </main>
       </div>
     </div>
   );
 };
-
-const NavItem: React.FC<{
-  to: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  end?: boolean;
-}> = ({ to, label, icon: Icon, end }) => (
-  <NavLink
-    to={to}
-    end={end}
-    className={({ isActive }) =>
-      `flex flex-col lg:flex-row items-center lg:gap-3 min-w-[64px] min-h-[52px] lg:px-3 lg:py-2.5 lg:rounded-xl text-[10px] lg:text-sm font-medium ${
-        isActive ? "text-amber-600 lg:bg-amber-500/10" : "text-slate-400"
-      }`
-    }
-  >
-    <Icon className="w-5 h-5" />
-    {label}
-  </NavLink>
-);

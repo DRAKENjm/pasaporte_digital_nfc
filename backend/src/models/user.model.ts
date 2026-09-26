@@ -3,26 +3,58 @@ import { query } from "../config/database";
 export const UserModel = {
   async findByEmail(email: string) {
     const res = await query(
-      `SELECT u.*, r.nombre as rol_nombre, n.nombre_rango as nivel_nombre
+      `SELECT u.*, r.nombre as rol_nombre, c.id_cliente, c.codigo_cliente
        FROM usuarios u
-       JOIN roles r ON u.rol_id = r.id
-       LEFT JOIN niveles_pasaporte n ON u.nivel_id = n.id
-       WHERE u.email = $1`,
+       JOIN roles r ON u.id_rol = r.id_rol
+       LEFT JOIN clientes c ON u.id_usuario = c.id_usuario
+       WHERE LOWER(u.email) = LOWER($1)`,
       [email],
     );
     return res.rows[0] || null;
   },
 
-  async findById(id: string) {
+  async findById(id: number) {
     const res = await query(
-      `SELECT u.id, u.email, u.nombres, u.apellidos, r.nombre as rol_nombre, r.nombre as rol,
-              u.total_sellos, u.puntos_globales, u.estado, u.created_at, u.username,u.avatar_url,
-              (SELECT uid_nfc FROM tarjetas_nfc WHERE usuario_id=u.id AND estado='ASIGNADA' ORDER BY fecha_asignacion DESC LIMIT 1) AS uid_nfc,
-              n.nombre_rango as nivel_nombre, n.color_hex as nivel_color
+      `SELECT u.id_usuario, u.email, u.nombres, u.apellidos, u.telefono, u.foto_perfil, u.estado, u.fecha_creacion,
+              r.nombre as rol_nombre, r.nombre as role,
+              c.id_cliente, c.codigo_cliente,
+              (
+                SELECT COALESCE(SUM(cantidad), 0)::int
+                FROM movimientos_puntos
+                WHERE id_cliente = c.id_cliente
+              ) AS puntos_actuales,
+              (
+                SELECT COUNT(DISTINCT id_visita)::int
+                FROM visitas
+                WHERE id_cliente = c.id_cliente AND estado = 'CONFIRMADA'
+              ) AS total_visitas,
+              (
+                SELECT COUNT(*)::int
+                FROM sellos_digitales s
+                JOIN visitas v ON v.id_visita = s.id_visita
+                WHERE v.id_cliente = c.id_cliente AND s.estado = 'OTORGADO'
+              ) AS total_sellos,
+              (
+                SELECT COUNT(DISTINCT id_sucursal)::int
+                FROM visitas
+                WHERE id_cliente = c.id_cliente AND estado = 'CONFIRMADA'
+              ) AS locales_visitados,
+              (
+                SELECT json_build_object(
+                  'id_tarjeta', t.id_tarjeta,
+                  'uid_nfc', t.uid_nfc,
+                  'codigo_interno', t.codigo_interno,
+                  'estado', t.estado
+                )
+                FROM tarjetas_nfc t
+                WHERE t.id_cliente = c.id_cliente AND t.estado = 'ACTIVA'
+                ORDER BY t.fecha_activacion DESC
+                LIMIT 1
+              ) AS tarjeta_activa
        FROM usuarios u
-       JOIN roles r ON u.rol_id = r.id
-       LEFT JOIN niveles_pasaporte n ON u.nivel_id = n.id
-       WHERE u.id = $1`,
+       JOIN roles r ON u.id_rol = r.id_rol
+       LEFT JOIN clientes c ON u.id_usuario = c.id_usuario
+       WHERE u.id_usuario = $1`,
       [id],
     );
     return res.rows[0] || null;
@@ -34,69 +66,57 @@ export const UserModel = {
     nombres: string,
     apellidos: string,
     roleName: string = "CLIENTE",
+    telefono?: string,
   ) {
-    const roleRes = await query("SELECT id FROM roles WHERE nombre = $1", [
-      roleName,
-    ]);
+    const roleRes = await query(
+      `SELECT id_rol, nombre FROM roles 
+       WHERE nombre = $1 
+          OR ($1 = 'ADMIN' AND nombre = 'ADMIN_GENERAL')
+          OR ($1 = 'COMERCIO' AND nombre = 'ADMIN_LOCAL')
+       LIMIT 1`,
+      [roleName],
+    );
     if (roleRes.rows.length === 0) {
-      throw new Error(
-        `El rol ${roleName} no existe. Ejecuta el seed de roles.`,
-      );
+      throw new Error(`El rol ${roleName} no existe.`);
     }
-    const rolId = roleRes.rows[0].id;
+    const idRol = roleRes.rows[0].id_rol;
 
-    const nivelRes = await query(
-      "SELECT id FROM niveles_pasaporte WHERE nombre_rango = 'Bronce' LIMIT 1",
-    );
-    const nivelId = nivelRes.rows[0]?.id || null;
-
-    const res = await query(
-      `INSERT INTO usuarios (rol_id, nivel_id, nombres, apellidos, email, password_hash, aceptacion_tyc)
-       VALUES ($1, $2, $3, $4, $5, $6, TRUE)
-       RETURNING id, email, nombres, apellidos, total_sellos, puntos_globales, created_at`,
-      [rolId, nivelId, nombres, apellidos, email, passwordHash],
+    // 1. Insertar usuario
+    const userRes = await query(
+      `INSERT INTO usuarios (id_rol, email, password_hash, nombres, apellidos, telefono, estado)
+       VALUES ($1, $2, $3, $4, $5, $6, 1)
+       RETURNING id_usuario, email, nombres, apellidos, estado, fecha_creacion`,
+      [idRol, email, passwordHash, nombres, apellidos, telefono || null],
     );
 
-    return { ...res.rows[0], rol_nombre: roleName };
+    const newUser = userRes.rows[0];
+
+    // 2. Si es CLIENTE, crear extensión de cliente automáticamente
+    let idCliente = null;
+    let codigoCliente = null;
+    if (roleName === "CLIENTE") {
+      codigoCliente = `CLI-${Date.now().toString().slice(-6)}`;
+      const clienteRes = await query(
+        `INSERT INTO clientes (id_usuario, codigo_cliente, estado)
+         VALUES ($1, $2, 1)
+         RETURNING id_cliente, codigo_cliente`,
+        [newUser.id_usuario, codigoCliente],
+      );
+      idCliente = clienteRes.rows[0].id_cliente;
+    }
+
+    return {
+      ...newUser,
+      rol_nombre: roleName,
+      id_cliente: idCliente,
+      codigo_cliente: codigoCliente,
+    };
   },
 
-  async updatePuntosYSellos(
-    usuarioId: string,
-    sellosDelta: number,
-    puntosDelta: number,
-  ) {
-    const res = await query(
-      `UPDATE usuarios
-       SET total_sellos = total_sellos + $2,
-           puntos_globales = puntos_globales + $3,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1
-       RETURNING total_sellos, puntos_globales`,
-      [usuarioId, sellosDelta, puntosDelta],
-    );
-    return res.rows[0];
-  },
-
-  async updateNivelIfNeeded(usuarioId: string) {
-    // Sube de nivel automáticamente según sellos
+  async updateUltimoAcceso(idUsuario: number) {
     await query(
-      `UPDATE usuarios u
-       SET nivel_id = (
-         SELECT n.id FROM niveles_pasaporte n
-         WHERE n.sellos_requeridos <= u.total_sellos AND n.estado = TRUE
-         ORDER BY n.sellos_requeridos DESC
-         LIMIT 1
-       )
-       WHERE u.id = $1`,
-      [usuarioId],
+      `UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id_usuario = $1`,
+      [idUsuario],
     );
-  },
-
-  async verifyEmail(id: string) {
-    const res = await query(
-      `UPDATE usuarios SET email_verificado = TRUE WHERE id = $1 RETURNING id`,
-      [id],
-    );
-    return res.rows[0];
   },
 };
