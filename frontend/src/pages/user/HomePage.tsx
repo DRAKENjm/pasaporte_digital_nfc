@@ -265,7 +265,7 @@ export const HomePage: React.FC = () => {
         </Link>
 
         <Link
-          to="/user/actividad"
+          to="/user/mis-sellos"
           className="bg-white/90 border border-[#EFE7DE] hover:border-[#C5A059]/50 rounded-2xl p-2.5 flex flex-col items-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group"
         >
           <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
@@ -390,7 +390,7 @@ export const HomePage: React.FC = () => {
         <div className="flex items-center justify-between mb-3.5 px-0.5">
           <h3 className="text-base font-bold text-[#2D1A1E]">Tus últimos sellos</h3>
           <Link
-            to="/user/actividad"
+            to="/user/mis-sellos"
             className="text-xs font-semibold text-[#7C0A1E] hover:underline flex items-center gap-0.5"
           >
             Ver todos <ChevronRight size={14} />

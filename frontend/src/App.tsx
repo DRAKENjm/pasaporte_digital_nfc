@@ -20,6 +20,7 @@ import { HomePage } from "./pages/user/HomePage";
 import { ExplorarPage } from "./pages/user/ExplorarPage";
 import { PasaporteNfcPage } from "./pages/user/PasaporteNfcPage";
 import { ActividadPage } from "./pages/user/ActividadPage";
+import { MisSellosPage } from "./pages/user/MisSellosPage";
 import { PerfilPage } from "./pages/user/PerfilPage";
 import { RewardsPage } from "./pages/user/RewardsPage";
 import { LocalesPage } from "./pages/user/LocalesPage";
@@ -120,6 +121,8 @@ export const App: React.FC = () => {
                 <Route path="/user/explorar" element={<ExplorarPage />} />
                 <Route path="/user/pasaporte" element={<PasaporteNfcPage />} />
                 <Route path="/user/actividad" element={<ActividadPage />} />
+                <Route path="/user/mis-sellos" element={<MisSellosPage />} />
+                <Route path="/user/sellos" element={<Navigate to="/user/mis-sellos" replace />} />
                 <Route path="/user/perfil" element={<PerfilPage />} />
                 <Route path="/user/rewards" element={<RewardsPage />} />
                 <Route path="/user/locales" element={<LocalesPage />} />

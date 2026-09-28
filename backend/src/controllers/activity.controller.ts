@@ -128,4 +128,110 @@ export const ActivityController = {
       next(error);
     }
   },
+
+  /** Sellos del usuario agrupados por establecimiento y categoría */
+  async misSellos(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+
+      // Obtener cliente
+      const clienteRes = await query(
+        `SELECT id_cliente FROM clientes WHERE id_usuario = $1`,
+        [idUsuario],
+      );
+
+      const idCliente = clienteRes.rows[0]?.id_cliente || null;
+
+      // Consultar establecimientos con su categoría, programa de sellos y sellos obtenidos por el cliente
+      const sql = `
+        SELECT 
+          e.id_establecimiento,
+          e.nombre_comercial,
+          e.razon_social,
+          e.descripcion,
+          e.logo,
+          e.imagen_portada,
+          e.telefono,
+          e.email,
+          s.direccion,
+          c.id AS categoria_id,
+          COALESCE(c.nombre, 'General') AS categoria_nombre,
+          c.icono AS categoria_icono,
+          ps.id_programa,
+          COALESCE(ps.nombre, 'Pasaporte de Sellos') AS programa_nombre,
+          ps.descripcion AS programa_descripcion,
+          COALESCE(ps.meta_sellos, 6) AS meta_sellos,
+          COALESCE(ps.nombre_sello, 'Sello Oficial') AS nombre_sello,
+          ps.imagen_sello,
+          COALESCE(ps.color_sello, '#7C0A1E') AS color_sello,
+          -- Conteo de sellos otorgados al cliente en este establecimiento
+          COALESCE(
+            (
+              SELECT COUNT(*)::int
+              FROM sellos_digitales sd
+              JOIN visitas vi ON vi.id_visita = sd.id_visita
+              WHERE vi.id_cliente = $1 
+                AND vi.id_establecimiento = e.id_establecimiento
+                AND sd.estado = 'OTORGADO'
+            ), 0
+          ) AS sellos_obtenidos,
+          -- Detalle de sellos obtenidos
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id_sello', sd.id_sello,
+                  'numero_sello', sd.numero_sello,
+                  'fecha_otorgamiento', sd.fecha_otorgamiento
+                ) ORDER BY sd.numero_sello ASC
+              )
+              FROM sellos_digitales sd
+              JOIN visitas vi ON vi.id_visita = sd.id_visita
+              WHERE vi.id_cliente = $1 
+                AND vi.id_establecimiento = e.id_establecimiento
+                AND sd.estado = 'OTORGADO'
+            ), '[]'::json
+          ) AS sellos_detalle,
+          -- Recompensas del establecimiento
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id_recompensa', r.id_recompensa,
+                  'nombre', r.nombre,
+                  'descripcion', r.descripcion,
+                  'puntos_requeridos', r.puntos_requeridos
+                ) ORDER BY r.puntos_requeridos ASC
+              )
+              FROM recompensas r
+              WHERE r.id_establecimiento = e.id_establecimiento
+                AND r.estado = 'ACTIVA'
+            ), '[]'::json
+          ) AS recompensas
+        FROM establecimientos e
+        LEFT JOIN categorias_establecimiento c ON c.id = e.categoria_id
+        LEFT JOIN LATERAL (
+          SELECT id_programa, nombre, descripcion, meta_sellos, nombre_sello, imagen_sello, color_sello
+          FROM programas_sellos
+          WHERE id_establecimiento = e.id_establecimiento AND estado = 'ACTIVO'
+          ORDER BY id_programa DESC
+          LIMIT 1
+        ) ps ON true
+        LEFT JOIN LATERAL (
+          SELECT direccion
+          FROM sucursales
+          WHERE id_establecimiento = e.id_establecimiento AND estado = 1
+          ORDER BY es_principal DESC
+          LIMIT 1
+        ) s ON true
+        WHERE e.estado = 'ACTIVO'
+        ORDER BY c.nombre ASC NULLS LAST, e.nombre_comercial ASC
+      `;
+
+      const result = await query(sql, [idCliente]);
+      sendResponse(res, 200, result.rows, "Sellos por establecimiento");
+    } catch (error) {
+      next(error);
+    }
+  },
 };
