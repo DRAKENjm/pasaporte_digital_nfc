@@ -1,19 +1,37 @@
-import React, { useState } from "react";
-import { Settings, Volume2, Wifi, Save, CheckCircle2, ShieldCheck, Laptop } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Volume2, Save, CheckCircle2, ShieldCheck, Laptop } from "lucide-react";
 import { useUI } from "../../hooks/useUI";
+import { useAuth } from "../../hooks/useAuth";
+import { isReaderMode, loadCommercePreferences, saveCommercePreferences } from "../../utils/commercePreferences";
 
 export const CommerceConfiguracion: React.FC = () => {
-  const [sonidoLectura, setSonidoLectura] = useState(true);
-  const [modoLector, setModoLector] = useState("USB_NFC");
-  const [autoConfirmar, setAutoConfirmar] = useState(false);
+  const { user } = useAuth();
+  const [preferences, setPreferences] = useState(() => loadCommercePreferences(user?.id));
+  const { sonidoLectura, modoLector } = preferences;
+  const webNfcSupported = "NDEFReader" in window && window.isSecureContext;
   const [saved, setSaved] = useState(false);
   const { showToast } = useUI();
 
+  useEffect(() => {
+    setPreferences(loadCommercePreferences(user?.id));
+    setSaved(false);
+  }, [user?.id]);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    showToast("Preferencias de terminal guardadas", "success");
-    setTimeout(() => setSaved(false), 2000);
+    if (!user?.id) return;
+    if (modoLector === "WEB_NFC" && !webNfcSupported) {
+      showToast("Web NFC requiere HTTPS y un navegador compatible. Selecciona otro modo.", "error");
+      return;
+    }
+    try {
+      saveCommercePreferences(user.id, preferences);
+      setSaved(true);
+      showToast("Preferencias guardadas para tu cuenta en este navegador", "success");
+    } catch {
+      setSaved(false);
+      showToast("No se pudieron guardar las preferencias. Revisa los permisos de almacenamiento del navegador.", "error");
+    }
   };
 
   return (
@@ -22,7 +40,7 @@ export const CommerceConfiguracion: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold text-[#2D1A1E] font-serif">Configuración de Terminal</h1>
         <p className="text-xs text-[#8E7D7D] mt-0.5">
-          Parámetros de lectura NFC, hardware USB y alertas de mostrador
+          Preferencias de lectura y sonido para tu cuenta en este navegador
         </p>
       </div>
 
@@ -36,18 +54,32 @@ export const CommerceConfiguracion: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-[11px] font-bold text-[#8E7D7D] block mb-1 uppercase">
+              <label htmlFor="commerce-reader-mode" className="text-[11px] font-bold text-[#8E7D7D] block mb-1 uppercase">
                 Modo del Sensor
               </label>
               <select
+                id="commerce-reader-mode"
                 value={modoLector}
-                onChange={(e) => setModoLector(e.target.value)}
+                onChange={(e) => {
+                  if (isReaderMode(e.target.value)) {
+                    setPreferences({ ...preferences, modoLector: e.target.value });
+                    setSaved(false);
+                  }
+                }}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-xs font-semibold text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
               >
-                <option value="USB_NFC">Lector NFC USB (ACR122U / Estándar)</option>
-                <option value="WEB_NFC">Web NFC API (Nativo de navegador)</option>
+                <option value="USB_NFC">Lector USB configurado como teclado</option>
+                <option value="WEB_NFC" disabled={!webNfcSupported}>Web NFC (navegador compatible)</option>
                 <option value="MANUAL">Ingreso Manual / Teclado</option>
               </select>
+              <p className="text-[11px] text-[#8E7D7D] mt-2">
+                {modoLector === "USB_NFC"
+                  ? "El lector debe escribir el UID en el campo de texto. Si envía Enter, se identifica la tarjeta."
+                  : modoLector === "WEB_NFC"
+                    ? "La lectura se inicia desde Validar NFC y requiere permiso del navegador."
+                    : "Escribe el UID de la tarjeta y pulsa Identificar."}
+                {!webNfcSupported && " Web NFC no está disponible en este navegador o conexión."}
+              </p>
             </div>
 
             <div>
@@ -56,7 +88,11 @@ export const CommerceConfiguracion: React.FC = () => {
               </label>
               <button
                 type="button"
-                onClick={() => setSonidoLectura(!sonidoLectura)}
+                aria-pressed={sonidoLectura}
+                onClick={() => {
+                  setPreferences({ ...preferences, sonidoLectura: !sonidoLectura });
+                  setSaved(false);
+                }}
                 className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
                   sonidoLectura
                     ? "bg-emerald-50 border-emerald-300 text-emerald-800"
@@ -81,15 +117,17 @@ export const CommerceConfiguracion: React.FC = () => {
           </div>
 
           <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] space-y-1.5 text-xs">
-            <p className="font-bold text-[#2D1A1E]">✓ Intervalo Mínimo entre Lecturas: 60 minutos</p>
+            <p className="font-bold text-[#2D1A1E]">Confirmación manual de cada visita</p>
             <p className="text-[11px] text-[#8E7D7D]">
-              Evita que se registre dos veces la misma tarjeta en una misma sesión de compra.
+              Identifica al cliente y revisa el monto antes de confirmar. El servidor verifica la tarjeta,
+              los permisos de sucursal y el límite diario configurado en el programa de sellos.
             </p>
           </div>
         </div>
 
         <button
           type="submit"
+          disabled={!user?.id}
           className="px-6 py-3 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] active:scale-95 transition-all shadow-md flex items-center gap-2"
         >
           {saved ? <CheckCircle2 size={16} /> : <Save size={16} />}

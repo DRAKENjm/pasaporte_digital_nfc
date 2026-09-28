@@ -1,5 +1,6 @@
 import React from "react";
 import { Award, CheckCircle2 } from "lucide-react";
+import { getStampIcon } from "../../utils/stampIcons";
 
 interface DigitalStampBadgeProps {
   nombre_sello?: string;
@@ -8,7 +9,7 @@ interface DigitalStampBadgeProps {
   color_sello?: string;
   numero_sello?: number;
   fecha?: string | Date;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "xxl";
   rotation?: number;
   interactive?: boolean;
 }
@@ -27,13 +28,14 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   // Dimensiones según el tamaño
   const sizeMap = {
     sm: {
-      box: "w-20 h-20",
+      box: "w-24 h-24",
       borderOuter: "border-2",
       borderInner: "border",
       textTop: "text-[7px]",
       textBottom: "text-[6px]",
       centerIcon: "text-lg",
-      centerImg: "w-7 h-7",
+      centerVector: "w-10 h-10",
+      centerImg: "w-9 h-9",
       numberBadge: "text-[8px] px-1 py-0.2",
     },
     md: {
@@ -43,6 +45,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       textTop: "text-[8.5px]",
       textBottom: "text-[7.5px]",
       centerIcon: "text-2xl",
+      centerVector: "w-11 h-11",
       centerImg: "w-10 h-10",
       numberBadge: "text-[9px] px-1.5 py-0.5",
     },
@@ -53,6 +56,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       textTop: "text-[10.5px]",
       textBottom: "text-[9px]",
       centerIcon: "text-3xl",
+      centerVector: "w-16 h-16",
       centerImg: "w-14 h-14",
       numberBadge: "text-[10px] px-2 py-0.5",
     },
@@ -63,8 +67,20 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       textTop: "text-[13px]",
       textBottom: "text-[11px]",
       centerIcon: "text-5xl",
+      centerVector: "w-24 h-24",
       centerImg: "w-20 h-20",
       numberBadge: "text-xs px-2.5 py-1",
+    },
+    xxl: {
+      box: "w-72 h-72",
+      borderOuter: "border-4",
+      borderInner: "border-[3px]",
+      textTop: "text-[16px]",
+      textBottom: "text-[13px]",
+      centerIcon: "text-7xl",
+      centerVector: "w-36 h-36",
+      centerImg: "w-32 h-32",
+      numberBadge: "text-sm px-3 py-1",
     },
   };
 
@@ -74,6 +90,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
     (imagen_sello.startsWith("http://") ||
       imagen_sello.startsWith("https://") ||
       imagen_sello.startsWith("/"));
+  const StampIcon = getStampIcon(imagen_sello);
 
   const formattedDate = fecha
     ? new Date(fecha).toLocaleDateString("es-PE", {
@@ -127,6 +144,8 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
               mixBlendMode: "multiply",
             }}
           />
+        ) : StampIcon ? (
+          <StampIcon className={`${s.centerVector} drop-shadow-xs`} strokeWidth={1.6} />
         ) : (
           <span className={`${s.centerIcon} leading-none drop-shadow-xs`}>
             {imagen_sello || "☕"}
