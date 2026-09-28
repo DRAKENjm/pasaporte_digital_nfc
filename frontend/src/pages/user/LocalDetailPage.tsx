@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Navigation, Clock, Phone } from "lucide-react";
+import { ArrowLeft, MapPin, Navigation, Clock, Phone, Gift, Sparkles } from "lucide-react";
+import { resolveImageUrl } from "../../components/common/DigitalStampBadge";
 import api from "../../services/api";
 import { Establecimiento } from "../../types";
 import { Spinner } from "../../components/common/Spinner";
@@ -153,6 +154,53 @@ export const LocalDetailPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Recompensas Disponibles en este Local */}
+      {local.recompensas && (local.recompensas as any[]).length > 0 && (
+        <div className="space-y-3 pt-1">
+          <h2 className="text-sm font-black text-[#2D1A1E] flex items-center gap-1.5">
+            <Gift className="w-4 h-4 text-[#7C0A1E]" />
+            Premios y Recompensas Disponibles ({local.recompensas.length})
+          </h2>
+          <div className="grid grid-cols-1 gap-2.5">
+            {(local.recompensas as any[]).map((r: any) => {
+              const imgUrl = r.imagen_url || r.imagen;
+              return (
+                <div
+                  key={r.id_recompensa}
+                  className="bg-white rounded-2xl p-3 border border-[#EFE7DE] shadow-2xs flex items-center gap-3"
+                >
+                  <div className="w-14 h-14 rounded-xl overflow-hidden bg-rose-50 border border-[#7C0A1E]/20 shrink-0 flex items-center justify-center">
+                    {imgUrl ? (
+                      <img
+                        src={resolveImageUrl(imgUrl)}
+                        alt={r.nombre}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <Gift className="w-6 h-6 text-[#7C0A1E]" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-xs font-black text-[#2D1A1E] truncate">
+                      {r.nombre}
+                    </h3>
+                    <p className="text-[11px] text-[#8E7D7D] truncate mt-0.5">
+                      {r.descripcion || "Premio canjeable en el local"}
+                    </p>
+                    <span className="inline-block mt-1 text-[11px] font-black text-[#7C0A1E]">
+                      {r.puntos_requeridos} pts
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Mapa embebido simple */}
       <div className="card !p-0 overflow-hidden">

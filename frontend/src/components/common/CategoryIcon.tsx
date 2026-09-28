@@ -241,15 +241,18 @@ export const CategoryIcon: React.FC<CategoryIconProps> = ({
     return <MatchedIcon className={className} size={size} />;
   }
 
-  // 2. Si es una URL o ruta de imagen
+    // 2. Si es una URL o ruta de imagen
   if (
     clean.startsWith("http://") ||
     clean.startsWith("https://") ||
-    clean.startsWith("/")
+    clean.startsWith("/") ||
+    clean.startsWith("uploads/") ||
+    /.(jpg|jpeg|png|webp|svg|gif|avif)($|\?)/i.test(clean)
   ) {
+    const src = clean.startsWith("uploads/") ? `/${clean}` : (clean.startsWith("/") || clean.startsWith("http") ? icon : `/uploads/${icon}`);
     return (
       <img
-        src={icon}
+        src={src}
         alt="icono categoría"
         className={`${className} object-contain rounded-sm`}
       />

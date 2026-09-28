@@ -1,6 +1,41 @@
-import React from "react";
-import { Award, CheckCircle2 } from "lucide-react";
+﻿import React, { useState, useEffect } from "react";
 import { CategoryIcon } from "./CategoryIcon";
+import { getStampIcon } from "../../utils/stampIcons";
+
+export const resolveImageUrl = (path?: string | null): string => {
+  if (!path) return "";
+  const trimmed = path.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:")
+  ) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("/")) return trimmed;
+  if (trimmed.startsWith("uploads/")) return `/${trimmed}`;
+  if (/\.(jpg|jpeg|png|webp|svg|gif|avif)($|\?)/i.test(trimmed)) {
+    return `/uploads/${trimmed}`;
+  }
+  return trimmed;
+};
+
+export const isImageUrl = (val?: string | null): boolean => {
+  if (!val) return false;
+  const trimmed = val.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:image/") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("/uploads/") ||
+    trimmed.startsWith("uploads/")
+  ) {
+    return true;
+  }
+  return /\.(jpg|jpeg|png|webp|svg|gif|avif)($|\?)/i.test(trimmed);
+};
 
 interface DigitalStampBadgeProps {
   nombre_sello?: string;
@@ -9,7 +44,7 @@ interface DigitalStampBadgeProps {
   color_sello?: string;
   numero_sello?: number;
   fecha?: string | Date;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "xxl";
   rotation?: number;
   interactive?: boolean;
 }
@@ -17,7 +52,7 @@ interface DigitalStampBadgeProps {
 export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   nombre_sello = "Sello Digital",
   establecimiento_nombre = "Local Afiliado",
-  imagen_sello = "☕",
+  imagen_sello = "landmark",
   color_sello = "#7C0A1E",
   numero_sello,
   fecha,
@@ -25,16 +60,23 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   rotation = -3,
   interactive = false,
 }) => {
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [imagen_sello]);
+
   // Dimensiones según el tamaño
   const sizeMap = {
     sm: {
-      box: "w-20 h-20",
+      box: "w-24 h-24",
       borderOuter: "border-2",
       borderInner: "border",
       textTop: "text-[7px]",
       textBottom: "text-[6px]",
       centerIcon: "text-lg",
-      centerImg: "w-7 h-7",
+      centerVector: "w-10 h-10",
+      centerImg: "w-9 h-9",
       numberBadge: "text-[8px] px-1 py-0.2",
     },
     md: {
@@ -44,6 +86,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       textTop: "text-[8.5px]",
       textBottom: "text-[7.5px]",
       centerIcon: "text-2xl",
+      centerVector: "w-11 h-11",
       centerImg: "w-10 h-10",
       numberBadge: "text-[9px] px-1.5 py-0.5",
     },
@@ -54,6 +97,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       textTop: "text-[10.5px]",
       textBottom: "text-[9px]",
       centerIcon: "text-3xl",
+      centerVector: "w-16 h-16",
       centerImg: "w-14 h-14",
       numberBadge: "text-[10px] px-2 py-0.5",
     },
@@ -64,17 +108,32 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       textTop: "text-[13px]",
       textBottom: "text-[11px]",
       centerIcon: "text-5xl",
+      centerVector: "w-24 h-24",
       centerImg: "w-20 h-20",
       numberBadge: "text-xs px-2.5 py-1",
+    },
+    xxl: {
+      box: "w-72 h-72",
+      borderOuter: "border-4",
+      borderInner: "border-[3px]",
+      textTop: "text-[16px]",
+      textBottom: "text-[13px]",
+      centerIcon: "text-7xl",
+      centerVector: "w-36 h-36",
+      centerImg: "w-32 h-32",
+      numberBadge: "text-sm px-3 py-1",
     },
   };
 
   const s = sizeMap[size];
-  const isImage =
-    imagen_sello &&
-    (imagen_sello.startsWith("http://") ||
-      imagen_sello.startsWith("https://") ||
-      imagen_sello.startsWith("/"));
+  const isImage = isImageUrl(imagen_sello) && !imgError;
+  const resolvedImg = resolveImageUrl(imagen_sello);
+
+  const cleanIcon = (imagen_sello || "").trim().toLowerCase();
+  const StampIcon =
+    getStampIcon(imagen_sello) ||
+    getStampIcon(`icon:${cleanIcon}`) ||
+    getStampIcon(cleanIcon);
 
   const formattedDate = fecha
     ? new Date(fecha).toLocaleDateString("es-PE", {
@@ -120,13 +179,16 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       <div className="relative z-10 flex flex-col items-center justify-center my-auto">
         {isImage ? (
           <img
-            src={imagen_sello}
+            src={resolvedImg}
             alt={nombre_sello}
+            onError={() => setImgError(true)}
             className={`${s.centerImg} object-contain rounded-full filter drop-shadow-xs`}
             style={{
               mixBlendMode: "multiply",
             }}
           />
+        ) : StampIcon ? (
+          <StampIcon className={`${s.centerVector} drop-shadow-xs`} strokeWidth={1.6} />
         ) : (
           <div
             className="flex items-center justify-center drop-shadow-xs"

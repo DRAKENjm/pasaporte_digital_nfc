@@ -1857,7 +1857,7 @@ export const AdminController = {
       // Auto-provisionar programa de sellos básico para establecimientos que no tengan uno
       await query(`
         INSERT INTO programas_sellos (
-          id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita, nombre_sello, imagen_sello, color_sello, estado
+          id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita, nombre_sello, imagen_sello, color_sello, fecha_inicio, estado
         )
         SELECT 
           e.id_establecimiento,
@@ -1868,13 +1868,13 @@ export const AdminController = {
           'Sello ' || e.nombre_comercial,
           COALESCE(e.logo, cat.icono_url, '🏛️'),
           '#7C0A1E',
+          CURRENT_TIMESTAMP,
           'ACTIVO'
         FROM establecimientos e
         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
         WHERE NOT EXISTS (
           SELECT 1 FROM programas_sellos ps WHERE ps.id_establecimiento = e.id_establecimiento
         )
-        ON CONFLICT (id_establecimiento) DO NOTHING
       `);
 
       let sql = `
@@ -1898,7 +1898,8 @@ export const AdminController = {
           ps.fecha_actualizacion,
           cat.nombre AS categoria_nombre,
           cat.icono_url AS categoria_icono,
-          (SELECT COUNT(*)::int FROM sellos_digitales sd WHERE sd.id_programa = ps.id_programa AND sd.estado = 'OTORGADO') AS total_sellos_otorgados
+          (SELECT COUNT(*)::int FROM sellos_digitales sd WHERE sd.id_programa = ps.id_programa AND sd.estado = 'OTORGADO') AS total_sellos_otorgados,
+          (SELECT COUNT(*)::int FROM programas_sellos ps2 WHERE ps2.id_establecimiento = ps.id_establecimiento) AS total_sellos_local
         FROM programas_sellos ps
         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
@@ -2037,8 +2038,75 @@ export const AdminController = {
     }
   },
 
-  /** Restablecer diseño de sello al diseño original básico de su categoría (Moderación) */
+  /** Eliminar definitivamente un diseño de sello / programa de un establecimiento */
   async eliminarSello(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+
+      if (req.query.accion === "restablecer") {
+        return AdminController.restablecerSello(req, res, next);
+      }
+
+      const prog = await query(
+        `SELECT ps.id_programa, ps.id_establecimiento, ps.nombre_sello, e.nombre_comercial
+         FROM programas_sellos ps
+         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+         WHERE ps.id_programa = $1`,
+        [id],
+      );
+
+      if (!prog.rows[0]) throw new ApiError(404, "Programa de sello no encontrado");
+      const item = prog.rows[0];
+
+      // Validar regla de negocio: un local debe conservar siempre al menos 1 sello principal
+      const countCheck = await query(
+        `SELECT COUNT(*)::int AS total FROM programas_sellos WHERE id_establecimiento = $1`,
+        [item.id_establecimiento],
+      );
+      const totalSellos = countCheck.rows[0]?.total || 0;
+      if (totalSellos <= 1) {
+        throw new ApiError(
+          400,
+          `No se puede eliminar el único sello del establecimiento "${item.nombre_comercial}". Todo local debe conservar al menos un sello principal. Si deseas modificar su diseño, utiliza la opción "Restablecer".`,
+        );
+      }
+
+      // Eliminar dependencias en cascada para evitar violación de FK restrictiva
+      await query(`DELETE FROM sellos_digitales WHERE id_programa = $1`, [id]);
+      await query(`DELETE FROM movimientos_puntos WHERE id_programa = $1`, [id]);
+      await query(`DELETE FROM reglas_puntos WHERE id_programa = $1`, [id]);
+      await query(`DELETE FROM programas_sellos WHERE id_programa = $1`, [id]);
+
+      // Registro en auditoría
+      try {
+        await query(
+          `INSERT INTO auditoria (usuario_id, accion, modulo, detalles, ip)
+           VALUES ($1, 'ELIMINAR_SELLO', 'SELLOS', $2, $3)`,
+          [
+            req.user?.id || null,
+            `Se eliminó el sello '${item.nombre_sello}' (ID ${id}) del establecimiento '${item.nombre_comercial}'`,
+            req.ip || null,
+          ],
+        );
+      } catch {}
+
+      sendResponse(
+        res,
+        200,
+        { id_programa: id },
+        `El sello '${item.nombre_sello}' de ${item.nombre_comercial} ha sido eliminado definitivamente`,
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Restablecer diseño de sello al diseño original básico de su categoría (Moderación) */
+  async restablecerSello(
     req: AuthenticatedRequest,
     res: Response,
     next: NextFunction,
@@ -2059,7 +2127,7 @@ export const AdminController = {
       if (!prog.rows[0]) throw new ApiError(404, "Programa de sellos no encontrado");
 
       const item = prog.rows[0];
-      const defaultIcon = item.icono_url || "🏛️";
+      const defaultIcon = item.icono_url || "landmark";
       const defaultName = `Sello ${item.nombre_comercial}`;
       const defaultDesc = `Programa oficial de fidelización de ${item.nombre_comercial}`;
 
@@ -2103,7 +2171,6 @@ export const AdminController = {
     }
   },
 
-  /** Métricas y analíticas consolidadas con datos 100% reales */
   async obtenerReportes(
     _req: AuthenticatedRequest,
     res: Response,
