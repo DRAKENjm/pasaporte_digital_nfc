@@ -1,5 +1,6 @@
 import React from "react";
 import { Award, CheckCircle2 } from "lucide-react";
+import { CategoryIcon } from "./CategoryIcon";
 
 interface DigitalStampBadgeProps {
   nombre_sello?: string;
@@ -115,7 +116,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
         </span>
       </div>
 
-      {/* 3. Centro: Insignia, Imagen o Icono con halo de tinta */}
+      {/* 3. Centro: Insignia, Imagen o Icono vectorial con tinta notarial */}
       <div className="relative z-10 flex flex-col items-center justify-center my-auto">
         {isImage ? (
           <img
@@ -123,14 +124,19 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
             alt={nombre_sello}
             className={`${s.centerImg} object-contain rounded-full filter drop-shadow-xs`}
             style={{
-              // Efecto de colorizado de tinta suave si es png
               mixBlendMode: "multiply",
             }}
           />
         ) : (
-          <span className={`${s.centerIcon} leading-none drop-shadow-xs`}>
-            {imagen_sello || "☕"}
-          </span>
+          <div
+            className="flex items-center justify-center drop-shadow-xs"
+            style={{ color: color_sello }}
+          >
+            <CategoryIcon
+              icon={imagen_sello || "coffee"}
+              size={size === "sm" ? 22 : size === "md" ? 34 : size === "lg" ? 46 : 60}
+            />
+          </div>
         )}
       </div>
 

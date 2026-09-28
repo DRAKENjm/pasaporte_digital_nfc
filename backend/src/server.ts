@@ -6,7 +6,7 @@ import routes from "./routes";
 import { checkDatabaseConnection } from "./config/database";
 import { ApiError } from "./utils";
 
-dotenv.config();
+dotenv.config({ override: true }); // Configuración de entorno actualizada con Supabase
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
   throw new Error("JWT_SECRET debe contener al menos 32 caracteres aleatorios");
@@ -22,11 +22,21 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // Verificación de estado / Health Check
-app.get("/health", (req: Request, res: Response) => {
-  res
-    .status(200)
-    .json({ status: "OK", uptime: process.uptime(), timestamp: new Date() });
+app.get("/health", async (req: Request, res: Response) => {
+  try {
+    const { query } = await import("./config/database");
+    const dbInfo = await query("SELECT current_database(), current_user");
+    res.status(200).json({
+      status: "OK",
+      uptime: process.uptime(),
+      db: dbInfo.rows[0],
+      timestamp: new Date(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: "ERROR", error: err.message });
+  }
 });
+
 
 // Rutas Principales de la API
 app.use("/api", routes);

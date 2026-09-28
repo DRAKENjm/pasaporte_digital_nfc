@@ -1,10 +1,16 @@
 {
+  "scripts": {
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend"
+  },
   "dependencies": {
     "dotenv": "^17.4.2",
     "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "concurrently": "^8.2.2"
   }
 }

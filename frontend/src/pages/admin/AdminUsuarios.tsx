@@ -76,20 +76,14 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
 
   const { showToast } = useUI();
 
-  // Resetear filtros si cambia el modo
-  useEffect(() => {
-    setFiltroRol(isClientes ? "CLIENTE" : "TODOS");
-    setFiltroEstado("TODOS");
-    setQ("");
-    setPagina(1);
-  }, [modo]);
-
-  const load = async () => {
+  const load = async (rolOverride?: string) => {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
       if (q.trim()) params.q = q.trim();
-      const rolParam = isClientes ? "CLIENTE" : filtroRol;
+      const rolParam = rolOverride !== undefined 
+        ? rolOverride 
+        : (isClientes ? "CLIENTE" : filtroRol);
       if (rolParam !== "TODOS") params.rol = rolParam;
       if (filtroEstado !== "TODOS") params.estado = filtroEstado;
       const { data } = await api.get("/admin/usuarios", { params });
@@ -102,9 +96,15 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
     }
   };
 
+  // Resetear filtros y cargar datos cada vez que cambia el modo
   useEffect(() => {
-    load();
-  }, [modo]);
+    const targetRol = isClientes ? "CLIENTE" : "TODOS";
+    setFiltroRol(targetRol);
+    setFiltroEstado("TODOS");
+    setQ("");
+    setPagina(1);
+    load(targetRol);
+  }, [modo, isClientes]);
 
   useEffect(() => {
     setPagina(1);
