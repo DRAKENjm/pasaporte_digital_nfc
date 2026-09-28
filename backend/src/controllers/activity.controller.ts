@@ -70,10 +70,11 @@ export const ActivityController = {
           e.logo AS establecimiento_logo,
           sd.numero_sello,
           sd.estado AS sello_estado,
-          ps.meta_sellos,
-          ps.nombre_sello,
-          ps.imagen_sello,
-          COALESCE(ps.color_sello, '#7C0A1E') AS color_sello
+          COALESCE(sd.meta_sellos_snapshot, ps.meta_sellos) AS meta_sellos,
+          COALESCE(sd.nombre_sello_snapshot, ps.nombre_sello) AS nombre_sello,
+          COALESCE(sd.imagen_sello_snapshot, ps.imagen_sello) AS imagen_sello,
+          COALESCE(sd.color_sello_snapshot, ps.color_sello, '#7C0A1E') AS color_sello,
+          sd.puntos_sello_snapshot AS puntos_por_sello
          FROM visitas v
          JOIN sucursales s ON s.id_sucursal = v.id_sucursal
          JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
@@ -128,9 +129,6 @@ export const ActivityController = {
       next(error);
     }
   },
-<<<<<<< HEAD
-=======
-
   /** Sellos del usuario agrupados por establecimiento y categoría */
   async misSellos(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
@@ -239,5 +237,4 @@ export const ActivityController = {
       next(error);
     }
   },
->>>>>>> 250e65a (beta de cliente, de alfa a beta)
 };

@@ -21,14 +21,16 @@ export const CommerceHome: React.FC = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
         const res = await api.get("/establishments/me/stats");
-        setStats(res.data.data);
+        setStats(res.data?.data ?? res.data);
       } catch (e) {
         console.error("Error al cargar stats del local", e);
+        setError(true);
       } finally {
         setLoading(false);
       }
@@ -45,6 +47,10 @@ export const CommerceHome: React.FC = () => {
     );
   }
 
+  if (error || !stats) {
+    return <div className="py-16 text-center text-sm text-[#8E7D7D]">No se pudo cargar el panel del establecimiento. Intenta nuevamente más tarde.</div>;
+  }
+
   const localNombre = stats?.establecimiento?.nombre || "Aroma Café";
   const sucursalNombre = stats?.establecimiento?.sucursal || "Principal";
   const visitasHoy = stats?.visitas_hoy ?? 0;
@@ -53,6 +59,12 @@ export const CommerceHome: React.FC = () => {
   const clientesAtendidos = stats?.clientes_unicos ?? 0;
   const ultimasVisitas = stats?.ultimas_visitas ?? [];
   const tendencia7Dias = stats?.visitas_ultimos_dias ?? [];
+  const recurrencia = stats?.recurrencia_clientes ?? {};
+  const segmentosRecurrencia = [
+    { label: "1 visita", cantidad: Number(recurrencia.una_visita) || 0, color: "bg-[#7C0A1E]" },
+    { label: "2-4 visitas", cantidad: Number(recurrencia.dos_a_cuatro) || 0, color: "bg-[#C5A059]" },
+    { label: "5 o más visitas", cantidad: Number(recurrencia.cinco_o_mas) || 0, color: "bg-emerald-500" },
+  ];
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-fadeIn pb-12">
@@ -153,8 +165,8 @@ export const CommerceHome: React.FC = () => {
               { dia: "Sáb", total: 0 },
               { dia: "Dom", total: 0 },
             ]).map((b: any, idx: number) => {
-              const maxV = Math.max(...tendencia7Dias.map((t: any) => t.total || 0), 5);
-              const heightPct = Math.min(100, Math.max(10, Math.round(((b.total || 0) / maxV) * 100)));
+              const maxV = Math.max(...tendencia7Dias.map((t: any) => Number(t.total) || 0), 1);
+              const heightPct = (Number(b.total) || 0) === 0 ? 0 : Math.max(10, Math.round(((Number(b.total) || 0) / maxV) * 100));
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
                   <span className="text-[9px] font-bold text-[#7C0A1E]">{b.total || 0}</span>
@@ -179,31 +191,27 @@ export const CommerceHome: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-around py-3">
-            <div className="relative w-28 h-28 rounded-full border-8 border-[#7C0A1E] flex items-center justify-center border-t-[#C5A059] border-r-emerald-500">
-              <div className="text-center">
-                <span className="text-sm font-black text-[#2D1A1E] block">{clientesAtendidos}</span>
-                <span className="text-[8px] text-[#8E7D7D] block -mt-0.5 font-bold uppercase">Clientes</span>
-              </div>
-            </div>
-            <div className="space-y-2 text-[11px]">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#7C0A1E]" />
-                <span className="text-[#8E7D7D]">1 visita: <strong className="text-[#2D1A1E]">60%</strong></span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#C5A059]" />
-                <span className="text-[#8E7D7D]">2-4 visitas: <strong className="text-[#2D1A1E]">30%</strong></span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                <span className="text-[#8E7D7D]">+5 visitas: <strong className="text-[#2D1A1E]">10%</strong></span>
-              </div>
+            <div className="w-full space-y-3">
+              {segmentosRecurrencia.map((segmento) => {
+                const porcentaje = clientesAtendidos > 0 ? Math.round(segmento.cantidad / clientesAtendidos * 100) : 0;
+                return (
+                  <div key={segmento.label} className="space-y-1">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-[#8E7D7D]">{segmento.label}</span>
+                      <span className="font-bold text-[#2D1A1E]">{segmento.cantidad} ({porcentaje}%)</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#FAF8F5] overflow-hidden">
+                      <div className={`h-full ${segmento.color}`} style={{ width: `${porcentaje}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           <div className="pt-2 text-[10px] text-[#8E7D7D] border-t border-[#EFE7DE] flex items-center justify-between">
             <span>Tasa de retorno</span>
-            <span className="font-bold text-emerald-600">Alta retención</span>
+            <span className="font-bold text-emerald-600">Clientes del mes en curso</span>
           </div>
         </div>
       </div>
@@ -223,7 +231,7 @@ export const CommerceHome: React.FC = () => {
         {ultimasVisitas.length === 0 ? (
           <div className="py-8 text-center text-xs text-[#8E7D7D]">
             <Award className="w-8 h-8 text-[#8E7D7D]/40 mx-auto mb-2" />
-            <p>No se han registrado visitas hoy en esta sucursal.</p>
+            <p>No se han registrado visitas en esta sucursal.</p>
             <Link to="/commerce/validar" className="text-[#7C0A1E] font-bold mt-1 inline-block hover:underline">
               Abrir terminal NFC para registrar la primera visita
             </Link>
@@ -246,7 +254,7 @@ export const CommerceHome: React.FC = () => {
 
                 <div className="text-right">
                   <span className="inline-flex items-center text-xs font-black text-[#7C0A1E] bg-rose-50 px-2.5 py-1 rounded-xl">
-                    +1 sello · +20 pts
+                    +{Number(v.sellos_otorgados) || 0} sellos · +{Number(v.puntos_otorgados) || 0} pts
                   </span>
                 </div>
               </div>

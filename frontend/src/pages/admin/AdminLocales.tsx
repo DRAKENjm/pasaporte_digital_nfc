@@ -7,6 +7,7 @@ import { Spinner } from "../../components/common/Spinner";
 import { EmptyState } from "../../components/common/EmptyState";
 import { useUI } from "../../hooks/useUI";
 import { Establecimiento, User } from "../../types";
+import { CategoryIcon } from "../../components/common/CategoryIcon";
 import {
   Plus,
   SquarePen,
@@ -27,6 +28,7 @@ import {
   X,
   Loader2,
   ShieldCheck,
+  Coins,
 } from "lucide-react";
 
 const ITEMS_PER_PAGE = 10;
@@ -273,9 +275,10 @@ export const AdminLocales = () => {
   const openEditar = (local: Establecimiento) => {
     setLocalSeleccionado(local);
     const mapsUrl =
-      local.lat != null && local.lng != null
+      local.google_maps_url ||
+      (local.lat != null && local.lng != null
         ? `https://www.google.com/maps?q=${local.lat},${local.lng}`
-        : "";
+        : "");
     setStaff(local.usuario_encargado_id ? String(local.usuario_encargado_id) : "");
     setForm({
       razon_social: local.razon_social ?? local.nombre ?? "",
@@ -355,6 +358,7 @@ export const AdminLocales = () => {
         direccion: form.direccion,
         lat: coords?.lat ?? null,
         lng: coords?.lng ?? null,
+        google_maps_url: form.google_maps_url?.trim() || null,
         categoria_id: form.categoria_id || null,
         telefono: form.telefono || null,
         descripcion: form.descripcion || null,
@@ -388,6 +392,7 @@ export const AdminLocales = () => {
         direccion: form.direccion,
         lat: coords?.lat ?? null,
         lng: coords?.lng ?? null,
+        google_maps_url: form.google_maps_url?.trim() || null,
         descripcion: form.descripcion || null,
         telefono: form.telefono || null,
         horario: form.horario || null,
@@ -1312,7 +1317,7 @@ export const AdminLocales = () => {
                   <tr className="border-b border-[#EFE7DE]/70 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-900/40 text-muted font-bold uppercase">
                     <th className="p-3.5">Establecimiento / Razón Social</th>
                     <th className="p-3.5">RUC / Categoría</th>
-                    <th className="p-3.5">Sello & Puntos</th>
+                    <th className="p-3.5">Puntos</th>
                     <th className="p-3.5">Dirección</th>
                     <th className="p-3.5">Encargado (Comercio)</th>
                     <th className="p-3.5">Estado</th>
@@ -1351,25 +1356,16 @@ export const AdminLocales = () => {
                         <span className="font-mono font-semibold block">{l.ruc}</span>
                         {l.categoria_nombre && (
                           <span className="inline-flex items-center gap-1.5 mt-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700">
-                            <span>{l.categoria_icono || "🏷️"}</span>
+                            <CategoryIcon icon={l.categoria_icono} className="w-3.5 h-3.5 text-[#7C0A1E]" />
                             <span>{l.categoria_nombre}</span>
                           </span>
                         )}
                       </td>
                       <td className="p-3.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl shrink-0 select-none">
-                            {(l as any).imagen_sello || l.categoria_icono || "🏛️"}
-                          </span>
-                          <div className="min-w-0">
-                            <span className="font-black text-[#7C0A1E] dark:text-[#C5A059] text-xs block">
-                              +{(l as any).puntos_por_visita || 20} pts
-                            </span>
-                            <span className="text-[10px] text-muted block truncate max-w-[120px]">
-                              {(l as any).nombre_sello || "Sello Oficial"}
-                            </span>
-                          </div>
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-500/20 shadow-2xs">
+                          <Coins className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>+{(l as any).puntos_por_visita || 20} pts</span>
+                        </span>
                       </td>
                       <td className="p-3.5">
                         <p className="text-slate-700 dark:text-slate-300">{l.direccion || "Sin dirección registrada"}</p>
@@ -1569,8 +1565,8 @@ export const AdminLocales = () => {
                     RUC: {localSeleccionado.ruc}
                   </span>
                   {localSeleccionado.categoria_nombre && (
-                    <span className="inline-flex items-center gap-1.5 text-teal-700 dark:text-teal-300 font-semibold bg-teal-50 dark:bg-teal-500/10 px-2.5 py-0.5 rounded-full border border-teal-200/60 dark:border-teal-500/20">
-                      <span>{localSeleccionado.categoria_icono || "🏷️"}</span>
+                    <span className="inline-flex items-center gap-1.5 text-[#7C0A1E] font-semibold bg-[#7C0A1E]/10 px-2.5 py-0.5 rounded-full border border-[#7C0A1E]/20">
+                      <CategoryIcon icon={localSeleccionado.categoria_icono} className="w-3.5 h-3.5 text-[#7C0A1E]" />
                       <span>{localSeleccionado.categoria_nombre}</span>
                     </span>
                   )}
@@ -1581,8 +1577,8 @@ export const AdminLocales = () => {
             {/* Sello Digital & Puntos Asignados */}
             <div className="p-4 rounded-2xl bg-[#FAF8F5] dark:bg-slate-850 border border-[#EFE7DE] dark:border-slate-800 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-800 border border-[#EFE7DE] dark:border-slate-700 flex items-center justify-center text-2xl shadow-xs shrink-0 select-none">
-                  {(localSeleccionado as any).imagen_sello || localSeleccionado.categoria_icono || "🏛️"}
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 border border-[#EFE7DE] dark:border-slate-700 flex items-center justify-center text-[#7C0A1E] shadow-2xs shrink-0 select-none">
+                  <CategoryIcon icon={(localSeleccionado as any).imagen_sello || localSeleccionado.categoria_icono || "landmark"} className="w-6 h-6 text-[#7C0A1E]" />
                 </div>
                 <div className="min-w-0">
                   <span className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider block">

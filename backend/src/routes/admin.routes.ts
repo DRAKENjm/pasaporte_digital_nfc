@@ -45,7 +45,7 @@ router.delete("/recompensas/:id", async (req, res, next) => {
     const { query } = await import("../config/database");
     const { ApiError, sendResponse } = await import("../utils");
     const result = await query(
-      `DELETE FROM recompensas_plataforma WHERE id = $1 RETURNING id`,
+      `DELETE FROM recompensas WHERE id_recompensa = $1 RETURNING id_recompensa AS id`,
       [id],
     );
     if (!result.rows[0]) throw new ApiError(404, "Recompensa no encontrada");
@@ -60,6 +60,7 @@ router.get("/roles", AdminController.listarRoles);
 // ===== DISEÑO Y MODERACIÓN DE SELLOS DIGITALES =====
 router.get("/sellos", AdminController.listarSellos);
 router.post("/sellos", AdminController.crearSello);
+router.post("/sellos/:id/restablecer", AdminController.restablecerSello);
 router.patch("/sellos/:id", AdminController.actualizarSello);
 router.delete("/sellos/:id", AdminController.eliminarSello);
 
@@ -84,6 +85,10 @@ router.get("/notificaciones", AdminController.resumenNotificaciones);
 router.get("/auditoria", AdminController.listarAuditoria);
 router.get("/documentos-legales", AdminController.listarDocumentosLegales);
 router.get("/visitas", AdminController.listarVisitas);
+
+// ===== REPORTES Y ANALÍTICAS CONSOLIDADAS =====
+router.get("/reportes", AdminController.obtenerReportes);
+router.get("/reportes/exportar/:tipo", AdminController.exportarReporte);
 
 // ===== SUBIDA DE ARCHIVOS / FOTOS (Locales, Recompensas, etc.) =====
 import multer from "multer";

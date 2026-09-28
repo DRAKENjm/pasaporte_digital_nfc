@@ -67,6 +67,7 @@ export interface Establecimiento {
   usuario_encargado_id?: string | number;
   usuario_encargado_email?: string;
   usuario_encargado_nombre?: string;
+  recompensas?: any[];
 }
 
 export interface ReglaSello {

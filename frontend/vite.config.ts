@@ -6,7 +6,10 @@ export default defineConfig({
   build: { rollupOptions: { output: { manualChunks: { qr: ['@zxing/browser','qrcode'] } } } },
   server: {
     port: 5173,
-    proxy: { '/api': 'http://localhost:5000' },
+    proxy: {
+      '/api': 'http://localhost:5000',
+      '/uploads': 'http://localhost:5000',
+    },
     host: true,
   },
 });

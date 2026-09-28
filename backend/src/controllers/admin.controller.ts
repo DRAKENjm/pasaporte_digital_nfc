@@ -695,7 +695,7 @@ export const AdminController = {
   ) {
     try {
       const result = await query(
-        `SELECT r.id_recompensa AS id, r.nombre AS nombre_recompensa, r.descripcion,
+        `SELECT r.id_recompensa AS id, r.id_establecimiento, r.nombre AS nombre_recompensa, r.descripcion,
                 r.puntos_requeridos AS costo_puntos_globales, r.stock AS stock_disponible,
                 r.imagen AS imagen_url, 'DIGITAL' AS tipo_entrega, r.estado, r.fecha_creacion AS created_at,
                 COALESCE(e.nombre_comercial, 'General') AS establecimiento_nombre
@@ -737,6 +737,13 @@ export const AdminController = {
         throw new ApiError(404, "Recompensa no encontrada");
       }
 
+      const estabValue =
+        id_establecimiento === undefined
+          ? null // no change
+          : id_establecimiento && String(id_establecimiento).trim() !== ""
+          ? String(id_establecimiento).trim()
+          : "REMOVE";
+
       const result = await query(
         `UPDATE recompensas
          SET nombre = COALESCE($1, nombre),
@@ -760,7 +767,7 @@ export const AdminController = {
           fecha_inicio !== undefined ? fecha_inicio : null,
           fecha_fin !== undefined ? fecha_fin : null,
           estado ?? null,
-          id_establecimiento !== undefined ? (id_establecimiento ? String(id_establecimiento) : "REMOVE") : null,
+          estabValue,
           id,
         ],
       );
@@ -979,11 +986,12 @@ export const AdminController = {
            c.nombre,
            c.icono_url,
            c.estado,
-           c.fecha_creacion,
+           COALESCE(c.created_at, c.fecha_creacion) AS created_at,
+           COALESCE(c.fecha_creacion, c.created_at) AS fecha_creacion,
            COUNT(e.id_establecimiento)::int AS total_locales
          FROM categorias_establecimiento c
          LEFT JOIN establecimientos e ON e.categoria_id = c.id
-         GROUP BY c.id, c.nombre, c.icono_url, c.estado, c.fecha_creacion
+         GROUP BY c.id, c.nombre, c.icono_url, c.estado, c.created_at, c.fecha_creacion
          ORDER BY c.nombre ASC`,
       );
       sendResponse(res, 200, result.rows, "Categorías obtenidas");
@@ -1396,6 +1404,8 @@ export const AdminController = {
           sp.referencia,
           sp.latitud AS lat,
           sp.longitud AS lng,
+          sp.google_maps_url,
+          sp.horario,
           -- Usuario encargado (COMERCIO) asignado
           u.id_usuario AS usuario_encargado_id,
           u.email AS usuario_encargado_email,
@@ -1466,6 +1476,7 @@ export const AdminController = {
         email,
         descripcion,
         horario,
+        google_maps_url,
         imagen_url,
         usuario_id, // opcional: ID de usuario comercio a asignar directamente
       } = req.body;
@@ -1515,8 +1526,8 @@ export const AdminController = {
       const sucRes = await query(
         `INSERT INTO sucursales (
            id_establecimiento, nombre, direccion, latitud, longitud,
-           telefono, es_principal, estado, fecha_creacion
-         ) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, CURRENT_TIMESTAMP)
+           telefono, es_principal, estado, fecha_creacion, google_maps_url, horario
+         ) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, CURRENT_TIMESTAMP, $7, $8)
          RETURNING *`,
         [
           nuevoEst.id_establecimiento,
@@ -1525,6 +1536,8 @@ export const AdminController = {
           lat != null ? Number(lat) : null,
           lng != null ? Number(lng) : null,
           telefono?.trim() || null,
+          google_maps_url?.trim() || null,
+          horario?.trim() || null,
         ],
       );
 
@@ -1540,8 +1553,8 @@ export const AdminController = {
         }
         await query(
           `INSERT INTO programas_sellos (
-             id_establecimiento, nombre, meta_sellos, nombre_sello, imagen_sello, puntos_por_visita, estado
-           ) VALUES ($1, $2, 8, $3, $4, $5, 'ACTIVO')
+             id_establecimiento, nombre, meta_sellos, nombre_sello, imagen_sello, puntos_por_visita, estado, fecha_inicio
+           ) VALUES ($1, $2, 8, $3, $4, $5, 'ACTIVO', CURRENT_TIMESTAMP)
            ON CONFLICT (id_establecimiento) DO NOTHING`,
           [
             nuevoEst.id_establecimiento,
@@ -1603,6 +1616,8 @@ export const AdminController = {
         estado,
         usuario_id,
         puntos_por_visita,
+        google_maps_url,
+        horario,
       } = req.body;
 
       const estActual = await query(
@@ -1662,7 +1677,9 @@ export const AdminController = {
              direccion = COALESCE($2, direccion),
              latitud = COALESCE($3::numeric, latitud),
              longitud = COALESCE($4::numeric, longitud),
-             telefono = COALESCE($5, telefono)
+             telefono = COALESCE($5, telefono),
+             google_maps_url = CASE WHEN $6::boolean THEN $7 ELSE google_maps_url END,
+             horario = CASE WHEN $8::boolean THEN $9 ELSE horario END
            WHERE id_sucursal = $1`,
           [
             sucPrincipal.rows[0].id_sucursal,
@@ -1670,12 +1687,16 @@ export const AdminController = {
             lat != null ? Number(lat) : null,
             lng != null ? Number(lng) : null,
             telefono?.trim() ?? null,
+            google_maps_url !== undefined,
+            google_maps_url?.trim() || null,
+            horario !== undefined,
+            horario?.trim() || null,
           ],
         );
       } else if (direccion) {
         const newSuc = await query(
-          `INSERT INTO sucursales (id_establecimiento, nombre, direccion, latitud, longitud, telefono, es_principal, estado)
-           VALUES ($1, 'Sede Principal', $2, $3, $4, $5, 1, 1)
+          `INSERT INTO sucursales (id_establecimiento, nombre, direccion, latitud, longitud, telefono, es_principal, estado, google_maps_url, horario)
+           VALUES ($1, 'Sede Principal', $2, $3, $4, $5, 1, 1, $6, $7)
            RETURNING id_sucursal`,
           [
             id,
@@ -1683,6 +1704,8 @@ export const AdminController = {
             lat != null ? Number(lat) : null,
             lng != null ? Number(lng) : null,
             telefono?.trim() || null,
+            google_maps_url?.trim() || null,
+            horario?.trim() || null,
           ],
         );
         sucPrincipal = newSuc;
@@ -1715,8 +1738,8 @@ export const AdminController = {
         if (progRes.rows.length === 0) {
           await query(
             `INSERT INTO programas_sellos (
-               id_establecimiento, nombre, meta_sellos, nombre_sello, imagen_sello, puntos_por_visita, estado
-             ) VALUES ($1, $2, 8, 'Visita', '☕', $3, 'ACTIVO')
+               id_establecimiento, nombre, meta_sellos, nombre_sello, imagen_sello, puntos_por_visita, estado, fecha_inicio
+             ) VALUES ($1, $2, 8, 'Visita', '☕', $3, 'ACTIVO', CURRENT_TIMESTAMP)
              ON CONFLICT (id_establecimiento) DO NOTHING`,
             [id, `Pasaporte ${estActual.rows[0].nombre_comercial}`, pts],
           );
@@ -1834,7 +1857,7 @@ export const AdminController = {
       // Auto-provisionar programa de sellos básico para establecimientos que no tengan uno
       await query(`
         INSERT INTO programas_sellos (
-          id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita, nombre_sello, imagen_sello, color_sello, estado
+          id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita, nombre_sello, imagen_sello, color_sello, fecha_inicio, estado
         )
         SELECT 
           e.id_establecimiento,
@@ -1845,13 +1868,13 @@ export const AdminController = {
           'Sello ' || e.nombre_comercial,
           COALESCE(e.logo, cat.icono_url, '🏛️'),
           '#7C0A1E',
+          CURRENT_TIMESTAMP,
           'ACTIVO'
         FROM establecimientos e
         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
         WHERE NOT EXISTS (
           SELECT 1 FROM programas_sellos ps WHERE ps.id_establecimiento = e.id_establecimiento
         )
-        ON CONFLICT (id_establecimiento) DO NOTHING
       `);
 
       let sql = `
@@ -1875,7 +1898,8 @@ export const AdminController = {
           ps.fecha_actualizacion,
           cat.nombre AS categoria_nombre,
           cat.icono_url AS categoria_icono,
-          (SELECT COUNT(*)::int FROM sellos_digitales sd WHERE sd.id_programa = ps.id_programa AND sd.estado = 'OTORGADO') AS total_sellos_otorgados
+          (SELECT COUNT(*)::int FROM sellos_digitales sd WHERE sd.id_programa = ps.id_programa AND sd.estado = 'OTORGADO') AS total_sellos_otorgados,
+          (SELECT COUNT(*)::int FROM programas_sellos ps2 WHERE ps2.id_establecimiento = ps.id_establecimiento) AS total_sellos_local
         FROM programas_sellos ps
         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
@@ -2014,7 +2038,7 @@ export const AdminController = {
     }
   },
 
-  /** Eliminar o resetear diseño de sello inapropiado (moderación) */
+  /** Eliminar definitivamente un diseño de sello / programa de un establecimiento */
   async eliminarSello(
     req: AuthenticatedRequest,
     res: Response,
@@ -2022,28 +2046,282 @@ export const AdminController = {
   ) {
     try {
       const { id } = req.params;
-      const check = await query(
-        `SELECT COUNT(*)::int AS total FROM sellos_digitales WHERE id_programa = $1`,
+
+      if (req.query.accion === "restablecer") {
+        return AdminController.restablecerSello(req, res, next);
+      }
+
+      const prog = await query(
+        `SELECT ps.id_programa, ps.id_establecimiento, ps.nombre_sello, e.nombre_comercial
+         FROM programas_sellos ps
+         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+         WHERE ps.id_programa = $1`,
         [id],
       );
-      if (check.rows[0] && check.rows[0].total > 0) {
-        await query(
-          `UPDATE programas_sellos
-           SET 
-             nombre_sello = 'Sello Estándar',
-             imagen_sello = '🏛️',
-             color_sello = '#7C0A1E',
-             descripcion = 'Sello digital verificado por administración',
-             estado = 'ACTIVO',
-             fecha_actualizacion = CURRENT_TIMESTAMP
-           WHERE id_programa = $1`,
-          [id],
+
+      if (!prog.rows[0]) throw new ApiError(404, "Programa de sello no encontrado");
+      const item = prog.rows[0];
+
+      // Validar regla de negocio: un local debe conservar siempre al menos 1 sello principal
+      const countCheck = await query(
+        `SELECT COUNT(*)::int AS total FROM programas_sellos WHERE id_establecimiento = $1`,
+        [item.id_establecimiento],
+      );
+      const totalSellos = countCheck.rows[0]?.total || 0;
+      if (totalSellos <= 1) {
+        throw new ApiError(
+          400,
+          `No se puede eliminar el único sello del establecimiento "${item.nombre_comercial}". Todo local debe conservar al menos un sello principal. Si deseas modificar su diseño, utiliza la opción "Restablecer".`,
         );
-        sendResponse(res, 200, null, "Sello reseteado a valores estándar por moderación");
-      } else {
-        await query(`DELETE FROM programas_sellos WHERE id_programa = $1`, [id]);
-        sendResponse(res, 200, null, "Diseño de sello eliminado correctamente");
       }
+
+      // Eliminar dependencias en cascada para evitar violación de FK restrictiva
+      await query(`DELETE FROM sellos_digitales WHERE id_programa = $1`, [id]);
+      await query(`DELETE FROM movimientos_puntos WHERE id_programa = $1`, [id]);
+      await query(`DELETE FROM reglas_puntos WHERE id_programa = $1`, [id]);
+      await query(`DELETE FROM programas_sellos WHERE id_programa = $1`, [id]);
+
+      // Registro en auditoría
+      try {
+        await query(
+          `INSERT INTO auditoria (usuario_id, accion, modulo, detalles, ip)
+           VALUES ($1, 'ELIMINAR_SELLO', 'SELLOS', $2, $3)`,
+          [
+            req.user?.id || null,
+            `Se eliminó el sello '${item.nombre_sello}' (ID ${id}) del establecimiento '${item.nombre_comercial}'`,
+            req.ip || null,
+          ],
+        );
+      } catch {}
+
+      sendResponse(
+        res,
+        200,
+        { id_programa: id },
+        `El sello '${item.nombre_sello}' de ${item.nombre_comercial} ha sido eliminado definitivamente`,
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Restablecer diseño de sello al diseño original básico de su categoría (Moderación) */
+  async restablecerSello(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+
+      // Obtener datos del establecimiento y su categoría
+      const prog = await query(
+        `SELECT ps.id_programa, ps.id_establecimiento, e.nombre_comercial, cat.nombre AS categoria_nombre, cat.icono_url
+         FROM programas_sellos ps
+         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
+         WHERE ps.id_programa = $1`,
+        [id],
+      );
+
+      if (!prog.rows[0]) throw new ApiError(404, "Programa de sellos no encontrado");
+
+      const item = prog.rows[0];
+      const defaultIcon = item.icono_url || "landmark";
+      const defaultName = `Sello ${item.nombre_comercial}`;
+      const defaultDesc = `Programa oficial de fidelización de ${item.nombre_comercial}`;
+
+      await query(
+        `UPDATE programas_sellos
+         SET 
+           nombre_sello = $2,
+           imagen_sello = $3,
+           color_sello = '#7C0A1E',
+           descripcion = $4,
+           meta_sellos = 8,
+           puntos_por_visita = 20,
+           estado = 'ACTIVO',
+           fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_programa = $1`,
+        [id, defaultName, defaultIcon, defaultDesc],
+      );
+
+      // Sincronizar regla de puntos al estándar institucional (20 pts)
+      await query(
+        `UPDATE reglas_sellos 
+         SET valor_puntos_por_sello = 20 
+         WHERE establecimiento_id = $1`,
+        [item.id_establecimiento],
+      );
+
+      sendResponse(
+        res,
+        200,
+        {
+          id_programa: id,
+          nombre_sello: defaultName,
+          imagen_sello: defaultIcon,
+          color_sello: "#7C0A1E",
+          puntos_por_visita: 20,
+        },
+        "Sello digital restablecido con éxito a los valores básicos predeterminados",
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async obtenerReportes(
+    _req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const [visitasSemana, canjesCat, resumen] = await Promise.all([
+        query(`
+          SELECT 
+            TO_CHAR(d.fecha, 'Dy') AS dia,
+            TO_CHAR(d.fecha, 'DD/MM') AS fecha_corta,
+            COUNT(v.id_visita)::int AS val
+          FROM generate_series(
+            (CURRENT_DATE - INTERVAL '6 days')::date,
+            CURRENT_DATE::date,
+            '1 day'::interval
+          ) d(fecha)
+          LEFT JOIN visitas v ON DATE(v.fecha_hora) = DATE(d.fecha) AND v.estado = 'CONFIRMADA'
+          GROUP BY d.fecha
+          ORDER BY d.fecha ASC
+        `),
+        query(`
+          SELECT 
+            COALESCE(cat.nombre, 'General / Central') AS cat,
+            COUNT(c.id_canje)::int AS canjes_count,
+            COALESCE(SUM(r.puntos_requeridos), 0)::bigint AS puntos_totales
+          FROM canjes c
+          JOIN recompensas r ON r.id_recompensa = c.id_recompensa
+          LEFT JOIN establecimientos e ON e.id_establecimiento = r.id_establecimiento
+          LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
+          GROUP BY COALESCE(cat.nombre, 'General / Central')
+          ORDER BY puntos_totales DESC
+        `),
+        query(`
+          SELECT 
+            (SELECT COUNT(*)::int FROM visitas WHERE estado = 'CONFIRMADA') AS total_visitas,
+            (SELECT COUNT(*)::int FROM sellos_digitales WHERE estado = 'OTORGADO') AS total_sellos,
+            (SELECT COALESCE(SUM(cantidad), 0)::bigint FROM movimientos_puntos WHERE cantidad > 0) AS puntos_emitidos,
+            (SELECT COALESCE(ABS(SUM(cantidad)), 0)::bigint FROM movimientos_puntos WHERE cantidad < 0) AS puntos_canjeados,
+            (SELECT COUNT(*)::int FROM establecimientos WHERE estado = 'ACTIVO') AS locales_activos,
+            (SELECT COUNT(*)::int FROM clientes) AS total_clientes,
+            (SELECT COUNT(*)::int FROM canjes WHERE estado = 'PENDIENTE') AS canjes_pendientes,
+            (SELECT COUNT(*)::int FROM tarjetas_nfc WHERE estado = 'ACTIVA') AS tarjetas_activas
+        `),
+      ]);
+
+      sendResponse(
+        res,
+        200,
+        {
+          tendencia_visitas: visitasSemana.rows,
+          distribucion_canjes: canjesCat.rows,
+          resumen: resumen.rows[0] || {},
+        },
+        "Reportes consolidados reales",
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Exportar datasets reales para auditoría (Visitas, Movimientos, Tarjetas, Reclamos) */
+  async exportarReporte(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { tipo } = req.params;
+      let rows: any[] = [];
+      let filename = "reporte";
+
+      if (tipo === "visitas") {
+        filename = "reporte-visitas-sellos";
+        const result = await query(`
+          SELECT 
+            v.id_visita AS "ID Visita",
+            v.fecha_hora AS "Fecha y Hora",
+            e.nombre_comercial AS "Establecimiento",
+            s.nombre AS "Sucursal",
+            u.nombres || ' ' || COALESCE(u.apellidos, '') AS "Cliente",
+            c.codigo_cliente AS "Código Cliente",
+            v.estado AS "Estado Visita",
+            v.metodo_validacion AS "Método Validación"
+          FROM visitas v
+          JOIN sucursales s ON s.id_sucursal = v.id_sucursal
+          JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+          JOIN clientes c ON c.id_cliente = v.id_cliente
+          JOIN usuarios u ON u.id_usuario = c.id_usuario
+          ORDER BY v.fecha_hora DESC
+        `);
+        rows = result.rows;
+      } else if (tipo === "movimientos") {
+        filename = "libro-contable-puntos";
+        const result = await query(`
+          SELECT 
+            m.id_movimiento AS "ID",
+            m.fecha_movimiento AS "Fecha",
+            u.nombres || ' ' || COALESCE(u.apellidos, '') AS "Cliente",
+            m.tipo_movimiento AS "Tipo",
+            m.cantidad AS "Cantidad Puntos",
+            m.saldo_anterior AS "Saldo Anterior",
+            m.saldo_nuevo AS "Saldo Nuevo",
+            m.descripcion AS "Descripción"
+          FROM movimientos_puntos m
+          JOIN clientes c ON c.id_cliente = m.id_cliente
+          JOIN usuarios u ON u.id_usuario = c.id_usuario
+          ORDER BY m.fecha_movimiento DESC
+        `);
+        rows = result.rows;
+      } else if (tipo === "tarjetas") {
+        filename = "reporte-tarjetas-nfc";
+        const result = await query(`
+          SELECT 
+            t.id_tarjeta AS "ID Tarjeta",
+            t.uid_nfc AS "UID NFC",
+            t.codigo_interno AS "Código Físico",
+            t.estado AS "Estado",
+            u.nombres || ' ' || COALESCE(u.apellidos, '') AS "Cliente Titular",
+            t.fecha_asignacion AS "Fecha Asignación",
+            t.fecha_activacion AS "Fecha Activación"
+          FROM tarjetas_nfc t
+          LEFT JOIN clientes c ON c.id_cliente = t.id_cliente
+          LEFT JOIN usuarios u ON u.id_usuario = c.id_usuario
+          ORDER BY t.id_tarjeta DESC
+        `);
+        rows = result.rows;
+      } else if (tipo === "reclamaciones") {
+        filename = "reporte-reclamaciones";
+        const result = await query(`
+          SELECT 
+            r.id_reclamacion AS "ID",
+            r.codigo_reclamacion AS "Código Reclamo",
+            r.fecha_registro AS "Fecha",
+            e.nombre_comercial AS "Establecimiento",
+            u.nombres || ' ' || COALESCE(u.apellidos, '') AS "Cliente",
+            r.tipo AS "Tipo (Queja/Reclamo)",
+            r.estado AS "Estado",
+            r.descripcion AS "Detalle"
+          FROM reclamaciones r
+          LEFT JOIN establecimientos e ON e.id_establecimiento = r.id_establecimiento
+          LEFT JOIN clientes c ON c.id_cliente = r.id_cliente
+          LEFT JOIN usuarios u ON u.id_usuario = c.id_usuario
+          ORDER BY r.fecha_registro DESC
+        `);
+        rows = result.rows;
+      } else {
+        throw new ApiError(400, "Tipo de reporte no soportado");
+      }
+
+      sendResponse(res, 200, { filename, data: rows }, "Datos de exportación");
     } catch (error) {
       next(error);
     }

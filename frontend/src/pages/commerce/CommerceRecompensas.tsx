@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { Gift, Award, Sparkles, AlertCircle, CheckCircle2, ShieldAlert } from "lucide-react";
 import api from "../../services/api";
 import { Spinner } from "../../components/common/Spinner";
 import { useUI } from "../../hooks/useUI";
+import { resolveImageUrl } from "../../components/common/DigitalStampBadge";
 
 export const CommerceRecompensas: React.FC = () => {
   const [recompensas, setRecompensas] = useState<any[]>([]);
@@ -56,52 +57,68 @@ export const CommerceRecompensas: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {recompensas.map((r) => (
-            <div
-              key={r.id_recompensa}
-              className="bg-white rounded-3xl border border-[#EFE7DE] shadow-xs p-5 flex flex-col justify-between space-y-4 hover:border-[#7C0A1E]/30 transition-all"
-            >
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-[#7C0A1E]/20 text-[#7C0A1E] flex items-center justify-center font-bold text-xl shadow-inner">
-                    🎁
+          {recompensas.map((r) => {
+            const imgUrl = r.imagen_url || r.imagen;
+            return (
+              <div
+                key={r.id_recompensa}
+                className="bg-white rounded-3xl border border-[#EFE7DE] shadow-xs p-5 flex flex-col justify-between space-y-4 hover:border-[#7C0A1E]/30 transition-all"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden bg-rose-50 border border-[#7C0A1E]/20 text-[#7C0A1E] flex items-center justify-center font-bold text-xl shadow-inner shrink-0 relative">
+                      {imgUrl ? (
+                        <img
+                          src={resolveImageUrl(imgUrl)}
+                          alt={r.nombre}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <Gift className="w-8 h-8 text-[#7C0A1E]" />
+                      )}
+                    </div>
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase shrink-0">
+                      {r.estado || "ACTIVA"}
+                    </span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 uppercase">
-                    {r.estado || "ACTIVA"}
-                  </span>
+
+                  <div>
+                    <h3 className="text-base font-bold text-[#2D1A1E]">{r.nombre}</h3>
+                    <p className="text-xs text-[#8E7D7D] mt-1 line-clamp-2">
+                      {r.descripcion || "Beneficio exclusivo para clientes fieles."}
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <h3 className="text-base font-bold text-[#2D1A1E]">{r.nombre}</h3>
-                  <p className="text-xs text-[#8E7D7D] mt-1 line-clamp-2">{r.descripcion || "Beneficio exclusivo para clientes fieles."}</p>
+                <div className="pt-3 border-t border-[#EFE7DE] space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#8E7D7D] font-medium">Puntos Requeridos</span>
+                    <span className="font-black text-[#7C0A1E] flex items-center gap-1">
+                      <Sparkles size={13} className="text-[#C5A059]" />
+                      {r.puntos_requeridos} pts
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#8E7D7D] font-medium">Stock en Local</span>
+                    <span className="font-bold text-[#2D1A1E]">
+                      {r.stock_ilimitado ? "Ilimitado" : `${r.stock ?? 0} unidades`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#8E7D7D] font-medium">Canjes Realizados</span>
+                    <span className="font-bold text-emerald-600">
+                      {r.total_canjeados ?? 0} entregados
+                    </span>
+                  </div>
                 </div>
               </div>
-
-              <div className="pt-3 border-t border-[#EFE7DE] space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#8E7D7D] font-medium">Puntos Requeridos</span>
-                  <span className="font-black text-[#7C0A1E] flex items-center gap-1">
-                    <Sparkles size={13} className="text-[#C5A059]" />
-                    {r.puntos_requeridos} pts
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#8E7D7D] font-medium">Stock en Local</span>
-                  <span className="font-bold text-[#2D1A1E]">
-                    {r.stock_ilimitado ? "Ilimitado" : `${r.stock ?? 0} unidades`}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#8E7D7D] font-medium">Canjes Realizados</span>
-                  <span className="font-bold text-emerald-600">
-                    {r.total_canjeados ?? 0} entregados
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
