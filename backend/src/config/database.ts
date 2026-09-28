@@ -1,13 +1,19 @@
 import { Pool, QueryResult, QueryResultRow } from "pg";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ override: true });
+
+const isRemoteOrSupabase =
+  process.env.DATABASE_URL?.includes("supabase.com") ||
+  process.env.DB_HOST?.includes("supabase.com") ||
+  process.env.DATABASE_URL?.includes("sslmode=require");
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000,
+  ssl: isRemoteOrSupabase ? { rejectUnauthorized: false } : undefined,
 });
 
 // 1. Capturar errores inesperados en conexiones inactivas del pool

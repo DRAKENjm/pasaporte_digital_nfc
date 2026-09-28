@@ -1,6 +1,41 @@
-import React from "react";
-import { Award, CheckCircle2 } from "lucide-react";
+﻿import React, { useState, useEffect } from "react";
+import { CategoryIcon } from "./CategoryIcon";
 import { getStampIcon } from "../../utils/stampIcons";
+
+export const resolveImageUrl = (path?: string | null): string => {
+  if (!path) return "";
+  const trimmed = path.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:")
+  ) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("/")) return trimmed;
+  if (trimmed.startsWith("uploads/")) return `/${trimmed}`;
+  if (/\.(jpg|jpeg|png|webp|svg|gif|avif)($|\?)/i.test(trimmed)) {
+    return `/uploads/${trimmed}`;
+  }
+  return trimmed;
+};
+
+export const isImageUrl = (val?: string | null): boolean => {
+  if (!val) return false;
+  const trimmed = val.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:image/") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("/uploads/") ||
+    trimmed.startsWith("uploads/")
+  ) {
+    return true;
+  }
+  return /\.(jpg|jpeg|png|webp|svg|gif|avif)($|\?)/i.test(trimmed);
+};
 
 interface DigitalStampBadgeProps {
   nombre_sello?: string;
@@ -17,7 +52,7 @@ interface DigitalStampBadgeProps {
 export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   nombre_sello = "Sello Digital",
   establecimiento_nombre = "Local Afiliado",
-  imagen_sello = "☕",
+  imagen_sello = "landmark",
   color_sello = "#7C0A1E",
   numero_sello,
   fecha,
@@ -25,6 +60,12 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   rotation = -3,
   interactive = false,
 }) => {
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [imagen_sello]);
+
   // Dimensiones según el tamaño
   const sizeMap = {
     sm: {
@@ -85,12 +126,14 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   };
 
   const s = sizeMap[size];
-  const isImage =
-    imagen_sello &&
-    (imagen_sello.startsWith("http://") ||
-      imagen_sello.startsWith("https://") ||
-      imagen_sello.startsWith("/"));
-  const StampIcon = getStampIcon(imagen_sello);
+  const isImage = isImageUrl(imagen_sello) && !imgError;
+  const resolvedImg = resolveImageUrl(imagen_sello);
+
+  const cleanIcon = (imagen_sello || "").trim().toLowerCase();
+  const StampIcon =
+    getStampIcon(imagen_sello) ||
+    getStampIcon(`icon:${cleanIcon}`) ||
+    getStampIcon(cleanIcon);
 
   const formattedDate = fecha
     ? new Date(fecha).toLocaleDateString("es-PE", {
@@ -132,24 +175,30 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
         </span>
       </div>
 
-      {/* 3. Centro: Insignia, Imagen o Icono con halo de tinta */}
+      {/* 3. Centro: Insignia, Imagen o Icono vectorial con tinta notarial */}
       <div className="relative z-10 flex flex-col items-center justify-center my-auto">
         {isImage ? (
           <img
-            src={imagen_sello}
+            src={resolvedImg}
             alt={nombre_sello}
+            onError={() => setImgError(true)}
             className={`${s.centerImg} object-contain rounded-full filter drop-shadow-xs`}
             style={{
-              // Efecto de colorizado de tinta suave si es png
               mixBlendMode: "multiply",
             }}
           />
         ) : StampIcon ? (
           <StampIcon className={`${s.centerVector} drop-shadow-xs`} strokeWidth={1.6} />
         ) : (
-          <span className={`${s.centerIcon} leading-none drop-shadow-xs`}>
-            {imagen_sello || "☕"}
-          </span>
+          <div
+            className="flex items-center justify-center drop-shadow-xs"
+            style={{ color: color_sello }}
+          >
+            <CategoryIcon
+              icon={imagen_sello || "coffee"}
+              size={size === "sm" ? 22 : size === "md" ? 34 : size === "lg" ? 46 : 60}
+            />
+          </div>
         )}
       </div>
 

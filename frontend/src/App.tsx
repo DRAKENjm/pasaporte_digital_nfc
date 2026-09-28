@@ -160,8 +160,8 @@ export const App: React.FC = () => {
                 <Route path="/admin/sellos" element={<AdminSellos />} />
                 <Route path="/admin/categorias" element={<AdminCategorias />} />
                 <Route path="/admin/reglas" element={<AdminReglas />} />
-                <Route path="/admin/clientes" element={<AdminUsuarios modo="CLIENTES" />} />
-                <Route path="/admin/usuarios" element={<AdminUsuarios modo="USUARIOS" />} />
+                <Route path="/admin/clientes" element={<AdminUsuarios key="admin-clientes" modo="CLIENTES" />} />
+                <Route path="/admin/usuarios" element={<AdminUsuarios key="admin-usuarios" modo="USUARIOS" />} />
                 <Route path="/admin/tarjetas" element={<AdminTarjetas />} />
                 <Route
                   path="/admin/recompensas"

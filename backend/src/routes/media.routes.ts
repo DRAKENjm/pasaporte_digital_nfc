@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
@@ -6,27 +6,21 @@ import { authMiddleware } from "../middlewares/auth.middleware";
 import { sendResponse, ApiError } from "../utils";
 import { AuthenticatedRequest } from "../types";
 import { query } from "../config/database";
+import { uploadToSupabase, deleteFromSupabase } from "../services/storage.service";
 
 const router = Router();
 
+// Directorio local de respaldo
 const uploadDir = path.join(process.cwd(), "uploads", "fotos");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const diskStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
-    const uniqueName = `img-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, uniqueName);
-  },
-});
+// Almacenamiento en memoria para enviar directamente a Supabase Storage
+const storage = multer.memoryStorage();
 
 const upload = multer({
-  storage: diskStorage,
+  storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (_req, file, cb) => {
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
@@ -47,27 +41,49 @@ router.post(
       if (!req.file) {
         throw new ApiError(400, "No se ha subido ningún archivo");
       }
+
+      const ext = path.extname(req.file.originalname).toLowerCase() || ".jpg";
+      const uniqueName = `img-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+
+      let finalUrl = "";
+
+      // 1. Intentar subir directamente a Supabase Storage en la nube
+      try {
+        const supabaseRes = await uploadToSupabase(
+          req.file.buffer,
+          uniqueName,
+          req.file.mimetype,
+          "fotos"
+        );
+        finalUrl = supabaseRes.url;
+      } catch (storageError: any) {
+        console.warn("Fallo subida a Supabase, guardando copia local de respaldo:", storageError.message);
+        // Respaldo en disco local si Supabase Storage no está listo
+        const localPath = path.join(uploadDir, uniqueName);
+        await fs.promises.writeFile(localPath, req.file.buffer);
+        const host = req.get("host");
+        const protocol = req.protocol;
+        finalUrl = `${protocol}://${host}/uploads/fotos/${uniqueName}`;
+      }
+
       await query(
         `INSERT INTO archivos_media_subidos (nombre_archivo, id_usuario)
          VALUES ($1, $2)`,
-        [req.file.filename, req.user!.id],
+        [uniqueName, req.user!.id],
       );
-      const host = req.get("host");
-      const protocol = req.protocol;
-      const url = `${protocol}://${host}/uploads/fotos/${req.file.filename}`;
+
       sendResponse(
         res,
         200,
         {
-          url,
-          filename: req.file.filename,
+          url: finalUrl,
+          filename: uniqueName,
           size: req.file.size,
           mimetype: req.file.mimetype,
         },
         "Archivo subido exitosamente",
       );
     } catch (error) {
-      if (req.file?.path) await fs.promises.unlink(req.file.path).catch(() => {});
       next(error);
     }
   },
@@ -99,10 +115,15 @@ router.delete("/upload/:filename", authMiddleware, async (req: AuthenticatedRequ
       throw new ApiError(409, "La imagen ya está en uso y no se puede eliminar");
     }
 
-    const filePath = path.join(uploadDir, filename);
-    await fs.promises.unlink(filePath).catch((error: NodeJS.ErrnoException) => {
+    // Eliminar de Supabase Storage
+    await deleteFromSupabase(`fotos/${filename}`).catch(() => {});
+
+    // Eliminar de disco local si existiera
+    const localFilePath = path.join(uploadDir, filename);
+    await fs.promises.unlink(localFilePath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
+
     await query(
       `DELETE FROM archivos_media_subidos WHERE nombre_archivo = $1 AND id_usuario = $2`,
       [filename, req.user!.id],

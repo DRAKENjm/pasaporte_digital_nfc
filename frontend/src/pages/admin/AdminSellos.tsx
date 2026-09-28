@@ -1,38 +1,31 @@
-import React, { useEffect, useState, useMemo } from "react";
+﻿import React, { useState, useEffect, useMemo } from "react";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
-import { Spinner } from "../../components/common/Spinner";
-import { Button } from "../../components/common/Button";
 import { Modal } from "../../components/common/Modal";
-import { Input } from "../../components/common/Input";
+import { Button } from "../../components/common/Button";
+import { Spinner } from "../../components/common/Spinner";
 import { EmptyState } from "../../components/common/EmptyState";
-import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
+import {
+  DigitalStampBadge,
+  resolveImageUrl,
+} from "../../components/common/DigitalStampBadge";
+import { CategoryIcon } from "../../components/common/CategoryIcon";
 import {
   Stamp,
   Search,
   Building2,
-  SquarePen,
-  Trash,
+  RotateCcw,
   Eye,
   ShieldAlert,
-  ShieldCheck,
   CheckCircle2,
-  Palette,
-  Sparkles,
   ChevronLeft,
   ChevronRight,
-  Upload,
+  Trash2,
+  Lock,
+  Sparkles,
+  Info,
+  AlertTriangle,
 } from "lucide-react";
-
-const INK_PALETTE = [
-  { name: "Borgoña", hex: "#7C0A1E" },
-  { name: "Azul Notarial", hex: "#1E3A8A" },
-  { name: "Verde Esmeralda", hex: "#065F46" },
-  { name: "Café Espresso", hex: "#451A03" },
-  { name: "Ámbar", hex: "#B45309" },
-  { name: "Negro Carbón", hex: "#18181B" },
-  { name: "Violeta", hex: "#581C87" },
-];
 
 export const AdminSellos: React.FC = () => {
   const [sellos, setSellos] = useState<any[]>([]);
@@ -42,19 +35,10 @@ export const AdminSellos: React.FC = () => {
   const [pagina, setPagina] = useState(1);
 
   // Modales
-  const [modalEditar, setModalEditar] = useState(false);
   const [modalVer, setModalVer] = useState(false);
-  const [modalModerar, setModalModerar] = useState(false);
+  const [modalRestablecer, setModalRestablecer] = useState(false);
+  const [modalEliminar, setModalEliminar] = useState(false);
   const [selloSeleccionado, setSelloSeleccionado] = useState<any | null>(null);
-
-  // Form State
-  const [nombreSello, setNombreSello] = useState("");
-  const [imagenSello, setImagenSello] = useState("");
-  const [colorSello, setColorSello] = useState("#7C0A1E");
-  const [descripcion, setDescripcion] = useState("");
-  const [metaSellos, setMetaSellos] = useState(8);
-  const [puntosPorVisita, setPuntosPorVisita] = useState(20);
-  const [estado, setEstado] = useState("ACTIVO");
   const [busy, setBusy] = useState(false);
 
   const { showToast } = useUI();
@@ -102,16 +86,15 @@ export const AdminSellos: React.FC = () => {
     paginaActual * ITEMS_PER_PAGE,
   );
 
-  const openEditar = (item: any) => {
-    setSelloSeleccionado(item);
-    setNombreSello(item.nombre_sello || "");
-    setImagenSello(item.imagen_sello || "☕");
-    setColorSello(item.color_sello || "#7C0A1E");
-    setDescripcion(item.descripcion || "");
-    setMetaSellos(item.meta_sellos || 8);
-    setPuntosPorVisita(item.puntos_por_visita || 20);
-    setEstado(item.estado || "ACTIVO");
-    setModalEditar(true);
+  const isSelloUnico = (item: any) => {
+    if (!item) return true;
+    if (item.total_sellos_local !== undefined) {
+      return Number(item.total_sellos_local) <= 1;
+    }
+    return (
+      sellos.filter((s) => s.id_establecimiento === item.id_establecimiento)
+        .length <= 1
+    );
   };
 
   const openVer = (item: any) => {
@@ -119,45 +102,50 @@ export const AdminSellos: React.FC = () => {
     setModalVer(true);
   };
 
-  const openModerar = (item: any) => {
+  const openRestablecer = (item: any) => {
     setSelloSeleccionado(item);
-    setModalModerar(true);
+    setModalRestablecer(true);
   };
 
-  const handleGuardar = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openEliminar = (item: any) => {
+    if (isSelloUnico(item)) {
+      showToast(
+        `"${item.nombre_sello}" es el único sello de ${item.establecimiento_nombre}. Todo local debe conservar al menos un sello principal activo.`,
+        "info",
+      );
+      return;
+    }
+    setSelloSeleccionado(item);
+    setModalEliminar(true);
+  };
+
+  const handleRestablecerSello = async () => {
     if (!selloSeleccionado) return;
     setBusy(true);
     try {
-      await api.patch(`/admin/sellos/${selloSeleccionado.id_programa}`, {
-        nombre_sello: nombreSello.trim(),
-        imagen_sello: imagenSello.trim(),
-        color_sello: colorSello.trim(),
-        descripcion: descripcion.trim(),
-        meta_sellos: Number(metaSellos),
-        puntos_por_visita: Number(puntosPorVisita),
-        estado: estado,
-      });
-      showToast("Sello actualizado correctamente", "success");
-      setModalEditar(false);
+      await api.post(`/admin/sellos/${selloSeleccionado.id_programa}/restablecer`);
+      showToast("Sello restablecido con éxito al diseño básico predeterminado", "success");
+      setModalRestablecer(false);
+      setModalVer(false);
       await loadSellos();
     } catch (err: any) {
-      showToast(err.response?.data?.message || "No se pudo actualizar el sello", "error");
+      showToast(err.response?.data?.message || "Error al restablecer el sello", "error");
     } finally {
       setBusy(false);
     }
   };
 
-  const handleResetModerar = async () => {
+  const handleEliminarSello = async () => {
     if (!selloSeleccionado) return;
     setBusy(true);
     try {
       await api.delete(`/admin/sellos/${selloSeleccionado.id_programa}`);
-      showToast("Sello restablecido a valores estándar de moderación", "success");
-      setModalModerar(false);
+      showToast("Sello eliminado con éxito del establecimiento", "success");
+      setModalEliminar(false);
+      setModalVer(false);
       await loadSellos();
     } catch (err: any) {
-      showToast(err.response?.data?.message || "Error al moderar el sello", "error");
+      showToast(err.response?.data?.message || "Error al eliminar el sello", "error");
     } finally {
       setBusy(false);
     }
@@ -182,7 +170,7 @@ export const AdminSellos: React.FC = () => {
                 Diseño y Moderación de Sellos Digitales
               </h1>
               <p className="text-xs text-[#8E7D7D] mt-0.5">
-                Supervisa y audita las insignias de pasaporte personalizadas de cada establecimiento
+                Supervisa, audita y gestiona las insignias de pasaporte de cada establecimiento
               </p>
             </div>
           </div>
@@ -190,7 +178,7 @@ export const AdminSellos: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-[#8E7D7D] bg-white border border-[#E8DFD5] px-3.5 py-1.5 rounded-xl shadow-2xs">
-            {sellos.length} {sellos.length === 1 ? "local con sello" : "locales con sello"}
+            {sellos.length} {sellos.length === 1 ? "sello registrado" : "sellos registrados"}
           </span>
         </div>
       </div>
@@ -199,7 +187,7 @@ export const AdminSellos: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Locales con Sello Activo</p>
+            <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Activos</p>
             <p className="text-xl font-black text-[#2D1A1E] mt-0.5">
               {sellos.filter((s) => s.estado === "ACTIVO").length}
             </p>
@@ -223,7 +211,7 @@ export const AdminSellos: React.FC = () => {
 
         <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Bajo Moderación</p>
+            <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Inactivos / Moderados</p>
             <p className="text-xl font-black text-amber-700 mt-0.5">
               {sellos.filter((s) => s.estado === "INACTIVO" || s.estado === "MODERADO").length}
             </p>
@@ -283,17 +271,35 @@ export const AdminSellos: React.FC = () => {
                 <div>
                   {/* Top Bar del Local */}
                   <div className="flex items-center justify-between gap-2 border-b border-[#EFE7DE] pb-3 mb-4">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-7 h-7 rounded-lg bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] font-bold text-xs shrink-0">
-                        <Building2 className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {item.establecimiento_logo ? (
+                        <img
+                          src={resolveImageUrl(item.establecimiento_logo)}
+                          alt={item.establecimiento_nombre}
+                          className="w-8 h-8 rounded-xl object-cover border border-[#EFE7DE] bg-white shrink-0 shadow-2xs"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] font-bold text-xs shrink-0">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <span className="text-xs font-black text-[#2D1A1E] truncate block">
+                          {item.establecimiento_nombre}
+                        </span>
+                        {item.razon_social && (
+                          <span className="text-[10px] text-[#8E7D7D] truncate block">
+                            {item.razon_social}
+                          </span>
+                        )}
                       </div>
-                      <span className="text-xs font-bold text-[#2D1A1E] truncate">
-                        {item.establecimiento_nombre}
-                      </span>
                     </div>
 
                     <span
-                      className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                      className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
                         item.estado === "ACTIVO"
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           : "bg-amber-50 text-amber-700 border border-amber-200"
@@ -331,7 +337,7 @@ export const AdminSellos: React.FC = () => {
                       <span className="text-[#8E7D7D] block">Color de Tinta:</span>
                       <span className="font-mono font-bold flex items-center gap-1.5 mt-0.5">
                         <span
-                          className="w-2.5 h-2.5 rounded-full inline-block"
+                          className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
                           style={{ backgroundColor: item.color_sello || "#7C0A1E" }}
                         />
                         {item.color_sello || "#7C0A1E"}
@@ -346,7 +352,7 @@ export const AdminSellos: React.FC = () => {
                   </div>
 
                   <div className="mt-2.5 pt-2 border-t border-[#EFE7DE] flex items-center justify-between text-[11px]">
-                    <span className="text-[#8E7D7D] font-medium">Puntos por visita / sello:</span>
+                    <span className="text-[#8E7D7D] font-medium">Puntos por visita:</span>
                     <span className="font-black text-[#7C0A1E] bg-[#7C0A1E]/10 px-2.5 py-0.5 rounded-lg">
                       +{item.puntos_por_visita || 20} pts
                     </span>
@@ -354,30 +360,49 @@ export const AdminSellos: React.FC = () => {
                 </div>
 
                 {/* Acciones de Auditoría y Moderación */}
-                <div className="mt-4 pt-3 border-t border-[#EFE7DE] flex items-center justify-between gap-1.5">
+                <div className="mt-4 pt-3 border-t border-[#EFE7DE] flex items-center gap-1.5">
                   <button
                     onClick={() => openVer(item)}
-                    className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-[#FAF8F5] transition"
-                    title="Ver en pasaporte"
+                    className="flex-1 py-2 px-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#F0ECE6] border border-[#E8DFD5] text-xs font-bold text-[#2D1A1E] flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                    title="Visualizar sello en pasaporte digital"
                   >
-                    <Eye className="w-4 h-4" />
+                    <Eye className="w-3.5 h-3.5 text-[#7C0A1E]" />
+                    <span>Ver</span>
                   </button>
 
                   <button
-                    onClick={() => openEditar(item)}
-                    className="flex-1 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-800 flex items-center justify-center gap-1 transition"
+                    onClick={() => openRestablecer(item)}
+                    className="py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                    title="Restablecer diseño al básico institucional por defecto"
                   >
-                    <SquarePen className="w-3.5 h-3.5" />
-                    <span>Editar</span>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Restablecer</span>
                   </button>
 
-                  <button
-                    onClick={() => openModerar(item)}
-                    className="p-1.5 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition"
-                    title="Moderar / Resetear si es inapropiado"
-                  >
-                    <ShieldAlert className="w-4 h-4" />
-                  </button>
+                  {isSelloUnico(item) ? (
+                    <button
+                      onClick={() =>
+                        showToast(
+                          `"${item.nombre_sello}" es el sello principal único de ${item.establecimiento_nombre}. Todo local debe conservar al menos 1 sello activo. Puedes usar "Restablecer" para volver a la plantilla básica.`,
+                          "info",
+                        )
+                      }
+                      className="py-2 px-2.5 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1 cursor-not-allowed opacity-75 shadow-2xs"
+                      title="Sello principal único (no se puede eliminar porque el local no puede quedar con 0 sellos)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 opacity-40" />
+                      <span>Eliminar</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => openEliminar(item)}
+                      className="py-2 px-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                      title="Eliminar sello secundario / duplicado de este local"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Eliminar</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -385,11 +410,11 @@ export const AdminSellos: React.FC = () => {
 
           {/* Paginación */}
           {totalPaginas > 1 && (
-            <div className="flex items-center justify-between pt-2 px-1">
+            <div className="flex items-center justify-between border-t border-[#EFE7DE] pt-4 px-2">
               <span className="text-xs text-[#8E7D7D]">
-                Página {paginaActual} de {totalPaginas}
+                Página {paginaActual} de {totalPaginas} ({sellosFiltrados.length} sellos totales)
               </span>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
@@ -414,145 +439,24 @@ export const AdminSellos: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Editar Sello */}
-      <Modal
-        open={modalEditar}
-        onClose={() => setModalEditar(false)}
-        title={`Editar Sello: ${selloSeleccionado?.establecimiento_nombre || ""}`}
-        size="md"
-      >
-        <form onSubmit={handleGuardar} className="space-y-4">
-          <Input
-            label="Nombre del Sello *"
-            value={nombreSello}
-            onChange={(e) => setNombreSello(e.target.value)}
-            required
-          />
-
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-1">
-              Lema o Descripción
-            </label>
-            <input
-              type="text"
-              className="input-base"
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-1">
-                Icono o Emoji Central
-              </label>
-              <input
-                type="text"
-                className="input-base"
-                value={imagenSello}
-                onChange={(e) => setImagenSello(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-1">
-                Color de Tinta (HEX)
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={colorSello}
-                  onChange={(e) => setColorSello(e.target.value)}
-                  className="w-9 h-9 rounded-lg cursor-pointer border border-[#EFE7DE]"
-                />
-                <input
-                  type="text"
-                  className="input-base text-xs font-mono"
-                  value={colorSello}
-                  onChange={(e) => setColorSello(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-1">
-                Puntos por Visita / Sello *
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="500"
-                className="input-base font-black text-[#7C0A1E]"
-                value={puntosPorVisita}
-                onChange={(e) => setPuntosPorVisita(Number(e.target.value))}
-                required
-              />
-              <span className="text-[10px] text-[#8E7D7D] mt-0.5 block">
-                Puntos que se acreditan al cliente al validar un sello con NFC.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-1">
-                Meta de Sellos
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                className="input-base font-bold"
-                value={metaSellos}
-                onChange={(e) => setMetaSellos(Number(e.target.value))}
-              />
-              <span className="text-[10px] text-[#8E7D7D] mt-0.5 block">
-                Sellos para completar el pasaporte.
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-1">
-              Estado de Moderación
-            </label>
-            <select
-              className="input-base"
-              value={estado}
-              onChange={(e) => setEstado(e.target.value)}
-            >
-              <option value="ACTIVO">Activo (Aprobado)</option>
-              <option value="INACTIVO">Inactivo / Pausado</option>
-              <option value="MODERADO">Bajo Moderación</option>
-            </select>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button type="submit" loading={busy} fullWidth>
-              Guardar Cambios
-            </Button>
-            <Button variant="secondary" fullWidth onClick={() => setModalEditar(false)}>
-              Cancelar
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
       {/* Modal Ver en Pasaporte */}
       <Modal
         open={modalVer}
         onClose={() => setModalVer(false)}
-        title="Vista en Pasaporte de Cliente"
+        title="Vista de Sello en Pasaporte Digital"
         size="md"
       >
         <div className="space-y-4">
           <div className="relative bg-[#FAF8F5] border-2 border-[#D8C7B5] rounded-3xl p-6 shadow-inner overflow-hidden min-h-[320px] flex flex-col justify-between">
             <div className="relative z-10 flex items-center justify-between border-b border-[#E8DFD5] pb-2 text-[10px] text-[#8E7D7D] font-mono">
-              <span>PASAPORTE OFICIAL</span>
-              <span>VERIFICACIÓN DIGITAL</span>
+              <span className="flex items-center gap-1">
+                <Stamp className="w-3.5 h-3.5 text-[#7C0A1E]" />
+                PASAPORTE DIGITAL OFICIAL
+              </span>
+              <span>ESTADO: {selloSeleccionado?.estado || "ACTIVO"}</span>
             </div>
 
-            <div className="relative z-10 my-auto py-6 flex flex-col items-center justify-center">
+            <div className="relative z-10 my-auto py-6 flex flex-col items-center justify-center text-center">
               <DigitalStampBadge
                 nombre_sello={selloSeleccionado?.nombre_sello}
                 establecimiento_nombre={selloSeleccionado?.establecimiento_nombre}
@@ -563,57 +467,215 @@ export const AdminSellos: React.FC = () => {
                 size="lg"
                 rotation={-3}
               />
-              <p className="font-bold text-xs text-[#2D1A1E] mt-3">
+              <p className="font-black text-sm text-[#2D1A1E] mt-3">
                 {selloSeleccionado?.nombre_sello}
               </p>
-              <p className="text-[11px] text-[#8E7D7D] italic mt-0.5">
-                "{selloSeleccionado?.descripcion || "Visita confirmada"}"
+              <p className="text-xs text-[#8E7D7D] italic mt-0.5 max-w-sm">
+                "{selloSeleccionado?.descripcion || "Visita confirmada en el pasaporte digital"}"
               </p>
 
-              <div className="mt-3 bg-white/90 border border-[#E8DFD5] rounded-xl px-3 py-1.5 flex items-center gap-2 text-xs font-bold text-[#2D1A1E]">
-                <span>Puntos por sello:</span>
-                <span className="text-[#7C0A1E] font-black">
-                  +{selloSeleccionado?.puntos_por_visita || 20} pts
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <span className="bg-white border border-[#E8DFD5] rounded-xl px-3 py-1 text-xs font-bold text-[#2D1A1E] flex items-center gap-1.5">
+                  Categoría:{" "}
+                  <span className="text-[#7C0A1E] inline-flex items-center gap-1">
+                    <CategoryIcon
+                      icon={selloSeleccionado?.categoria_icono}
+                      className="w-3.5 h-3.5 text-[#7C0A1E]"
+                    />{" "}
+                    {selloSeleccionado?.categoria_nombre || "General"}
+                  </span>
+                </span>
+                <span className="bg-white border border-[#E8DFD5] rounded-xl px-3 py-1 text-xs font-bold text-[#2D1A1E]">
+                  Puntos por visita:{" "}
+                  <span className="text-[#7C0A1E] font-black">
+                    +{selloSeleccionado?.puntos_por_visita || 20} pts
+                  </span>
                 </span>
               </div>
             </div>
 
-            <div className="relative z-10 border-t border-[#E8DFD5] pt-2 flex items-center justify-between text-[9px] text-[#8E7D7D] font-mono">
-              <span>ESTABLECIMIENTO: {selloSeleccionado?.razon_social}</span>
-              <span>ID PROGRAMA: #{selloSeleccionado?.id_programa}</span>
+            <div className="relative z-10 border-t border-[#E8DFD5] pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between text-[10px] text-[#8E7D7D] font-mono gap-1">
+              <span>LOCAL: {selloSeleccionado?.establecimiento_nombre} ({selloSeleccionado?.razon_social})</span>
+              <span>EMITIDOS: {selloSeleccionado?.total_sellos_otorgados || 0} sellos</span>
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <Button onClick={() => setModalVer(false)} variant="secondary">
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EFE7DE]">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setModalVer(false);
+                  setModalRestablecer(true);
+                }}
+                className="px-3 py-2 rounded-xl text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restablecer</span>
+              </button>
+              {!isSelloUnico(selloSeleccionado) && (
+                <button
+                  onClick={() => {
+                    setModalVer(false);
+                    setModalEliminar(true);
+                  }}
+                  className="px-3 py-2 rounded-xl text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar Sello</span>
+                </button>
+              )}
+            </div>
+            <Button onClick={() => setModalVer(false)} variant="secondary" size="sm">
               Cerrar
             </Button>
           </div>
         </div>
       </Modal>
 
-      {/* Modal Moderar / Resetear Sello */}
+      {/* Modal Restablecer Sello a Valores Básicos Iniciales */}
       <Modal
-        open={modalModerar}
-        onClose={() => setModalModerar(false)}
-        title="Moderar Sello Digital"
-        size="sm"
+        open={modalRestablecer}
+        onClose={() => setModalRestablecer(false)}
+        title="Restablecer Sello Digital a Diseño Básico"
+        size="md"
       >
         <div className="space-y-4">
-          <p className="text-xs text-slate-600">
-            ¿Deseas restablecer el sello digital de{" "}
-            <strong className="text-slate-900">{selloSeleccionado?.establecimiento_nombre}</strong> a sus valores estándar de moderación?
-          </p>
-
-          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
-            Si el establecimiento subió un logo o nombre inapropiado u ofensivo, esta acción restablece la insignia a la estándar institucional y mantiene el historial de visitas de los clientes seguro.
+          <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200/80 flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-900 leading-relaxed">
+              <p className="font-bold">Acción de Auditoría y Moderación:</p>
+              <p className="mt-0.5">
+                Si el establecimiento subió una imagen ofensiva, rota o un diseño inapropiado, puedes restablecer su insignia a la plantilla estándar oficial asignada al momento de crear el local.
+              </p>
+            </div>
           </div>
 
-          <div className="flex gap-2 pt-2">
-            <Button variant="danger" fullWidth loading={busy} onClick={handleResetModerar}>
-              Restablecer Sello
+          <div className="bg-[#FAF8F5] p-4 rounded-2xl border border-[#EFE7DE] space-y-2.5">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#2D1A1E]">
+              Valores a los que se restaurará:
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="bg-white p-2.5 rounded-xl border border-[#E8DFD5]">
+                <span className="text-[#8E7D7D] block text-[10px] font-bold uppercase">Ícono Básico</span>
+                <span className="font-black text-sm text-[#2D1A1E] flex items-center gap-1.5 mt-0.5">
+                  <div className="w-6 h-6 rounded-lg bg-[#7C0A1E]/10 flex items-center justify-center text-[#7C0A1E]">
+                    <CategoryIcon icon={selloSeleccionado?.categoria_icono || "landmark"} className="w-4 h-4" />
+                  </div>
+                  {selloSeleccionado?.categoria_nombre || "Categoría"}
+                </span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-xl border border-[#E8DFD5]">
+                <span className="text-[#8E7D7D] block text-[10px] font-bold uppercase">Nombre del Sello</span>
+                <span className="font-bold text-[#2D1A1E] truncate block mt-0.5">
+                  Sello {selloSeleccionado?.establecimiento_nombre}
+                </span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-xl border border-[#E8DFD5]">
+                <span className="text-[#8E7D7D] block text-[10px] font-bold uppercase">Color de Tinta Oficial</span>
+                <span className="font-bold text-[#7C0A1E] flex items-center gap-1.5 mt-0.5">
+                  <span className="w-3 h-3 rounded-full bg-[#7C0A1E] inline-block" />
+                  Borgoña Notarial (#7C0A1E)
+                </span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-xl border border-[#E8DFD5]">
+                <span className="text-[#8E7D7D] block text-[10px] font-bold uppercase">Puntos por Sello</span>
+                <span className="font-black text-[#7C0A1E] mt-0.5 block">
+                  +20 puntos (Estándar)
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-[#8E7D7D] italic pt-1">
+              * El historial de visitas de los clientes no se verá afectado; conservarán sus sellos de forma segura.
+            </p>
+          </div>
+
+          <div className="flex gap-2.5 pt-2">
+            <Button
+              variant="primary"
+              fullWidth
+              loading={busy}
+              onClick={handleRestablecerSello}
+            >
+              <RotateCcw className="w-4 h-4 mr-1.5" />
+              Restablecer al Diseño Básico
             </Button>
-            <Button variant="secondary" fullWidth onClick={() => setModalModerar(false)}>
+            <Button
+              variant="secondary"
+              fullWidth
+              onClick={() => setModalRestablecer(false)}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Eliminar Sello Definitivamente */}
+      <Modal
+        open={modalEliminar}
+        onClose={() => setModalEliminar(false)}
+        title="Eliminar Sello Digital de Establecimiento"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 bg-red-50 rounded-2xl border border-red-200/80 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-700 shrink-0 mt-0.5" />
+            <div className="text-xs text-red-900 leading-relaxed">
+              <p className="font-bold">¿Deseas eliminar definitivamente este sello?</p>
+              <p className="mt-0.5">
+                Esta acción eliminará el diseño de sello <strong>"{selloSeleccionado?.nombre_sello}"</strong> del local <strong>"{selloSeleccionado?.establecimiento_nombre}"</strong>. Es ideal para depurar sellos repetidos o no deseados.
+              </p>
+              {Number(selloSeleccionado?.total_sellos_otorgados) > 0 && (
+                <p className="mt-2 font-bold text-red-800 bg-red-100/90 p-2 rounded-xl border border-red-200">
+                  ⚠️ Atención: Este sello ya ha sido otorgado {selloSeleccionado.total_sellos_otorgados} veces a clientes. Al eliminarlo, se limpiarán los registros asociados.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-[#FAF8F5] p-4 rounded-2xl border border-[#EFE7DE] flex items-center gap-4">
+            <DigitalStampBadge
+              nombre_sello={selloSeleccionado?.nombre_sello}
+              establecimiento_nombre={selloSeleccionado?.establecimiento_nombre}
+              imagen_sello={selloSeleccionado?.imagen_sello}
+              color_sello={selloSeleccionado?.color_sello}
+              numero_sello={1}
+              size="sm"
+            />
+            <div className="space-y-1 text-xs min-w-0 flex-1">
+              <p className="font-black text-[#2D1A1E] text-sm truncate">
+                {selloSeleccionado?.nombre_sello}
+              </p>
+              <p className="text-[#8E7D7D] truncate">
+                Local: <strong className="text-[#2D1A1E]">{selloSeleccionado?.establecimiento_nombre}</strong>
+              </p>
+              <p className="text-[#8E7D7D] text-[11px]">
+                Emitidos a clientes: <strong className="text-[#7C0A1E]">{selloSeleccionado?.total_sellos_otorgados || 0} sellos</strong>
+              </p>
+              <p className="text-[#8E7D7D] text-[10px] font-mono">
+                ID Programa: #{selloSeleccionado?.id_programa}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-2.5 pt-2">
+            <Button
+              variant="danger"
+              fullWidth
+              loading={busy}
+              onClick={handleEliminarSello}
+            >
+              <Trash2 className="w-4 h-4 mr-1.5" />
+              Sí, Eliminar Sello Definitivamente
+            </Button>
+            <Button
+              variant="secondary"
+              fullWidth
+              onClick={() => setModalEliminar(false)}
+            >
               Cancelar
             </Button>
           </div>

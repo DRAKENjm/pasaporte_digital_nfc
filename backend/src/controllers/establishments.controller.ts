@@ -231,7 +231,7 @@ export const EstablishmentsController = {
       );
 
       const recompensas = await query(
-        `SELECT * FROM recompensas WHERE id_establecimiento = $1 AND estado = 'ACTIVA' ORDER BY puntos_requeridos ASC`,
+        `SELECT id_recompensa, id_establecimiento, nombre, descripcion, imagen, imagen AS imagen_url, puntos_requeridos, stock, stock_ilimitado, estado FROM recompensas WHERE id_establecimiento = $1 AND estado = 'ACTIVA' ORDER BY puntos_requeridos ASC`,
         [id],
       );
 
@@ -519,7 +519,7 @@ export const EstablishmentsController = {
       }
 
       const result = await query(
-        `SELECT r.id_recompensa, r.nombre, r.descripcion, r.imagen,
+        `SELECT r.id_recompensa, r.nombre, r.descripcion, r.imagen, r.imagen AS imagen_url,
                 r.puntos_requeridos, r.stock, r.stock_ilimitado, r.estado,
                 r.fecha_inicio, r.fecha_fin,
                 (SELECT COUNT(*)::int FROM canjes c WHERE c.id_recompensa = r.id_recompensa AND c.estado IN ('CONFIRMADO', 'ENTREGADO')) AS total_canjeados

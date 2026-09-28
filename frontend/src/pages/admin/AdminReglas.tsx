@@ -61,12 +61,17 @@ export const AdminReglas: React.FC = () => {
     try {
       const [reg, est] = await Promise.all([
         api.get("/admin/reglas-sellos").catch(() => ({ data: { data: [] } })),
-        api.get("/establishments").catch(() => ({ data: { data: [] } })),
+        api.get("/admin/locales").catch(() => ({ data: { data: [] } })),
       ]);
       const r = reg.data?.data ?? reg.data ?? [];
       setReglas(Array.isArray(r) ? r : []);
       const e = est.data?.data ?? est.data ?? [];
-      setLocales(Array.isArray(e) ? e : []);
+      const normLocales = (Array.isArray(e) ? e : []).map((x: any) => ({
+        ...x,
+        id: String(x.id ?? x.id_establecimiento),
+        nombre: x.nombre_comercial || x.razon_social || x.nombre,
+      }));
+      setLocales(normLocales);
     } finally {
       setLoading(false);
     }
@@ -82,7 +87,7 @@ export const AdminReglas: React.FC = () => {
     setForm({
       establecimiento_id: locales[0]?.id || "",
       nombre_accion: "Visita estándar",
-      valor_puntos_por_sello: 10,
+      valor_puntos_por_sello: 20,
       limite_diario_por_usuario: 1,
       estado: "ACTIVA",
       fecha_inicio: "",
@@ -96,11 +101,11 @@ export const AdminReglas: React.FC = () => {
     setIsEditing(true);
     setSelectedRegla(r);
     setForm({
-      establecimiento_id: r.establecimiento_id,
-      nombre_accion: r.nombre_accion,
-      valor_puntos_por_sello: r.valor_puntos_por_sello,
-      limite_diario_por_usuario: r.limite_diario_por_usuario,
-      estado: r.estado,
+      establecimiento_id: String(r.establecimiento_id || (r as any).id_establecimiento || ""),
+      nombre_accion: r.nombre_accion || "Visita estándar",
+      valor_puntos_por_sello: r.valor_puntos_por_sello || 20,
+      limite_diario_por_usuario: r.limite_diario_por_usuario || 1,
+      estado: r.estado || "ACTIVA",
       fecha_inicio: r.fecha_inicio ? r.fecha_inicio.slice(0, 10) : "",
       fecha_fin: r.fecha_fin ? r.fecha_fin.slice(0, 10) : "",
     });
@@ -120,7 +125,7 @@ export const AdminReglas: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.establecimiento_id) {
+    if (!isEditing && !form.establecimiento_id) {
       setErrors({ establecimiento_id: "Selecciona un local" });
       return;
     }
@@ -134,9 +139,10 @@ export const AdminReglas: React.FC = () => {
     try {
       if (isEditing && selectedRegla) {
         await api.patch(`/admin/reglas-sellos/${selectedRegla.id}`, {
-          ...form,
+          nombre_accion: form.nombre_accion.trim(),
           valor_puntos_por_sello: Number(form.valor_puntos_por_sello),
           limite_diario_por_usuario: Number(form.limite_diario_por_usuario),
+          estado: form.estado,
           fecha_inicio: form.fecha_inicio || null,
           fecha_fin: form.fecha_fin || null,
         });
@@ -470,26 +476,45 @@ export const AdminReglas: React.FC = () => {
         size="md"
       >
         <form onSubmit={handleSave} className="space-y-4">
-          <label className="block space-y-1.5 w-full text-left">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Establecimiento *
-            </span>
-            <select
-              className="input-base"
-              required
-              value={form.establecimiento_id}
-              onChange={(e) =>
-                setForm({ ...form, establecimiento_id: e.target.value })
-              }
-            >
-              <option value="">Selecciona un local...</option>
-              {locales.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.razon_social || l.nombre}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isEditing ? (
+            <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#EFE7DE] flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#7C0A1E]/10 border border-[#7C0A1E]/15 text-[#7C0A1E] flex items-center justify-center shrink-0">
+                <Building2 className="w-5 h-5 text-[#7C0A1E]" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#8E7D7D] block">
+                  Establecimiento Vinculado (Fijo)
+                </span>
+                <h4 className="text-xs font-bold text-[#2D1A1E] truncate">
+                  {selectedRegla?.establecimiento_nombre || (selectedRegla as any)?.razon_social || "Local Seleccionado"}
+                </h4>
+                <p className="text-[11px] text-[#8E7D7D] mt-0.5">
+                  Modificando la regla de fidelización y valor de puntos para este local.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <label className="block space-y-1.5 w-full text-left">
+              <span className="block text-xs font-semibold uppercase tracking-wider text-[#8E7D7D]">
+                Establecimiento *
+              </span>
+              <select
+                className="input-base"
+                required
+                value={form.establecimiento_id}
+                onChange={(e) =>
+                  setForm({ ...form, establecimiento_id: e.target.value })
+                }
+              >
+                <option value="">Selecciona un local...</option>
+                {locales.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nombre || l.razon_social}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <Input
             label="Nombre de la acción o beneficio *"
