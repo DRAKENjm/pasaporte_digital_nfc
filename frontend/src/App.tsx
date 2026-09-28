@@ -9,6 +9,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { UIProvider } from "./context/UIContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { LanguageProvider } from "./context/LanguageContext";
 import { AuthLayout } from "./layouts/AuthLayout";
 import { ClientLayout } from "./layouts/ClientLayout";
 import { CommerceLayout } from "./layouts/CommerceLayout";
@@ -92,6 +93,7 @@ const RoleHomeRedirect: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <ThemeProvider>
+      <LanguageProvider>
       <AuthProvider>
         <UIProvider>
           <BrowserRouter>
@@ -99,6 +101,7 @@ export const App: React.FC = () => {
               <Route path="/post/:id" element={<PublicPost />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/reclamaciones" element={<LibroReclamacionesPage />} />
+              <Route path="/libro-reclamaciones" element={<LibroReclamacionesPage />} />
               <Route path="/auth" element={<AuthLayout />}>
                 <Route path="login" element={<Login />} />
                 <Route path="register" element={<Register />} />
@@ -186,6 +189,7 @@ export const App: React.FC = () => {
           </BrowserRouter>
         </UIProvider>
       </AuthProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 };

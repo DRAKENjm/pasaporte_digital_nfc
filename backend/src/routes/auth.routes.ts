@@ -8,5 +8,7 @@ router.post("/register", AuthController.register);
 router.post("/login", AuthController.login);
 router.get("/profile", authMiddleware, AuthController.getProfile);
 router.patch("/profile", authMiddleware, AuthController.updateProfile);
+router.patch("/preferencias", authMiddleware, AuthController.updatePreferencias);
+router.get("/preferencias", authMiddleware, AuthController.getPreferencias);
 
 export default router;

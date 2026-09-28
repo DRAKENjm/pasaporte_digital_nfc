@@ -7,6 +7,8 @@ import activityRoutes from "./activity.routes";
 import adminRoutes from "./admin.routes";
 import claimsRoutes from "./claims.routes";
 import mediaRoutes from "./media.routes";
+import legalRoutes from "./legal.routes";
+import friendsRoutes from "./friends.routes";
 
 const router = Router();
 
@@ -18,5 +20,7 @@ router.use("/activity", activityRoutes);
 router.use("/admin", adminRoutes);
 router.use("/claims", claimsRoutes);
 router.use("/media", mediaRoutes);
+router.use("/legal", legalRoutes);
+router.use("/friends", friendsRoutes);
 
 export default router;

@@ -142,7 +142,8 @@ export const ActivityController = {
 
       const idCliente = clienteRes.rows[0]?.id_cliente || null;
 
-      // Consultar establecimientos con su categoría, programa de sellos y sellos obtenidos por el cliente
+      // visitas NO tiene id_establecimiento: se llega por sucursales
+      // categorias usa icono_url (no icono)
       const sql = `
         SELECT 
           e.id_establecimiento,
@@ -156,7 +157,7 @@ export const ActivityController = {
           s.direccion,
           c.id AS categoria_id,
           COALESCE(c.nombre, 'General') AS categoria_nombre,
-          c.icono AS categoria_icono,
+          COALESCE(c.icono_url, 'coffee') AS categoria_icono,
           ps.id_programa,
           COALESCE(ps.nombre, 'Pasaporte de Sellos') AS programa_nombre,
           ps.descripcion AS programa_descripcion,
@@ -164,35 +165,37 @@ export const ActivityController = {
           COALESCE(ps.nombre_sello, 'Sello Oficial') AS nombre_sello,
           ps.imagen_sello,
           COALESCE(ps.color_sello, '#7C0A1E') AS color_sello,
-          -- Conteo de sellos otorgados al cliente en este establecimiento
           COALESCE(
             (
               SELECT COUNT(*)::int
               FROM sellos_digitales sd
               JOIN visitas vi ON vi.id_visita = sd.id_visita
-              WHERE vi.id_cliente = $1 
-                AND vi.id_establecimiento = e.id_establecimiento
+              JOIN sucursales su ON su.id_sucursal = vi.id_sucursal
+              WHERE vi.id_cliente = $1
+                AND su.id_establecimiento = e.id_establecimiento
                 AND sd.estado = 'OTORGADO'
+                AND vi.estado = 'CONFIRMADA'
             ), 0
           ) AS sellos_obtenidos,
-          -- Detalle de sellos obtenidos
           COALESCE(
             (
               SELECT json_agg(
                 json_build_object(
                   'id_sello', sd.id_sello,
                   'numero_sello', sd.numero_sello,
-                  'fecha_otorgamiento', sd.fecha_otorgamiento
-                ) ORDER BY sd.numero_sello ASC
+                  'fecha_otorgamiento', sd.fecha_otorgamiento,
+                  'es_festivo', 0
+                ) ORDER BY sd.fecha_otorgamiento ASC
               )
               FROM sellos_digitales sd
               JOIN visitas vi ON vi.id_visita = sd.id_visita
-              WHERE vi.id_cliente = $1 
-                AND vi.id_establecimiento = e.id_establecimiento
+              JOIN sucursales su ON su.id_sucursal = vi.id_sucursal
+              WHERE vi.id_cliente = $1
+                AND su.id_establecimiento = e.id_establecimiento
                 AND sd.estado = 'OTORGADO'
+                AND vi.estado = 'CONFIRMADA'
             ), '[]'::json
           ) AS sellos_detalle,
-          -- Recompensas del establecimiento
           COALESCE(
             (
               SELECT json_agg(

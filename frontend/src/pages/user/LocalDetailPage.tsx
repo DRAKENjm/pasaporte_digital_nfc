@@ -1,18 +1,33 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Navigation, Clock, Phone } from "lucide-react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  ArrowLeft,
+  MapPin,
+  Clock,
+  Phone,
+  Navigation,
+  Heart,
+  MessageCircle,
+  Instagram,
+  Facebook,
+} from "lucide-react";
 import api from "../../services/api";
-import { Establecimiento } from "../../types";
-import { Spinner } from "../../components/common/Spinner";
-import { Button } from "../../components/common/Button";
 import { useUI } from "../../hooks/useUI";
+
+/** Icono simple para X (Twitter) */
+const XIcon = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+);
 
 export const LocalDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { showToast } = useUI();
-  const [local, setLocal] = useState<Establecimiento | null>(null);
+  const [local, setLocal] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [esFavorito, setEsFavorito] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -21,12 +36,11 @@ export const LocalDetailPage: React.FC = () => {
         const { data } = await api.get(`/establishments/${id}`);
         setLocal(data?.data ?? data);
       } catch {
-        // fallback: list and find
         try {
           const { data } = await api.get("/establishments");
-          const list = data?.data ?? data ?? [];
+          const list = data?.data ?? [];
           const found = Array.isArray(list)
-            ? list.find((x: Establecimiento) => x.id === id)
+            ? list.find((x: any) => String(x.id_establecimiento) === String(id) || String(x.id) === String(id))
             : null;
           setLocal(found || null);
         } catch {
@@ -38,149 +52,197 @@ export const LocalDetailPage: React.FC = () => {
     })();
   }, [id, showToast]);
 
-  const openMaps = () => {
-    if (!local) return;
-    const q = encodeURIComponent(
-      local.direccion || local.razon_social || local.nombre || "",
-    );
-    const url =
-      local.lat != null && local.lng != null
-        ? `https://www.google.com/maps/dir/?api=1&destination=${local.lat},${local.lng}`
-        : `https://www.google.com/maps/search/?api=1&query=${q}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+  const toggleFav = async () => {
+    if (!id) return;
+    try {
+      const res = await api.post(`/establishments/${id}/favorito`);
+      setEsFavorito(!!res.data?.data?.favorito);
+      showToast(res.data?.data?.favorito ? "Añadido a favoritos" : "Quitado de favoritos", "success");
+    } catch {
+      showToast("No se pudo actualizar favorito", "info");
+    }
+  };
+
+  const sucursal = local?.sucursales?.[0] || local;
+  const lat = sucursal?.latitud ?? local?.lat;
+  const lng = sucursal?.longitud ?? local?.lng;
+  const direccion = sucursal?.direccion || local?.direccion || "";
+  const horario =
+    local?.horario_atencion || sucursal?.horario || "Horario no disponible";
+
+  const irAlMapa = () => {
+    const params = new URLSearchParams();
+    if (lat != null && lng != null) {
+      params.set("lat", String(lat));
+      params.set("lng", String(lng));
+    }
+    if (local?.id_establecimiento || id) {
+      params.set("local", String(local?.id_establecimiento || id));
+    }
+    navigate(`/user/explorar?${params.toString()}`);
   };
 
   if (loading) {
     return (
       <div className="flex justify-center py-20">
-        <Spinner size={32} />
+        <div className="w-8 h-8 border-2 border-[#7C0A1E] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!local) {
     return (
-      <div className="text-center py-16">
-        <p className="text-muted text-sm">Local no encontrado</p>
-        <Button
-          className="mt-4"
-          variant="secondary"
+      <div className="text-center py-16 px-4">
+        <p className="text-sm text-[#8E7D7D]">Local no encontrado</p>
+        <button
           onClick={() => navigate(-1)}
+          className="mt-4 px-4 py-2 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold"
         >
           Volver
-        </Button>
+        </button>
       </div>
     );
   }
 
-  const nombre = local.razon_social || local.nombre || "Local";
-  const images = local.imagenes?.length
-    ? local.imagenes
-    : local.imagen_url
-      ? [local.imagen_url]
-      : [];
+  const nombre = local.nombre_comercial || local.razon_social || local.nombre || "Local";
+  const banner = local.banner_url || local.imagen_portada || local.logo;
+  const redes = [
+    local.redes_whatsapp && {
+      key: "wa",
+      href: `https://wa.me/${String(local.redes_whatsapp).replace(/\D/g, "")}`,
+      icon: MessageCircle,
+      label: "WhatsApp",
+      color: "bg-emerald-50 text-emerald-700",
+    },
+    local.redes_facebook && {
+      key: "fb",
+      href: local.redes_facebook.startsWith("http")
+        ? local.redes_facebook
+        : `https://facebook.com/${local.redes_facebook}`,
+      icon: Facebook,
+      label: "Facebook",
+      color: "bg-blue-50 text-blue-700",
+    },
+    local.redes_instagram && {
+      key: "ig",
+      href: local.redes_instagram.startsWith("http")
+        ? local.redes_instagram
+        : `https://instagram.com/${local.redes_instagram}`,
+      icon: Instagram,
+      label: "Instagram",
+      color: "bg-pink-50 text-pink-700",
+    },
+    local.redes_x && {
+      key: "x",
+      href: local.redes_x.startsWith("http")
+        ? local.redes_x
+        : `https://x.com/${local.redes_x}`,
+      icon: null,
+      label: "X",
+      color: "bg-slate-100 text-slate-800",
+    },
+  ].filter(Boolean) as any[];
 
   return (
-    <div className="space-y-4 max-w-lg mx-auto animate-fadeIn -mt-1">
-      <button
-        type="button"
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-1.5 text-sm font-medium text-sky-500"
-      >
-        <ArrowLeft className="w-4 h-4" /> Volver
-      </button>
-
-      {/* Galería */}
-      <div className="rounded-3xl overflow-hidden bg-slate-200 dark:bg-slate-800 aspect-[16/10]">
-        {images[0] ? (
-          <img
-            src={images[0]}
-            alt={nombre}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <MapPin className="w-12 h-12 text-slate-400" />
-          </div>
+    <div className="w-full min-h-screen bg-[#FAF8F5] pb-10">
+      {/* Banner estilo perfil X */}
+      <div className="relative h-36 bg-[#7C0A1E]">
+        {banner && (
+          <img src={banner} alt="" className="absolute inset-0 w-full h-full object-cover" />
         )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+        <button
+          onClick={() => navigate(-1)}
+          className="absolute top-3 left-3 w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center"
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <button
+          onClick={toggleFav}
+          className={`absolute top-3 right-3 w-9 h-9 rounded-full flex items-center justify-center ${
+            esFavorito ? "bg-[#7C0A1E] text-white" : "bg-black/40 text-white"
+          }`}
+        >
+          <Heart size={16} fill={esFavorito ? "currentColor" : "none"} />
+        </button>
       </div>
-      {images.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {images.slice(1).map((src, i) => (
-            <img
-              key={i}
-              src={src}
-              alt=""
-              className="w-20 h-20 rounded-xl object-cover shrink-0"
-            />
-          ))}
-        </div>
-      )}
 
-      <div>
-        <h1 className="text-xl font-bold">{nombre}</h1>
+      <div className="px-4 -mt-10 relative z-10">
+        <img
+          src={
+            local.logo ||
+            "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=150"
+          }
+          alt={nombre}
+          className="w-20 h-20 rounded-full border-4 border-[#FAF8F5] object-cover shadow-md bg-white"
+        />
+
+        <h1 className="text-xl font-bold text-[#2D1A1E] mt-2">{nombre}</h1>
         {local.categoria_nombre && (
-          <p className="text-sm text-sky-500 mt-0.5">
+          <span className="inline-block mt-1 text-[10px] font-bold bg-[#C5A059]/20 text-[#7C0A1E] px-2 py-0.5 rounded-full">
             {local.categoria_nombre}
-          </p>
+          </span>
         )}
-        {local.descripcion && (
-          <p className="text-sm text-muted mt-2 leading-relaxed">
-            {local.descripcion}
-          </p>
-        )}
-      </div>
 
-      <div className="card space-y-3">
-        {local.direccion && (
-          <div className="flex gap-3 items-start">
-            <MapPin className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" />
-            <p className="text-sm">{local.direccion}</p>
-          </div>
-        )}
-        {local.horario && (
-          <div className="flex gap-3 items-start">
-            <Clock className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" />
-            <p className="text-sm">{local.horario}</p>
-          </div>
-        )}
-        {local.telefono && (
-          <div className="flex gap-3 items-start">
-            <Phone className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" />
-            <a href={`tel:${local.telefono}`} className="text-sm text-sky-500">
-              {local.telefono}
-            </a>
-          </div>
-        )}
-      </div>
+        <p className="text-xs text-[#8E7D7D] mt-3 leading-relaxed">
+          {local.descripcion || "Establecimiento afiliado a Pasaporte Digital NFC."}
+        </p>
 
-      {/* Mapa embebido simple */}
-      <div className="card !p-0 overflow-hidden">
-        <div className="aspect-[16/10] bg-slate-100 dark:bg-slate-800 relative">
-          {local.lat != null && local.lng != null ? (
-            <iframe
-              title="Mapa"
-              className="w-full h-full border-0"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              src={`https://maps.google.com/maps?q=${local.lat},${local.lng}&z=15&output=embed`}
-            />
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted text-sm p-4 text-center">
-              <MapPin className="w-8 h-8 opacity-40" />
-              <p>Mapa disponible cuando el local tenga coordenadas</p>
-              {local.direccion && (
-                <p className="text-xs">Usa “Cómo llegar” con la dirección</p>
-              )}
+        <div className="mt-4 space-y-2">
+          {direccion && (
+            <div className="flex items-start gap-2 text-xs text-[#2D1A1E]">
+              <MapPin size={14} className="text-[#7C0A1E] shrink-0 mt-0.5" />
+              <span>{direccion}</span>
+            </div>
+          )}
+          <div className="flex items-start gap-2 text-xs text-[#2D1A1E]">
+            <Clock size={14} className="text-[#7C0A1E] shrink-0 mt-0.5" />
+            <span>{horario}</span>
+          </div>
+          {(local.telefono || sucursal?.telefono) && (
+            <div className="flex items-start gap-2 text-xs text-[#2D1A1E]">
+              <Phone size={14} className="text-[#7C0A1E] shrink-0 mt-0.5" />
+              <span>{local.telefono || sucursal?.telefono}</span>
             </div>
           )}
         </div>
-      </div>
 
-      <Button fullWidth size="lg" onClick={openMaps}>
-        <Navigation className="w-4 h-4" />
-        Cómo llegar
-      </Button>
+        {redes.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-4">
+            {redes.map((r) => {
+              const Icon = r.icon;
+              return (
+                <a
+                  key={r.key}
+                  href={r.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold ${r.color}`}
+                >
+                  {Icon ? <Icon size={14} /> : <XIcon size={14} />}
+                  {r.label}
+                </a>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-6">
+          <button
+            onClick={irAlMapa}
+            className="flex-1 py-3 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md"
+          >
+            <Navigation size={16} />
+            Cómo llegar
+          </button>
+          <Link
+            to="/user/locales"
+            className="px-4 py-3 rounded-2xl border border-[#EFE7DE] bg-white text-xs font-semibold text-[#8E7D7D] flex items-center"
+          >
+            Ver todos
+          </Link>
+        </div>
+      </div>
     </div>
   );
 };

@@ -205,4 +205,56 @@ export const AuthController = {
       next(error);
     }
   },
+
+  
+  async getPreferencias(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await query(
+        `SELECT idioma, ocultar_fechas_sellos, fecha_actualizacion
+         FROM preferencias_usuario WHERE id_usuario = $1`,
+        [req.user!.id],
+      );
+      if (!result.rows[0]) {
+        sendResponse(res, 200, { idioma: "es", ocultar_fechas_sellos: 0 });
+        return;
+      }
+      sendResponse(res, 200, result.rows[0]);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async updatePreferencias(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { idioma, ocultar_fechas_sellos } = req.body;
+      const idUsuario = req.user!.id;
+
+      const idiomasOk = ["es", "en", "pt", "ru", "qu"];
+      if (idioma !== undefined && !idiomasOk.includes(idioma)) {
+        throw new ApiError(400, "Idioma no soportado");
+      }
+
+      // Upsert en preferencias_usuario
+      const result = await query(
+        `INSERT INTO preferencias_usuario (id_usuario, idioma, ocultar_fechas_sellos, fecha_actualizacion)
+         VALUES ($1, COALESCE($2, 'es'), COALESCE($3, 0), CURRENT_TIMESTAMP)
+         ON CONFLICT (id_usuario) DO UPDATE SET
+           idioma = COALESCE($2, preferencias_usuario.idioma),
+           ocultar_fechas_sellos = COALESCE($3, preferencias_usuario.ocultar_fechas_sellos),
+           fecha_actualizacion = CURRENT_TIMESTAMP
+         RETURNING id_preferencia, id_usuario, idioma, ocultar_fechas_sellos, fecha_actualizacion`,
+        [
+          idUsuario,
+          idioma ?? null,
+          ocultar_fechas_sellos === undefined || ocultar_fechas_sellos === null
+            ? null
+            : Number(ocultar_fechas_sellos) ? 1 : 0,
+        ],
+      );
+
+      sendResponse(res, 200, result.rows[0]);
+    } catch (error) {
+      next(error);
+    }
+  },
 };
