@@ -3,6 +3,13 @@ import { query, pool } from "../config/database";
 import { ApiError, sendResponse } from "../utils";
 import { AuthenticatedRequest } from "../types";
 
+// PostgreSQL devuelve BIGINT como texto; conservarlo evita pérdida de precisión.
+const isValidId = (value: unknown): boolean => {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value > 0;
+  return typeof value === "string" && /^[1-9]\d{0,18}$/.test(value) &&
+    BigInt(value) <= 9223372036854775807n;
+};
+
 export const NfcVisitController = {
   /**
    * 1. LECTURA PREVIA NFC
@@ -15,7 +22,7 @@ export const NfcVisitController = {
   ) {
     try {
       const { uid_nfc } = req.body;
-      if (!uid_nfc) {
+      if (typeof uid_nfc !== "string" || !uid_nfc.trim() || uid_nfc.trim().length > 100) {
         throw new ApiError(400, "uid_nfc es obligatorio");
       }
 
@@ -74,23 +81,46 @@ export const NfcVisitController = {
     res: Response,
     next: NextFunction,
   ) {
-    const client = await pool.connect();
+    let client;
     try {
-      const { id_tarjeta, id_sucursal, observacion } = req.body;
+      const { id_tarjeta, id_sucursal, observacion, monto_compra, id_programa } = req.body;
       const validadorId = req.user!.id;
 
-      if (!id_tarjeta || !id_sucursal) {
-        throw new ApiError(400, "id_tarjeta e id_sucursal son obligatorios");
+      if (!isValidId(id_tarjeta) || !isValidId(id_sucursal)) {
+        throw new ApiError(400, "La tarjeta y la sucursal deben tener identificadores válidos");
+      }
+      if (id_programa !== undefined && !isValidId(id_programa)) {
+        throw new ApiError(400, "El sello seleccionado debe tener un identificador válido");
+      }
+      if (observacion != null && (typeof observacion !== "string" || observacion.length > 500)) {
+        throw new ApiError(400, "La observación debe ser un texto de hasta 500 caracteres");
+      }
+      if (monto_compra !== undefined &&
+          (typeof monto_compra !== "string" || !/^\d+(\.\d{1,2})?$/.test(monto_compra) ||
+           !Number.isFinite(Number(monto_compra)) || Number(monto_compra) <= 0)) {
+        throw new ApiError(400, "Ingresa un monto mayor a cero con hasta dos decimales");
       }
 
+      client = await pool.connect();
       await client.query("BEGIN");
+
+      const asignacion = await client.query(
+        `SELECT 1 FROM usuario_sucursal
+         WHERE id_usuario = $1 AND id_sucursal = $2 AND estado = 1`,
+        [validadorId, id_sucursal],
+      );
+      if (!asignacion.rows.length) {
+        throw new ApiError(403, "No tienes permiso para registrar visitas en esta sucursal");
+      }
 
       // Validar tarjeta y cliente activo
       const tarjetaRes = await client.query(
         `SELECT t.id_tarjeta, t.id_cliente, t.estado, c.id_usuario
          FROM tarjetas_nfc t
-         JOIN clientes c ON c.id_cliente = t.id_cliente
-         WHERE t.id_tarjeta = $1 AND t.estado = 'ACTIVA'`,
+          JOIN clientes c ON c.id_cliente = t.id_cliente
+          JOIN usuarios u ON u.id_usuario = c.id_usuario
+          WHERE t.id_tarjeta = $1 AND t.estado = 'ACTIVA' AND u.estado = 1
+          FOR UPDATE OF t, c`,
         [id_tarjeta],
       );
 
@@ -115,19 +145,30 @@ export const NfcVisitController = {
       const establecimientoId = sucursalRes.rows[0].id_establecimiento;
 
       // Obtener programa de sellos activo del establecimiento
-      const progRes = await client.query(
-        `SELECT ps.id_programa, ps.meta_sellos, ps.max_sellos_dia, ps.nombre_sello, ps.imagen_sello,
+      // (o el sello específico elegido por el trabajador si viene id_programa)
+      const progParams: any[] = [establecimientoId];
+      let progSql = `
+        SELECT ps.id_programa, ps.meta_sellos, ps.max_sellos_dia, ps.nombre_sello,
+                ps.imagen_sello, ps.color_sello,
                 COALESCE(ps.puntos_por_visita, rp.valor, 20) AS puntos_por_sello
          FROM programas_sellos ps
          LEFT JOIN reglas_puntos rp ON rp.id_programa = ps.id_programa AND rp.tipo_regla = 'POR_SELLO' AND rp.estado = 1
-         WHERE ps.id_establecimiento = $1 AND ps.estado = 'ACTIVO'
-         LIMIT 1`,
-        [establecimientoId],
-      );
+         WHERE ps.id_establecimiento = $1 AND ps.estado = 'ACTIVO'`;
+      if (id_programa !== undefined) {
+        progParams.push(id_programa);
+        progSql += ` AND ps.id_programa = $${progParams.length}`;
+      }
+      progSql += `
+         ORDER BY ps.id_programa DESC
+         LIMIT 1
+         FOR SHARE OF ps`;
+      const progRes = await client.query(progSql, progParams);
 
       const programa = progRes.rows[0];
       if (!programa) {
-        throw new ApiError(400, "El establecimiento no cuenta con un programa de sellos activo");
+        throw new ApiError(400, id_programa !== undefined
+          ? "El sello seleccionado no está disponible en este local"
+          : "El establecimiento no cuenta con un programa de sellos activo");
       }
 
       // Validar límite diario de sellos para el cliente en este programa
@@ -151,7 +192,8 @@ export const NfcVisitController = {
         `INSERT INTO visitas (id_cliente, id_tarjeta, id_sucursal, id_usuario_validador, estado, observacion)
          VALUES ($1, $2, $3, $4, 'CONFIRMADA', $5)
          RETURNING id_visita, fecha_hora`,
-        [clienteId, id_tarjeta, id_sucursal, validadorId, observacion || null],
+        [clienteId, id_tarjeta, id_sucursal, validadorId,
+          monto_compra !== undefined ? `Compra S/ ${Number(monto_compra).toFixed(2)}` : observacion || null],
       );
       const visitaId = visitaRes.rows[0].id_visita;
 
@@ -164,13 +206,27 @@ export const NfcVisitController = {
         [programa.id_programa, clienteId],
       );
       const ordenSello = (totalSellosClienteRes.rows[0].total % programa.meta_sellos) + 1;
+      const puntosOtorgados = Number(programa.puntos_por_sello);
 
       // 2. Crear Sello Digital
       const selloRes = await client.query(
-        `INSERT INTO sellos_digitales (id_visita, id_programa, numero_sello, cantidad, estado)
-         VALUES ($1, $2, $3, 1, 'OTORGADO')
+        `INSERT INTO sellos_digitales (
+           id_visita, id_programa, numero_sello, cantidad, estado,
+           nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot,
+           meta_sellos_snapshot, puntos_sello_snapshot
+         )
+         VALUES ($1, $2, $3, 1, 'OTORGADO', $4, $5, $6, $7, $8)
          RETURNING id_sello, numero_sello`,
-        [visitaId, programa.id_programa, ordenSello],
+        [
+          visitaId,
+          programa.id_programa,
+          ordenSello,
+          programa.nombre_sello,
+          programa.imagen_sello,
+          programa.color_sello,
+          programa.meta_sellos,
+          puntosOtorgados,
+        ],
       );
       const selloId = selloRes.rows[0].id_sello;
 
@@ -182,7 +238,6 @@ export const NfcVisitController = {
         [clienteId],
       );
       const saldoAnterior = saldoRes.rows[0].saldo;
-      const puntosOtorgados = Number(programa.puntos_por_sello);
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
       // 4. Crear Movimiento Contable de Puntos (Ledger)
@@ -256,10 +311,10 @@ export const NfcVisitController = {
         },
       }, "Visita confirmada y puntos acreditados con éxito.");
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (client) await client.query("ROLLBACK");
       next(error);
     } finally {
-      client.release();
+      client?.release();
     }
   },
 
