@@ -112,6 +112,9 @@ export const EstablishmentsController = {
         SELECT 
           e.id_establecimiento,
           e.nombre_comercial,
+          e.categoria_id,
+          cat.nombre AS categoria_nombre,
+          cat.icono_url AS categoria_icono,
           e.razon_social,
           e.descripcion,
           e.logo,
@@ -143,6 +146,7 @@ export const EstablishmentsController = {
             '[]'::json
           ) AS sucursales
         FROM establecimientos e
+        LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
         LEFT JOIN sucursales s ON s.id_establecimiento = e.id_establecimiento AND s.estado = 1
         LEFT JOIN LATERAL (
           SELECT id_programa, nombre, meta_sellos, nombre_sello, imagen_sello, color_sello, puntos_por_visita
@@ -167,12 +171,12 @@ export const EstablishmentsController = {
       }
 
       if (categoria && String(categoria).trim() && String(categoria) !== "Todos") {
-        params.push(`%${String(categoria).trim()}%`);
-        sql += ` AND (e.descripcion ILIKE $${params.length} OR e.nombre_comercial ILIKE $${params.length})`;
+        params.push(String(categoria).trim());
+        sql += ` AND cat.nombre = $${params.length}`;
       }
 
       sql += `
-        GROUP BY e.id_establecimiento, ps.id_programa, ps.nombre, ps.meta_sellos, ps.nombre_sello, ps.imagen_sello, ps.color_sello, rp.valor
+        GROUP BY e.id_establecimiento, cat.nombre, cat.icono_url, ps.id_programa, ps.nombre, ps.meta_sellos, ps.nombre_sello, ps.imagen_sello, ps.color_sello, rp.valor
         ORDER BY e.nombre_comercial ASC
       `;
 
@@ -795,6 +799,57 @@ export const EstablishmentsController = {
     }
   },
 
+  async listarFavoritos(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const cliente = await query(`SELECT id_cliente FROM clientes WHERE id_usuario = $1`, [idUsuario]);
+      const idCliente = cliente.rows[0]?.id_cliente;
+      if (!idCliente) {
+        sendResponse(res, 200, []);
+        return;
+      }
+      const result = await query(
+        `SELECT e.id_establecimiento, e.nombre_comercial, e.logo, e.descripcion, e.imagen_portada,
+                f.fecha_agregado
+         FROM locales_favoritos f
+         JOIN establecimientos e ON e.id_establecimiento = f.id_establecimiento
+         WHERE f.id_cliente = $1 AND e.estado = 'ACTIVO'
+         ORDER BY f.fecha_agregado DESC`,
+        [idCliente],
+      );
+      sendResponse(res, 200, result.rows);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async toggleFavorito(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const idEst = Number(req.params.id);
+      const cliente = await query(`SELECT id_cliente FROM clientes WHERE id_usuario = $1`, [idUsuario]);
+      const idCliente = cliente.rows[0]?.id_cliente;
+      if (!idCliente) throw new ApiError(400, "Cliente no encontrado");
+
+      const exists = await query(
+        `SELECT id_favorito FROM locales_favoritos WHERE id_cliente = $1 AND id_establecimiento = $2`,
+        [idCliente, idEst],
+      );
+      if (exists.rows[0]) {
+        await query(`DELETE FROM locales_favoritos WHERE id_favorito = $1`, [exists.rows[0].id_favorito]);
+        sendResponse(res, 200, { favorito: false });
+        return;
+      }
+      await query(
+        `INSERT INTO locales_favoritos (id_cliente, id_establecimiento) VALUES ($1, $2)`,
+        [idCliente, idEst],
+      );
+      sendResponse(res, 200, { favorito: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   /** Crear un nuevo diseño de sello (queda ACTIVO y disponible para visitas) */
   async crearMiSello(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     let client: any;
@@ -957,6 +1012,42 @@ export const EstablishmentsController = {
     }
   },
 
+  async getById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const id = Number(req.params.id);
+      const result = await query(
+        `SELECT e.*,
+                c.nombre AS categoria_nombre,
+                c.icono_url AS categoria_icono,
+                COALESCE(
+                  json_agg(
+                    DISTINCT jsonb_build_object(
+                      'id_sucursal', s.id_sucursal,
+                      'nombre', s.nombre,
+                      'direccion', s.direccion,
+                      'latitud', s.latitud,
+                      'longitud', s.longitud,
+                      'telefono', s.telefono,
+                      'horario', s.horario,
+                      'es_principal', s.es_principal,
+                      'google_maps_url', s.google_maps_url
+                    )
+                  ) FILTER (WHERE s.id_sucursal IS NOT NULL),
+                  '[]'::json
+                ) AS sucursales
+         FROM establecimientos e
+         LEFT JOIN categorias_establecimiento c ON c.id = e.categoria_id
+         LEFT JOIN sucursales s ON s.id_establecimiento = e.id_establecimiento AND s.estado = 1
+         WHERE e.id_establecimiento = $1
+         GROUP BY e.id_establecimiento, c.nombre, c.icono_url`,
+        [id],
+      );
+      if (!result.rows[0]) throw new ApiError(404, "Establecimiento no encontrado");
+      sendResponse(res, 200, result.rows[0]);
+    } catch (error) {
+      next(error);
+    }
+  },
   /** Guardar una insignia personalizada para reutilizarla en varios diseños */
   async crearMiInsignia(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     let client: any;

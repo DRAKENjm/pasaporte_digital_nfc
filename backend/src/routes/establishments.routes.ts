@@ -26,9 +26,11 @@ router.patch("/me/insignias/:id/estado", authMiddleware, EstablishmentsControlle
 
 // Categorías públicas / para el panel
 router.get("/categorias", authMiddleware, EstablishmentsController.listarCategorias);
+router.get("/favoritos", authMiddleware, EstablishmentsController.listarFavoritos);
+router.post("/:id/favorito", authMiddleware, EstablishmentsController.toggleFavorito);
+router.delete("/:id/favorito", authMiddleware, EstablishmentsController.toggleFavorito);
 
-// Descubrir locales para la pantalla Explorar
 router.get("/", authMiddleware, EstablishmentsController.listar);
-router.get("/:id", authMiddleware, EstablishmentsController.detalle);
+router.get("/:id", authMiddleware, EstablishmentsController.getById);
 
 export default router;

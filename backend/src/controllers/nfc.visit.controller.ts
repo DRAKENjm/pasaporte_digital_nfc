@@ -383,4 +383,54 @@ export const NfcVisitController = {
       next(error);
     }
   },
+
+  async personalizarTarjeta(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const { imagen_fondo, color_tema, qr_data } = req.body;
+
+      const tar = await query(
+        `SELECT t.id_tarjeta FROM tarjetas_nfc t
+         JOIN clientes c ON c.id_cliente = t.id_cliente
+         WHERE c.id_usuario = $1 AND t.estado = 'ACTIVA'
+         ORDER BY t.es_principal DESC, t.id_tarjeta DESC LIMIT 1`,
+        [idUsuario],
+      );
+      if (!tar.rows[0]) throw new ApiError(404, "No tienes una tarjeta NFC activa");
+
+      const idTarjeta = tar.rows[0].id_tarjeta;
+      const result = await query(
+        `INSERT INTO tarjeta_nfc_personalizacion (id_tarjeta, imagen_fondo, color_tema, qr_data, fecha_actualizacion)
+         VALUES ($1, $2, COALESCE($3, '#7C0A1E'), $4, CURRENT_TIMESTAMP)
+         ON CONFLICT (id_tarjeta) DO UPDATE SET
+           imagen_fondo = COALESCE($2, tarjeta_nfc_personalizacion.imagen_fondo),
+           color_tema = COALESCE($3, tarjeta_nfc_personalizacion.color_tema),
+           qr_data = COALESCE($4, tarjeta_nfc_personalizacion.qr_data),
+           fecha_actualizacion = CURRENT_TIMESTAMP
+         RETURNING *`,
+        [idTarjeta, imagen_fondo || null, color_tema || null, qr_data || null],
+      );
+      sendResponse(res, 200, result.rows[0], "Personalización guardada");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async obtenerPersonalizacion(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const result = await query(
+        `SELECT p.*, t.codigo_interno, t.uid_nfc
+         FROM tarjetas_nfc t
+         JOIN clientes c ON c.id_cliente = t.id_cliente
+         LEFT JOIN tarjeta_nfc_personalizacion p ON p.id_tarjeta = t.id_tarjeta
+         WHERE c.id_usuario = $1 AND t.estado = 'ACTIVA'
+         ORDER BY t.es_principal DESC LIMIT 1`,
+        [idUsuario],
+      );
+      sendResponse(res, 200, result.rows[0] || null);
+    } catch (error) {
+      next(error);
+    }
+  },
 };

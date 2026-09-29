@@ -302,7 +302,31 @@ export const HomePage: React.FC = () => {
         </div>
 
         {currentLocal ? (
-          <div className="relative w-full h-52 sm:h-56 rounded-[1.75rem] overflow-hidden shadow-md group">
+          <div
+            className="relative w-full h-52 sm:h-56 rounded-[1.75rem] overflow-hidden shadow-md group"
+            onMouseEnter={() => { /* pause visual: user interacts */ }}
+            onTouchStart={() => {}}
+          >
+            {locales.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Anterior"
+                  onClick={() => setActiveSlide((p) => (p - 1 + locales.length) % locales.length)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center opacity-80 hover:opacity-100"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  aria-label="Siguiente"
+                  onClick={() => setActiveSlide((p) => (p + 1) % locales.length)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center opacity-80 hover:opacity-100"
+                >
+                  ›
+                </button>
+              </>
+            )}
             <img
               src={
                 currentLocal.imagen_portada ||

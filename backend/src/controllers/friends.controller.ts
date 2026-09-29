@@ -212,4 +212,41 @@ export class FriendsController {
       next(error);
     }
   }
+
+  static async generarInvitacion(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user!.id;
+      // Reutilizar código activo del usuario si existe
+      const existing = await query(
+        `SELECT codigo, link_completo FROM invitaciones
+         WHERE id_usuario_invitador = $1 AND estado = 1
+           AND (fecha_expiracion IS NULL OR fecha_expiracion > CURRENT_TIMESTAMP)
+         ORDER BY fecha_creacion DESC LIMIT 1`,
+        [userId],
+      );
+      if (existing.rows[0]) {
+        return sendResponse(res, 200, {
+          codigo: existing.rows[0].codigo,
+          link: existing.rows[0].link_completo,
+        });
+      }
+      let codigo = "";
+      try {
+        const gen = await query(`SELECT public.generar_codigo_invitacion() AS codigo`);
+        codigo = gen.rows[0]?.codigo || Math.random().toString(36).slice(2, 10).toUpperCase();
+      } catch {
+        codigo = "PD" + Math.random().toString(36).slice(2, 8).toUpperCase();
+      }
+      const origin = process.env.FRONTEND_URL || process.env.CLIENT_ORIGIN || "http://localhost:5173";
+      const link = `${origin}/auth/register?ref=${codigo}`;
+      await query(
+        `INSERT INTO invitaciones (id_usuario_invitador, codigo, link_completo, estado)
+         VALUES ($1, $2, $3, 1)`,
+        [userId, codigo, link],
+      );
+      return sendResponse(res, 200, { codigo, link });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
