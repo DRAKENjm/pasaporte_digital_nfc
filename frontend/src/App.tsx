@@ -3,6 +3,7 @@ import { AdminLocales } from "./pages/admin/AdminLocales";
 import { VerifyEmail } from "./pages/auth/VerifyEmail";
 import { PublicPost } from "./pages/user/PublicPost";
 import { LibroReclamacionesPage } from "./pages/public/LibroReclamacionesPage";
+import { LegalViewerPage } from "./pages/public/LegalViewerPage";
 import { FriendsPage } from "./pages/user/FriendsPage";
 import { AdminReclamaciones } from "./pages/admin/AdminReclamaciones";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -21,6 +22,7 @@ import { HomePage } from "./pages/user/HomePage";
 import { ExplorarPage } from "./pages/user/ExplorarPage";
 import { PasaporteNfcPage } from "./pages/user/PasaporteNfcPage";
 import { ActividadPage } from "./pages/user/ActividadPage";
+import { MisSellosPage } from "./pages/user/MisSellosPage";
 import { PerfilPage } from "./pages/user/PerfilPage";
 import { RewardsPage } from "./pages/user/RewardsPage";
 import { LocalesPage } from "./pages/user/LocalesPage";
@@ -100,7 +102,7 @@ export const App: React.FC = () => {
               <Route path="/post/:id" element={<PublicPost />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/reclamaciones" element={<LibroReclamacionesPage />} />
-              <Route path="/libro-reclamaciones" element={<LibroReclamacionesPage />} />
+              <Route path="/legal" element={<LegalViewerPage />} />
               <Route path="/auth" element={<AuthLayout />}>
                 <Route path="login" element={<Login />} />
                 <Route path="register" element={<Register />} />
@@ -123,11 +125,14 @@ export const App: React.FC = () => {
                 <Route path="/user/explorar" element={<ExplorarPage />} />
                 <Route path="/user/pasaporte" element={<PasaporteNfcPage />} />
                 <Route path="/user/actividad" element={<ActividadPage />} />
+                <Route path="/user/mis-sellos" element={<MisSellosPage />} />
+                <Route path="/user/sellos" element={<Navigate to="/user/mis-sellos" replace />} />
                 <Route path="/user/perfil" element={<PerfilPage />} />
                 <Route path="/user/rewards" element={<RewardsPage />} />
                 <Route path="/user/locales" element={<LocalesPage />} />
                 <Route path="/user/locales/:id" element={<LocalDetailPage />} />
                 <Route path="/user/reclamaciones" element={<LibroReclamacionesPage />} />
+                <Route path="/user/legal" element={<LegalViewerPage />} />
               </Route>
 
               {/* COMERCIO / LOCAL AFILIADO */}
@@ -163,8 +168,8 @@ export const App: React.FC = () => {
                 <Route path="/admin/sellos" element={<AdminSellos />} />
                 <Route path="/admin/categorias" element={<AdminCategorias />} />
                 <Route path="/admin/reglas" element={<AdminReglas />} />
-                <Route path="/admin/clientes" element={<AdminUsuarios key="admin-clientes" modo="CLIENTES" />} />
-                <Route path="/admin/usuarios" element={<AdminUsuarios key="admin-usuarios" modo="USUARIOS" />} />
+                <Route path="/admin/clientes" element={<AdminUsuarios modo="CLIENTES" />} />
+                <Route path="/admin/usuarios" element={<AdminUsuarios modo="USUARIOS" />} />
                 <Route path="/admin/tarjetas" element={<AdminTarjetas />} />
                 <Route
                   path="/admin/recompensas"
@@ -186,7 +191,7 @@ export const App: React.FC = () => {
           </BrowserRouter>
         </UIProvider>
       </AuthProvider>
-      </LanguageProvider>
+    </LanguageProvider>
     </ThemeProvider>
   );
 };

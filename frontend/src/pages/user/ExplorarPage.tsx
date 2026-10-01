@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import {
   Search,
   Coffee,
@@ -11,12 +11,17 @@ import {
   X,
   MapPin,
   TrendingUp,
+  Car,
+  Footprints,
+  Clock,
+  Sparkles,
+  ChevronUp,
+  ChevronDown,
+  Info,
 } from "lucide-react";
 import {
   GoogleMap,
   useJsApiLoader,
-  MarkerF,
-  DirectionsRenderer,
   OverlayView,
 } from "@react-google-maps/api";
 import api from "../../services/api";
@@ -82,6 +87,7 @@ const CircularMarker: React.FC<{
 );
 
 export const ExplorarPage: React.FC = () => {
+  const navigate = useNavigate();
   const [categoriaActiva, setCategoriaActiva] = useState<string>("Todos");
   const [busqueda, setBusqueda] = useState<string>("");
   const [locales, setLocales] = useState<any[]>([]);
@@ -93,18 +99,67 @@ export const ExplorarPage: React.FC = () => {
   const [solicitandoGps, setSolicitandoGps] = useState(false);
   const [mapCenter, setMapCenter] = useState(defaultCenter);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+  const [directionsVersion, setDirectionsVersion] = useState(0);
   const [cargandoRuta, setCargandoRuta] = useState(false);
   const [filtroRapido, setFiltroRapido] = useState<"ninguno" | "cercano" | "visitado">("ninguno");
   const [showFiltros, setShowFiltros] = useState(false);
+  const [gpsBlocked, setGpsBlocked] = useState(false);
+  const [modoViaje, setModoViaje] = useState<"DRIVING" | "WALKING">("DRIVING");
+  const [tarjetaExpandidaEnRuta, setTarjetaExpandidaEnRuta] = useState(false);
+  const [userHeading, setUserHeading] = useState<number | null>(null);
+
+  const lastRouteOriginRef = useRef<{ lat: number; lng: number } | null>(null);
+  const directionsRef = useRef<google.maps.DirectionsResult | null>(null);
+  directionsRef.current = directions;
+  const modoViajeRef = useRef<"DRIVING" | "WALKING">(modoViaje);
+  modoViajeRef.current = modoViaje;
+  const localSeleccionadoRef = useRef<any>(null);
+  localSeleccionadoRef.current = localSeleccionado;
+  const calcularRutaSilenciosaRef = useRef<(coords: { lat: number; lng: number }) => void>(() => {});
 
   const { showToast } = useUI();
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
   const watchIdRef = useRef<number | null>(null);
+  const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: apiKey,
   });
+
+  // Manejador directo y limpio de rutas para Google Maps (evita líneas huérfanas)
+  useEffect(() => {
+    if (!map || !window.google?.maps) return;
+
+    if (!directionsRendererRef.current) {
+      directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
+        map,
+        suppressMarkers: true, // Oculta los marcadores nativos 'A' y 'B' de Google para que no choquen con tu ubicación
+        preserveViewport: false,
+        polylineOptions: {
+          strokeColor: "#7C0A1E",
+          strokeWeight: 5,
+          strokeOpacity: 0.9,
+        },
+      });
+    }
+
+    if (directions) {
+      directionsRendererRef.current.setMap(map);
+      directionsRendererRef.current.setDirections(directions);
+    } else {
+      directionsRendererRef.current.setDirections({ routes: [] } as any);
+      directionsRendererRef.current.setMap(null);
+    }
+  }, [map, directions]);
+
+  useEffect(() => {
+    return () => {
+      if (directionsRendererRef.current) {
+        directionsRendererRef.current.setMap(null);
+      }
+    };
+  }, []);
 
   // Cargar locales + categorías desde DB
   useEffect(() => {
@@ -116,14 +171,21 @@ export const ExplorarPage: React.FC = () => {
         ]);
         setLocales(res.data.data || []);
         const cats = catRes.data?.data || [];
-        setCategoriasDb([
-          { id: "Todos", label: "Todos", icono: "compass" },
-          ...cats.map((c: any) => ({
-            id: c.nombre,
-            label: c.nombre,
+        const seen = new Set(["todos"]);
+        const fromDb = (cats || [])
+          .filter((c: any) => c && c.nombre && String(c.nombre).toLowerCase() !== "todos")
+          .map((c: any) => ({
+            id: String(c.nombre),
+            label: String(c.nombre),
             icono: c.icono_url || c.icono || "map-pin",
-          })),
-        ]);
+          }))
+          .filter((c: any) => {
+            const k = c.id.toLowerCase();
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          });
+        setCategoriasDb([{ id: "Todos", label: "Todos", icono: "compass" }, ...fromDb]);
       } catch (e) {
         console.error("Error cargando locales", e);
       }
@@ -161,13 +223,13 @@ export const ExplorarPage: React.FC = () => {
   // NO solicitar ubicación automáticamente al montar
   // Solo al presionar "Mi Ubicación"
   const solicitarPermisoUbicacion = useCallback(
-    (activarWatch = false) => {
+    (activarWatch = false, isSilent = false) => {
       if (!("geolocation" in navigator)) {
-        showToast("Tu navegador no soporta geolocalización", "info");
+        if (!isSilent) showToast("Tu navegador no soporta geolocalización", "info");
         return;
       }
 
-      setSolicitandoGps(true);
+      if (!isSilent) setSolicitandoGps(true);
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -177,7 +239,7 @@ export const ExplorarPage: React.FC = () => {
           };
           setUserCoords(coords);
           setSolicitandoGps(false);
-          showToast("Ubicación detectada", "success");
+          if (!isSilent) showToast("Ubicación detectada", "success");
 
           const dist = getDistanceKm(coords.lat, coords.lng, defaultCenter.lat, defaultCenter.lng);
           if (dist <= 40) {
@@ -190,26 +252,65 @@ export const ExplorarPage: React.FC = () => {
           if (activarWatch && watchIdRef.current === null) {
             watchIdRef.current = navigator.geolocation.watchPosition(
               (p) => {
-                setUserCoords({
+                const newCoords = {
                   lat: p.coords.latitude,
                   lng: p.coords.longitude,
-                });
+                };
+                setUserCoords(newCoords);
+                if (p.coords.heading !== null && !isNaN(p.coords.heading)) {
+                  setUserHeading(p.coords.heading);
+                }
+
+                // Navegación en tiempo real: auto-actualizar ruta y distancia mientras avanzas
+                if (directionsRef.current && localSeleccionadoRef.current?.sucursales?.[0]) {
+                  const suc = localSeleccionadoRef.current.sucursales[0];
+                  if (suc.latitud && suc.longitud) {
+                    const destDist = getDistanceKm(newCoords.lat, newCoords.lng, Number(suc.latitud), Number(suc.longitud));
+                    // Si ya estás a menos de 25 metros del destino
+                    if (destDist <= 0.025) {
+                      showToast("🎉 ¡Has llegado a tu destino!", "success");
+                    } else if (lastRouteOriginRef.current) {
+                      // Si el usuario se desplazó más de 25 metros desde el último cálculo
+                      const distMovida = getDistanceKm(
+                        lastRouteOriginRef.current.lat,
+                        lastRouteOriginRef.current.lng,
+                        newCoords.lat,
+                        newCoords.lng
+                      );
+                      if (distMovida >= 0.025) {
+                        lastRouteOriginRef.current = newCoords;
+                        calcularRutaSilenciosaRef.current(newCoords);
+                      }
+                    }
+                  }
+                }
               },
               () => {},
-              { enableHighAccuracy: true, maximumAge: 5000 }
+              { enableHighAccuracy: true, maximumAge: 3000 }
             );
           }
         },
         (err) => {
           setSolicitandoGps(false);
-          if (err.code === 1) showToast("Permiso de ubicación denegado", "info");
-          else showToast("No se pudo obtener ubicación", "info");
+          if (err.code === 1) {
+            setGpsBlocked(true); // El usuario o el navegador denegó el permiso
+            if (!isSilent) showToast("Permiso de ubicación denegado", "info");
+          } else {
+            if (!isSilent) showToast("No se pudo obtener ubicación", "info");
+          }
         },
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     },
     [showToast, map]
   );
+
+  // Solicitar ubicación al entrar a la vista "Explorar"
+  useEffect(() => {
+    // Solicitamos silenciosamente al inicio para no lanzar toasts molestos, 
+    // pero si falla, actualizaremos el estado gpsBlocked para mostrar un banner.
+    solicitarPermisoUbicacion(true, true);
+  }, [solicitarPermisoUbicacion]);
 
   // Cleanup watch
   useEffect(() => {
@@ -268,9 +369,10 @@ export const ExplorarPage: React.FC = () => {
   }, [locales, busqueda, categoriaActiva, filtroRapido, userCoords]);
 
   const handleSelectLocal = (loc: any) => {
-    setLocalSeleccionado(loc);
-    // Al cambiar de local, limpiar ruta anterior (evita dos caminos)
+    // Limpiar y forzar remount del DirectionsRenderer
     setDirections(null);
+    setDirectionsVersion((v) => v + 1);
+    setLocalSeleccionado(loc);
     const suc = loc.sucursales?.[0];
     if (suc?.latitud && suc?.longitud) {
       map?.panTo({ lat: Number(suc.latitud), lng: Number(suc.longitud) });
@@ -291,12 +393,12 @@ export const ExplorarPage: React.FC = () => {
     }
   };
 
-  // ========== RUTA: al iniciar otra se reemplaza la anterior ==========
-  const iniciarRuta = () => {
+  // ========== RUTA: calcular, cambiar modo y encuadrar con zoom óptimo ==========
+  const calcularRuta = (travelMode: "DRIVING" | "WALKING" = modoViaje) => {
     if (!localSeleccionado?.sucursales?.[0]) return;
 
     if (!userCoords) {
-      showToast("Activa tu ubicación para iniciar la ruta", "info");
+      showToast("Activa tu ubicación para trazar la ruta", "info");
       solicitarPermisoUbicacion(true);
       return;
     }
@@ -304,8 +406,7 @@ export const ExplorarPage: React.FC = () => {
     if (!window.google?.maps) return;
 
     setCargandoRuta(true);
-    // Limpiar ruta previa antes de calcular la nueva
-    setDirections(null);
+    lastRouteOriginRef.current = userCoords;
 
     const directionsService = new window.google.maps.DirectionsService();
     const destino = {
@@ -313,17 +414,32 @@ export const ExplorarPage: React.FC = () => {
       lng: Number(localSeleccionado.sucursales[0].longitud),
     };
 
+    const gTravelMode =
+      travelMode === "WALKING"
+        ? window.google.maps.TravelMode.WALKING
+        : window.google.maps.TravelMode.DRIVING;
+
     directionsService.route(
       {
         origin: userCoords,
         destination: destino,
-        travelMode: window.google.maps.TravelMode.DRIVING,
+        travelMode: gTravelMode,
       },
       (result, status) => {
         setCargandoRuta(false);
         if (status === window.google.maps.DirectionsStatus.OK && result) {
           setDirections(result);
-          showToast("Ruta lista", "success");
+          setTarjetaExpandidaEnRuta(false); // Colapsa a barra compacta para dejar ver el mapa
+          // Ajuste dinámico de zoom y encuadre a toda la ruta para ver inicio y fin
+          if (result.routes[0]?.bounds && map) {
+            map.fitBounds(result.routes[0].bounds, {
+              top: 80,
+              bottom: 120, // Solo 120px de margen inferior gracias a la barra compacta
+              left: 40,
+              right: 40,
+            });
+          }
+          showToast(travelMode === "WALKING" ? "Ruta a pie trazada" : "Ruta en auto trazada", "success");
         } else {
           showToast("No se pudo calcular la ruta", "info");
           console.warn("Directions error:", status);
@@ -332,9 +448,85 @@ export const ExplorarPage: React.FC = () => {
     );
   };
 
+  const calcularRutaSilenciosa = (origen: { lat: number; lng: number }) => {
+    if (!localSeleccionadoRef.current?.sucursales?.[0] || !window.google?.maps) return;
+    const directionsService = new window.google.maps.DirectionsService();
+    const destino = {
+      lat: Number(localSeleccionadoRef.current.sucursales[0].latitud),
+      lng: Number(localSeleccionadoRef.current.sucursales[0].longitud),
+    };
+    const gTravelMode =
+      modoViajeRef.current === "WALKING"
+        ? window.google.maps.TravelMode.WALKING
+        : window.google.maps.TravelMode.DRIVING;
+
+    directionsService.route(
+      {
+        origin: origen,
+        destination: destino,
+        travelMode: gTravelMode,
+      },
+      (result, status) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result) {
+          setDirections(result);
+        }
+      }
+    );
+  };
+  calcularRutaSilenciosaRef.current = calcularRutaSilenciosa;
+
+  const cambiarModoViaje = (nuevoModo: "DRIVING" | "WALKING") => {
+    setModoViaje(nuevoModo);
+    if (directions) {
+      calcularRuta(nuevoModo);
+    }
+  };
+
+  // Distancia y tiempo calculado en vivo
+  const infoRuta = useMemo(() => {
+    if (!localSeleccionado?.sucursales?.[0]) return null;
+    const suc = localSeleccionado.sucursales[0];
+    if (!suc.latitud || !suc.longitud) return null;
+
+    // 1. Si ya se trazó una ruta con Google Maps (precisión exacta de calles y tráfico)
+    if (directions?.routes?.[0]?.legs?.[0]) {
+      const leg = directions.routes[0].legs[0];
+      return {
+        distancia: leg.distance?.text || "",
+        tiempo: leg.duration?.text || "",
+        esRutaReal: true,
+      };
+    }
+
+    // 2. Si no hay ruta trazada aún, pero tenemos GPS del usuario
+    if (userCoords) {
+      const dKm = getDistanceKm(userCoords.lat, userCoords.lng, Number(suc.latitud), Number(suc.longitud));
+      const distStr = dKm < 1 ? `${Math.round(dKm * 1000)} m` : `${dKm.toFixed(1)} km`;
+      const minEstimados =
+        modoViaje === "WALKING"
+          ? Math.max(1, Math.round((dKm * 60) / 4.5))
+          : Math.max(1, Math.round((dKm * 60) / 25));
+      return {
+        distancia: distStr,
+        tiempo: `~${minEstimados} min`,
+        esRutaReal: false,
+      };
+    }
+
+    return null;
+  }, [localSeleccionado, directions, userCoords, modoViaje]);
+
+  const cancelarRuta = () => {
+    setDirections(null);
+    lastRouteOriginRef.current = null;
+    setTarjetaExpandidaEnRuta(false);
+  };
+
   const cerrarTarjeta = () => {
     setLocalSeleccionado(null);
     setDirections(null);
+    lastRouteOriginRef.current = null;
+    setTarjetaExpandidaEnRuta(false);
   };
 
   const onLoad = useCallback((mapInstance: google.maps.Map) => {
@@ -460,6 +652,18 @@ export const ExplorarPage: React.FC = () => {
             );
           })}
         </div>
+
+        {gpsBlocked && (
+          <div className="mt-3 bg-red-50 border border-red-100 rounded-xl p-3 flex items-start gap-2.5 animate-fadeIn">
+            <LocateFixed size={18} className="text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="text-xs font-bold text-red-800">Ubicación desactivada</h4>
+              <p className="text-[11px] text-red-600 mt-0.5 leading-snug">
+                Para ver los locales cercanos y trazar rutas, habilita el permiso de ubicación en el ícono del candado (arriba a la izquierda en tu navegador) y recarga la página.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Mapa */}
@@ -484,18 +688,33 @@ export const ExplorarPage: React.FC = () => {
               gestureHandling: "greedy",
             }}
           >
-            {/* Tu ubicación solo si se activó */}
-            {userCoords && window.google?.maps && (
-              <MarkerF
+            {/* Tu ubicación en tiempo real con efecto radar y dirección */}
+            {userCoords && (
+              <OverlayView
                 position={userCoords}
-                icon={{
-                  url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-                  scaledSize: new window.google.maps.Size(40, 40),
-                  anchor: new window.google.maps.Point(20, 20),
-                }}
-                title="Tu ubicación"
+                mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                getPixelPositionOffset={() => ({ x: -16, y: -16 })}
                 zIndex={999}
-              />
+              >
+                <div
+                  title="Tu ubicación en tiempo real"
+                  className="relative flex items-center justify-center pointer-events-none"
+                  style={{ width: 32, height: 32 }}
+                >
+                  {/* Pulso de radar en vivo */}
+                  <span className="absolute w-7 h-7 rounded-full bg-blue-500/35 animate-ping" />
+
+                  {/* Círculo central azul con borde blanco */}
+                  <div className="relative w-4 h-4 rounded-full bg-[#1A73E8] border-2 border-white shadow-md z-10 flex items-center justify-center">
+                    {userHeading !== null && (
+                      <div
+                        className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-l-transparent border-r-transparent border-b-white"
+                        style={{ transform: `rotate(${userHeading}deg)` }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </OverlayView>
             )}
 
             {/* Locales con marcadores circulares */}
@@ -520,21 +739,6 @@ export const ExplorarPage: React.FC = () => {
                 </OverlayView>
               );
             })}
-
-            {/* Una sola ruta: se reemplaza al cambiar de local */}
-            {directions && (
-              <DirectionsRenderer
-                directions={directions}
-                options={{
-                  suppressMarkers: false,
-                  polylineOptions: {
-                    strokeColor: "#7C0A1E",
-                    strokeWeight: 5,
-                    strokeOpacity: 0.9,
-                  },
-                }}
-              />
-            )}
           </GoogleMap>
         )}
 
@@ -561,57 +765,253 @@ export const ExplorarPage: React.FC = () => {
           })}
         </div>
 
-        {/* Tarjeta inferior adaptativa (no se oculta tras el nav) */}
+        {/* Tarjeta inferior adaptativa: compacta al navegar para despejar el mapa */}
         {localSeleccionado && (
           <div
-            className="absolute left-0 right-0 z-20 px-3 sm:px-4"
+            className="absolute left-0 right-0 z-20 px-3 sm:px-4 pointer-events-none transition-all duration-300"
             style={{ bottom: "max(16px, env(safe-area-inset-bottom, 16px))" }}
           >
-            <div className="bg-white rounded-3xl p-3.5 sm:p-4 border border-[#EFE7DE] shadow-xl max-h-[40vh] overflow-y-auto relative">
-              <button
-                onClick={cerrarTarjeta}
-                className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-[#FAF8F5] flex items-center justify-center text-[#8E7D7D] cursor-pointer hover:bg-[#EFE7DE] transition-colors z-10"
-                title="Cerrar"
-              >
-                <X size={14} />
-              </button>
-
-              <div className="flex items-center gap-3 pr-8">
-                <img
-                  src={
-                    localSeleccionado.logo ||
-                    "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=150"
-                  }
-                  alt={localSeleccionado.nombre_comercial}
-                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover shrink-0 border-2 border-[#EFE7DE]"
-                />
-                <div className="min-w-0">
-                  <h3 className="font-bold text-sm text-[#2D1A1E] truncate">
-                    {localSeleccionado.nombre_comercial}
-                  </h3>
-                  <p className="text-[11px] text-[#8E7D7D] truncate">
-                    {localSeleccionado.sucursales?.[0]?.direccion || "Chiclayo"}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 text-[10px]">
-                    <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                      • Abierto ahora
-                    </span>
-                    <span className="text-[#C5A059] font-bold">
-                      +{localSeleccionado.puntos_por_visita || 20} pts
-                    </span>
+            {directions && !tarjetaExpandidaEnRuta ? (
+              /* BARRA COMPACTA FLOTANTE MODO NAVEGACIÓN ACTIVA */
+              <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl p-2.5 sm:p-3 border border-[#EFE7DE] shadow-2xl flex items-center justify-between gap-2.5 animate-fadeIn">
+                {/* Logo e info de ruta */}
+                <div
+                  className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                  onClick={() => setTarjetaExpandidaEnRuta(true)}
+                  title="Toca para ver detalles completos"
+                >
+                  <img
+                    src={
+                      localSeleccionado.logo ||
+                      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=100"
+                    }
+                    alt={localSeleccionado.nombre_comercial}
+                    className="w-10 h-10 rounded-full object-cover shrink-0 border border-[#EFE7DE] shadow-sm"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-bold text-xs text-[#2D1A1E] truncate">
+                        {localSeleccionado.nombre_comercial}
+                      </h4>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" title="En camino" />
+                    </div>
+                    {infoRuta && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#59494B] font-medium mt-0.5">
+                        <span className="font-bold text-[#7C0A1E]">{infoRuta.distancia}</span>
+                        <span>•</span>
+                        <span>{infoRuta.tiempo}</span>
+                        <span>•</span>
+                        <span className="text-[10px] text-[#8E7D7D]">
+                          {modoViaje === "WALKING" ? "A pie" : "En auto"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              <button
-                onClick={iniciarRuta}
-                disabled={cargandoRuta}
-                className="mt-3 w-full py-2.5 rounded-2xl bg-[#7C0A1E] text-white font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
-              >
-                <Navigation size={16} />
-                {cargandoRuta ? "Calculando ruta..." : directions ? "Ruta activa" : "Iniciar ruta"}
-              </button>
-            </div>
+                {/* Acciones compactas: ver ficha + selector rápido + cancelar + expandir */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
+                      if (idLoc) navigate(`/user/locales/${idLoc}`);
+                    }}
+                    className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] hover:bg-[#EFE7DE] transition-colors"
+                    title="Ver ficha del local"
+                  >
+                    <Info size={15} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => cambiarModoViaje(modoViaje === "DRIVING" ? "WALKING" : "DRIVING")}
+                    className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] hover:bg-[#EFE7DE] transition-colors"
+                    title={`Cambiar a ${modoViaje === "DRIVING" ? "Caminando" : "En auto"}`}
+                  >
+                    {modoViaje === "DRIVING" ? <Car size={15} /> : <Footprints size={15} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={cancelarRuta}
+                    className="px-3 py-1.5 rounded-xl bg-red-50 text-red-700 font-bold text-xs border border-red-200 hover:bg-red-100 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <X size={14} />
+                    <span>Cancelar</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTarjetaExpandidaEnRuta(true)}
+                    className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#8E7D7D] hover:bg-[#EFE7DE] transition-colors"
+                    title="Expandir detalles"
+                  >
+                    <ChevronUp size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* TARJETA COMPLETA (ANTES DE INICIAR O SI SE EXPANDIÓ) */
+              <div className="pointer-events-auto bg-white rounded-3xl p-3.5 sm:p-4 border border-[#EFE7DE] shadow-xl max-h-[42vh] overflow-y-auto relative animate-fadeIn">
+                {directions && (
+                  <button
+                    onClick={() => setTarjetaExpandidaEnRuta(false)}
+                    className="absolute top-2.5 right-11 text-[11px] font-bold text-[#7C0A1E] bg-[#FAF8F5] px-2.5 py-1 rounded-xl border border-[#EFE7DE] flex items-center gap-1 hover:bg-[#EFE7DE] transition-colors cursor-pointer"
+                    title="Minimizar barra"
+                  >
+                    <ChevronDown size={14} />
+                    <span>Minimizar</span>
+                  </button>
+                )}
+                <button
+                  onClick={cerrarTarjeta}
+                  className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-[#FAF8F5] flex items-center justify-center text-[#8E7D7D] cursor-pointer hover:bg-[#EFE7DE] transition-colors z-10"
+                  title="Cerrar"
+                >
+                  <X size={14} />
+                </button>
+
+                <div className="flex items-center gap-3 pr-8">
+                  <div
+                    onClick={() => {
+                      const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
+                      if (idLoc) navigate(`/user/locales/${idLoc}`);
+                    }}
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden shrink-0 border-2 border-[#EFE7DE] cursor-pointer hover:opacity-90 hover:scale-105 transition-all shadow-xs"
+                    title="Ver detalles completos del local"
+                  >
+                    <img
+                      src={
+                        localSeleccionado.logo ||
+                        "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=150"
+                      }
+                      alt={localSeleccionado.nombre_comercial}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <div
+                      onClick={() => {
+                        const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
+                        if (idLoc) navigate(`/user/locales/${idLoc}`);
+                      }}
+                      className="cursor-pointer group/title inline-block max-w-full"
+                      title="Ver información y catálogo del local"
+                    >
+                      <h3 className="font-bold text-sm text-[#2D1A1E] group-hover/title:text-[#7C0A1E] transition-colors truncate flex items-center gap-1.5">
+                        <span className="truncate">{localSeleccionado.nombre_comercial}</span>
+                        <span className="text-[10px] font-semibold text-[#7C0A1E] opacity-0 group-hover/title:opacity-100 transition-opacity shrink-0">
+                          Ver perfil →
+                        </span>
+                      </h3>
+                    </div>
+                    <p className="text-[11px] text-[#8E7D7D] truncate">
+                      {localSeleccionado.sucursales?.[0]?.direccion || "Chiclayo"}
+                    </p>
+                    
+                    {/* Badges de información verídica */}
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className="text-[#7C0A1E] font-semibold bg-[#FAF8F5] border border-[#EFE7DE] px-2 py-0.5 rounded-full text-[10px]">
+                        {localSeleccionado.categoria_nombre || localSeleccionado.categoria || "Comercio"}
+                      </span>
+                      <span className="text-[#C5A059] font-bold text-[10px] bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Sparkles size={10} />
+                        +{localSeleccionado.puntos_por_visita || 20} pts
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Distancia y tiempo estimado */}
+                {infoRuta && (
+                  <div className="flex items-center gap-2 mt-3 px-3 py-1.5 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] w-fit text-xs text-[#2D1A1E]">
+                    <span className="font-bold text-[#7C0A1E] flex items-center gap-1">
+                      <MapPin size={13} className="shrink-0" />
+                      {infoRuta.distancia}
+                    </span>
+                    <span className="text-[#C8BFB7]">•</span>
+                    <span className="text-[#59494B] font-medium flex items-center gap-1">
+                      <Clock size={13} className="shrink-0" />
+                      {infoRuta.tiempo}
+                    </span>
+                    {infoRuta.esRutaReal && (
+                      <span className="text-[9px] text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ml-1">
+                        Ruta activa
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Selector de Modo: En auto vs Caminando */}
+                <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-[#EFE7DE]">
+                  <span className="text-[11px] font-semibold text-[#8E7D7D]">Modo de viaje:</span>
+                  <div className="flex bg-[#FAF8F5] p-1 rounded-xl border border-[#EFE7DE] text-xs">
+                    <button
+                      type="button"
+                      onClick={() => cambiarModoViaje("DRIVING")}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        modoViaje === "DRIVING"
+                          ? "bg-white text-[#7C0A1E] shadow-sm border border-[#EFE7DE]"
+                          : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+                      }`}
+                    >
+                      <Car size={13} />
+                      <span>En auto</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cambiarModoViaje("WALKING")}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        modoViaje === "WALKING"
+                          ? "bg-white text-[#7C0A1E] shadow-sm border border-[#EFE7DE]"
+                          : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+                      }`}
+                    >
+                      <Footprints size={13} />
+                      <span>Caminando</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Botones de acción: Iniciar Ruta + Ver Perfil Directo */}
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
+                      if (idLoc) navigate(`/user/locales/${idLoc}`);
+                    }}
+                    className="py-2.5 px-3.5 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#EFE7DE] active:scale-[0.98] transition-all cursor-pointer shadow-2xs shrink-0"
+                    title="Ver toda la información del comercio"
+                  >
+                    <Info size={15} className="text-[#7C0A1E]" />
+                    <span>Ver Local</span>
+                  </button>
+
+                  {directions ? (
+                    <button
+                      onClick={cancelarRuta}
+                      className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-red-200 active:scale-[0.98] transition-all cursor-pointer hover:bg-red-100"
+                    >
+                      <X size={16} />
+                      Cancelar ruta
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => calcularRuta()}
+                      disabled={cargandoRuta}
+                      className="flex-1 py-2.5 rounded-2xl bg-[#7C0A1E] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer hover:bg-[#630718] shadow-xs"
+                    >
+                      <Navigation size={16} />
+                      {cargandoRuta
+                        ? "Calculando..."
+                        : `Iniciar ruta (${modoViaje === "WALKING" ? "A pie" : "Auto"})`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

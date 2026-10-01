@@ -14,6 +14,7 @@ router.get("/dashboard", AdminController.dashboard);
 router.get("/usuarios", AdminController.listarUsuarios);
 router.post("/usuarios", AdminController.crearUsuario);
 router.patch("/usuarios/:id", AdminController.actualizarUsuario);
+router.patch("/usuarios/:id/password", AdminController.cambiarPasswordUsuario);
 router.delete("/usuarios/:id", AdminController.eliminarUsuario);
 
 // Locales y Establecimientos (Admin)
@@ -26,6 +27,7 @@ router.delete("/locales/:id", AdminController.eliminarLocal);
 router.get("/tarjetas", AdminController.listarTarjetas);
 router.post("/tarjetas/stock", AdminController.registrarTarjetasStock);
 router.patch("/tarjetas/:id/estado", AdminController.cambiarEstadoTarjeta);
+router.patch("/tarjetas/:id/asignar", AdminController.asignarTarjetaCliente);
 
 // Moderación
 router.get("/moderacion", AdminController.moderacionPendiente);
@@ -62,6 +64,7 @@ router.get("/sellos", AdminController.listarSellos);
 router.post("/sellos", AdminController.crearSello);
 router.post("/sellos/:id/restablecer", AdminController.restablecerSello);
 router.patch("/sellos/:id", AdminController.actualizarSello);
+router.put("/sellos/:id", AdminController.actualizarSello);
 router.delete("/sellos/:id", AdminController.eliminarSello);
 
 // ===== NUEVO: Reglas de sellos (puntos por sello, límites, temporada) =====
@@ -84,6 +87,8 @@ router.patch("/canjes/:id/estado", AdminController.actualizarEstadoCanje);
 router.get("/notificaciones", AdminController.resumenNotificaciones);
 router.get("/auditoria", AdminController.listarAuditoria);
 router.get("/documentos-legales", AdminController.listarDocumentosLegales);
+router.post("/documentos-legales", AdminController.guardarDocumentoLegal);
+router.patch("/documentos-legales/:id", AdminController.guardarDocumentoLegal);
 router.get("/visitas", AdminController.listarVisitas);
 
 // ===== REPORTES Y ANALÍTICAS CONSOLIDADAS =====

@@ -116,7 +116,7 @@ export const CommerceLayout: React.FC = () => {
                   isActive
                     ? "bg-[#600616] text-[#FAF8F5] shadow-sm border-l-4 border-[#C5A059]"
                     : item.highlight
-                    ? "text-white hover:bg-white/10"
+                    ? "bg-white/10 text-white hover:bg-white/20"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 } ${collapsed ? "justify-center px-0" : ""}`
               }

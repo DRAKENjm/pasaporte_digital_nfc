@@ -2,11 +2,13 @@ export type ReaderMode = "USB_NFC" | "WEB_NFC" | "MANUAL";
 export interface CommercePreferences {
   modoLector: ReaderMode;
   sonidoLectura: boolean;
+  sonidoQr: boolean;
 }
 
 export const defaultCommercePreferences: CommercePreferences = {
   modoLector: "MANUAL",
   sonidoLectura: true,
+  sonidoQr: true,
 };
 
 export const isReaderMode = (value: unknown): value is ReaderMode =>
@@ -21,6 +23,7 @@ export function loadCommercePreferences(userId?: string): CommercePreferences {
     return {
       modoLector: isReaderMode(data?.modoLector) ? data.modoLector : defaultCommercePreferences.modoLector,
       sonidoLectura: typeof data?.sonidoLectura === "boolean" ? data.sonidoLectura : defaultCommercePreferences.sonidoLectura,
+      sonidoQr: typeof data?.sonidoQr === "boolean" ? data.sonidoQr : defaultCommercePreferences.sonidoQr,
     };
   } catch {
     return { ...defaultCommercePreferences };
@@ -28,7 +31,7 @@ export function loadCommercePreferences(userId?: string): CommercePreferences {
 }
 
 export function saveCommercePreferences(userId: string, preferences: CommercePreferences): void {
-  if (!userId || !isReaderMode(preferences.modoLector) || typeof preferences.sonidoLectura !== "boolean") {
+  if (!userId || !isReaderMode(preferences.modoLector) || typeof preferences.sonidoLectura !== "boolean" || typeof preferences.sonidoQr !== "boolean") {
     throw new Error("Preferencias de terminal inválidas");
   }
   // Dejar que el formulario informe si el navegador bloquea el almacenamiento.

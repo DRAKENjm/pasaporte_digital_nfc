@@ -8,6 +8,9 @@ const router = Router();
 // Registro público o autenticado
 router.post("/", ClaimsController.registrar);
 
+// Mis reclamaciones (usuario autenticado)
+router.get("/mis-reclamaciones", authMiddleware, ClaimsController.misReclamaciones);
+
 // Consulta pública por código de seguimiento
 router.get("/track/:codigo", ClaimsController.consultarPorCodigo);
 

@@ -29,11 +29,15 @@ import {
   Loader2,
   ShieldCheck,
   Coins,
+  Compass,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 
 const ITEMS_PER_PAGE = 10;
 
 const emptyForm = {
+  tipo: "LOCAL" as "LOCAL" | "LUGAR_TURISTICO",
   razon_social: "",
   ruc: "",
   direccion: "",
@@ -45,6 +49,9 @@ const emptyForm = {
   imagen_url: "",
   puntos_por_visita: 20,
   estado: "ACTIVO",
+  permite_autosellado: false,
+  radio_tolerancia_metros: 150,
+  requiere_foto: false,
 };
 
 const isValidGoogleMapsUrl = (url: string): boolean => {
@@ -82,6 +89,7 @@ export const AdminLocales = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
+  const [filtroTipo, setFiltroTipo] = useState<"TODOS" | "LOCAL" | "LUGAR_TURISTICO">("TODOS");
   const [pagina, setPagina] = useState(1);
 
   const [modalCrear, setModalCrear] = useState(false);
@@ -217,6 +225,12 @@ export const AdminLocales = () => {
     if (filtroEstado !== "TODOS") {
       result = result.filter((l) => l.estado === filtroEstado);
     }
+    if (filtroTipo !== "TODOS") {
+      result = result.filter((l) => {
+        const t = l.tipo || "LOCAL";
+        return t === filtroTipo;
+      });
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -230,7 +244,7 @@ export const AdminLocales = () => {
       );
     }
     return result;
-  }, [locales, filtroEstado, search]);
+  }, [locales, filtroEstado, filtroTipo, search]);
 
   // Filtrar usuarios comercio: excluir los que ya están asignados a otro local
   const usuariosDisponibles = useMemo(() => {
@@ -258,7 +272,20 @@ export const AdminLocales = () => {
 
   useEffect(() => {
     setPagina(1);
-  }, [search, filtroEstado]);
+  }, [search, filtroEstado, filtroTipo]);
+
+  const generarCodigoLugar = (): string => {
+    const existingRucs = new Set(locales.map((l) => String(l.ruc || "").trim()));
+    let nuevoCodigo = "";
+    let intentos = 0;
+    do {
+      // Formato numérico de 11 dígitos iniciando en 70 para lugares turísticos
+      const rand = Math.floor(100000000 + Math.random() * 900000000);
+      nuevoCodigo = `70${rand}`.slice(0, 11);
+      intentos++;
+    } while (existingRucs.has(nuevoCodigo) && intentos < 100);
+    return nuevoCodigo;
+  };
 
   const openCrear = () => {
     setForm(emptyForm);
@@ -280,7 +307,9 @@ export const AdminLocales = () => {
         ? `https://www.google.com/maps?q=${local.lat},${local.lng}`
         : "");
     setStaff(local.usuario_encargado_id ? String(local.usuario_encargado_id) : "");
+    const tipoLocal = local.tipo === "LUGAR_TURISTICO" ? "LUGAR_TURISTICO" : "LOCAL";
     setForm({
+      tipo: tipoLocal,
       razon_social: local.razon_social ?? local.nombre ?? "",
       ruc: local.ruc ?? "",
       direccion: local.direccion ?? "",
@@ -292,6 +321,9 @@ export const AdminLocales = () => {
       imagen_url: local.imagen_url ?? "",
       puntos_por_visita: (local as any).puntos_por_visita ?? 20,
       estado: local.estado ?? "ACTIVO",
+      permite_autosellado: tipoLocal === "LUGAR_TURISTICO" ? true : !!(local as any).permite_autosellado,
+      radio_tolerancia_metros: (local as any).radio_tolerancia_metros ?? 150,
+      requiere_foto: !!(local as any).requiere_foto,
     });
     setModalEditar(true);
   };
@@ -316,7 +348,7 @@ export const AdminLocales = () => {
     const e: Record<string, string> = {};
 
     if (!data.razon_social.trim()) {
-      e.razon_social = "El nombre del local es obligatorio";
+      e.razon_social = data.tipo === "LUGAR_TURISTICO" ? "El nombre del lugar es obligatorio" : "El nombre del local es obligatorio";
     } else if (data.razon_social.trim().length < 3) {
       e.razon_social = "El nombre debe tener al menos 3 caracteres";
     } else if (/^([a-zA-Z])\1+$/.test(data.razon_social.trim())) {
@@ -324,13 +356,13 @@ export const AdminLocales = () => {
     }
 
     if (!data.ruc.trim()) {
-      e.ruc = "El RUC es obligatorio";
+      e.ruc = data.tipo === "LUGAR_TURISTICO" ? "El identificador / RUC es obligatorio" : "El RUC es obligatorio";
     } else if (!/^\d{11}$/.test(data.ruc.trim())) {
       e.ruc = "El RUC debe tener exactamente 11 dígitos";
     }
 
     if (!data.direccion.trim()) {
-      e.direccion = "La dirección es obligatoria";
+      e.direccion = "La dirección o ubicación es obligatoria";
     } else if (data.direccion.trim().length < 5) {
       e.direccion = "La dirección debe tener al menos 5 caracteres";
     }
@@ -352,7 +384,9 @@ export const AdminLocales = () => {
     setBusy(true);
     try {
       const coords = parseGoogleMapsUrl(form.google_maps_url);
+      const isLugar = form.tipo === "LUGAR_TURISTICO";
       await api.post("/admin/locales", {
+        tipo: form.tipo,
         razon_social: form.razon_social,
         ruc: form.ruc,
         direccion: form.direccion,
@@ -365,14 +399,17 @@ export const AdminLocales = () => {
         horario: form.horario || null,
         imagen_url: form.imagen_url.trim() || null,
         puntos_por_visita: Number(form.puntos_por_visita) || 20,
-        usuario_id: staff || null,
+        usuario_id: isLugar ? null : (staff || null),
+        permite_autosellado: isLugar ? true : form.permite_autosellado,
+        radio_tolerancia_metros: Number(form.radio_tolerancia_metros) || 150,
+        requiere_foto: form.requiere_foto,
       });
-      showToast("Local creado con éxito", "success");
+      showToast(`${isLugar ? "Lugar turístico" : "Local"} creado con éxito`, "success");
       setModalCrear(false);
       await load();
     } catch (err: any) {
       showToast(
-        err.response?.data?.message || "No se pudo crear el local",
+        err.response?.data?.message || "No se pudo crear el registro",
         "error",
       );
     } finally {
@@ -387,7 +424,9 @@ export const AdminLocales = () => {
     setBusy(true);
     try {
       const coords = parseGoogleMapsUrl(form.google_maps_url);
+      const isLugar = form.tipo === "LUGAR_TURISTICO";
       await api.patch(`/admin/locales/${localSeleccionado.id}`, {
+        tipo: form.tipo,
         razon_social: form.razon_social,
         direccion: form.direccion,
         lat: coords?.lat ?? null,
@@ -400,9 +439,12 @@ export const AdminLocales = () => {
         imagen_url: form.imagen_url.trim() || null,
         puntos_por_visita: Number(form.puntos_por_visita) || 20,
         estado: form.estado,
-        usuario_id: staff || null,
+        usuario_id: isLugar ? null : (staff || null),
+        permite_autosellado: isLugar ? true : form.permite_autosellado,
+        radio_tolerancia_metros: Number(form.radio_tolerancia_metros) || 150,
+        requiere_foto: form.requiere_foto,
       });
-      showToast("Local actualizado", "success");
+      showToast("Registro actualizado", "success");
       setModalEditar(false);
       await load();
     } catch (err: any) {
@@ -472,10 +514,89 @@ export const AdminLocales = () => {
           </h4>
         </div>
 
+        {/* Selector de Tipo: Local Comercial vs Lugar Turístico */}
+        <div className="space-y-1.5 w-full text-left">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+            Tipo de Registro *
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setForm({
+                  ...form,
+                  tipo: "LOCAL",
+                  permite_autosellado: false,
+                })
+              }
+              className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 cursor-pointer ${
+                form.tipo === "LOCAL"
+                  ? "bg-[#7C0A1E]/10 border-[#7C0A1E] dark:border-[#C5A059] ring-2 ring-[#7C0A1E]/20"
+                  : "bg-white dark:bg-slate-900 border-[#EFE7DE] dark:border-slate-800 hover:bg-slate-50"
+              }`}
+            >
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  form.tipo === "LOCAL"
+                    ? "bg-[#7C0A1E] text-white"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                }`}
+              >
+                <Store className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                  Local Comercial / Negocio
+                </p>
+                <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400 mt-0.5 leading-snug">
+                  Cuenta con personal COMERCIO asignado para validar tarjetas NFC y canjear premios.
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const autoCode = generarCodigoLugar();
+                setForm({
+                  ...form,
+                  tipo: "LUGAR_TURISTICO",
+                  ruc: form.ruc && form.ruc.length === 11 && form.ruc.startsWith("70") ? form.ruc : autoCode,
+                  horario: "",
+                  permite_autosellado: true,
+                });
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 cursor-pointer ${
+                form.tipo === "LUGAR_TURISTICO"
+                  ? "bg-amber-500/10 border-amber-600 dark:border-amber-400 ring-2 ring-amber-500/20"
+                  : "bg-white dark:bg-slate-900 border-[#EFE7DE] dark:border-slate-800 hover:bg-slate-50"
+              }`}
+            >
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  form.tipo === "LUGAR_TURISTICO"
+                    ? "bg-amber-600 text-white"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                }`}
+              >
+                <Compass className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                  Lugar / Destino Turístico
+                </p>
+                <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400 mt-0.5 leading-snug">
+                  Sin personal ni horario comercial. Código único autogenerado y auto-sellado por GPS.
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
-            label="Razón Social o Nombre del Lugar / Local *"
-            placeholder="Ej: Cafetería Central S.A.C."
+            label={form.tipo === "LUGAR_TURISTICO" ? "Nombre del Destino / Lugar *" : "Razón Social o Nombre del Local *"}
+            placeholder={form.tipo === "LUGAR_TURISTICO" ? "Ej: Catedral de Chiclayo, Bosque de Pomac..." : "Ej: Cafetería Central S.A.C."}
             value={form.razon_social}
             required
             error={errors.razon_social}
@@ -484,26 +605,69 @@ export const AdminLocales = () => {
               if (errors.razon_social) setErrors({ ...errors, razon_social: "" });
             }}
           />
-          <Input
-            label="RUC *"
-            hint="11 dígitos numéricos"
-            placeholder="Ej: 20123456789"
-            value={form.ruc}
-            required
-            maxLength={11}
-            error={errors.ruc}
-            onChange={(e) => {
-              const val = e.target.value.replace(/\D/g, "").slice(0, 11);
-              setForm({ ...form, ruc: val });
-              if (errors.ruc) setErrors({ ...errors, ruc: "" });
-            }}
-          />
+
+          {form.tipo === "LUGAR_TURISTICO" ? (
+            <div className="space-y-1.5 w-full text-left">
+              <div className="flex items-center justify-between">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+                  Código de Identificación Único *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code = generarCodigoLugar();
+                    setForm({ ...form, ruc: code });
+                    if (errors.ruc) setErrors({ ...errors, ruc: "" });
+                  }}
+                  className="text-[10px] font-bold text-amber-600 hover:text-amber-700 dark:text-amber-400 flex items-center gap-1 hover:underline cursor-pointer"
+                  title="Generar otro código no repetido"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Regenerar código</span>
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  maxLength={11}
+                  value={form.ruc}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "").slice(0, 11);
+                    setForm({ ...form, ruc: val });
+                    if (errors.ruc) setErrors({ ...errors, ruc: "" });
+                  }}
+                  placeholder="Código único de 11 dígitos"
+                  className="input-base font-mono font-bold text-amber-900 dark:text-amber-300 bg-amber-500/5 border-amber-300 dark:border-amber-700/60"
+                />
+              </div>
+              <span className="text-[10px] text-amber-700 dark:text-amber-400 block">
+                Generado automáticamente sin duplicados. Puedes editarlo si requieres un código específico.
+              </span>
+              {errors.ruc && <p className="text-xs text-rose-500 mt-1">{errors.ruc}</p>}
+            </div>
+          ) : (
+            <Input
+              label="RUC *"
+              hint="11 dígitos numéricos"
+              placeholder="Ej: 20123456789"
+              value={form.ruc}
+              required
+              maxLength={11}
+              error={errors.ruc}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "").slice(0, 11);
+                setForm({ ...form, ruc: val });
+                if (errors.ruc) setErrors({ ...errors, ruc: "" });
+              }}
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5 w-full text-left">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
-              Categoría del Lugar / Local *
+              Categoría *
             </label>
             <select
               className="input-base"
@@ -512,10 +676,10 @@ export const AdminLocales = () => {
                 setForm({ ...form, categoria_id: e.target.value })
               }
             >
-              <option value="">Selecciona una categoría comercial...</option>
+              <option value="">Selecciona una categoría...</option>
               {categorias.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.icono_url ? `${c.icono_url} ` : "☕ "}{c.nombre}
+                  {c.icono_url ? `${c.icono_url} ` : "🏛️ "}{c.nombre}
                 </option>
               ))}
             </select>
@@ -523,7 +687,7 @@ export const AdminLocales = () => {
 
           <div className="space-y-1.5 w-full text-left">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
-              Puntos por Visita / Sello NFC *
+              Puntos por Visita / Sello *
             </label>
             <input
               type="number"
@@ -537,78 +701,93 @@ export const AdminLocales = () => {
               required
             />
             <span className="text-[10px] text-muted block">
-              Puntos acreditados al validar con NFC (por defecto 20 pts).
+              Puntos acreditados al sellar visita (por defecto 20 pts).
             </span>
           </div>
         </div>
 
-        <div className="space-y-1.5 w-full text-left pt-1">
-          <div className="flex items-center justify-between gap-2 pb-0.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
-              Usuario Encargado (Cuenta COMERCIO)
-            </label>
-            <button
-              type="button"
-              onClick={() => setModalNuevoUsuario(true)}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>+ Registrar nuevo usuario</span>
-            </button>
-          </div>
-
-          {usuariosDisponibles.length === 0 ? (
-            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-3 text-xs">
-              <div className="min-w-0">
-                <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">
-                  Sin usuarios COMERCIO disponibles
-                </p>
-                <p className="text-[11px] text-amber-700 dark:text-amber-300/80 truncate">
-                  Todos los usuarios existentes ya están asignados a otros locales.
-                </p>
-              </div>
+        {/* Solo mostrar asignación de encargado si es LOCAL comercial */}
+        {form.tipo === "LOCAL" ? (
+          <div className="space-y-1.5 w-full text-left pt-1">
+            <div className="flex items-center justify-between gap-2 pb-0.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+                Usuario Encargado (Cuenta COMERCIO)
+              </label>
               <button
                 type="button"
                 onClick={() => setModalNuevoUsuario(true)}
-                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer flex items-center gap-1"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>Crear cuenta ahora</span>
+                <span>+ Registrar nuevo usuario</span>
               </button>
             </div>
-          ) : (
-            <select
-              className="input-base"
-              value={staff}
-              onChange={(e) => setStaff(e.target.value)}
-            >
-              <option value="">Sin asignar por ahora (puedes asignarlo después)</option>
-              {usuariosDisponibles.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.nombres} {u.apellidos} · {u.email}
-                </option>
-              ))}
-            </select>
-          )}
 
-          <span className="text-[10px] text-muted block">
-            Este usuario podrá iniciar sesión en el portal Comercio para validar visitas y canjear premios. (Los usuarios ya asignados a otro local quedan excluidos automáticamente).
-          </span>
-        </div>
+            {usuariosDisponibles.length === 0 ? (
+              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">
+                    Sin usuarios COMERCIO disponibles
+                  </p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300/80 truncate">
+                    Todos los usuarios existentes ya están asignados a otros locales.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoUsuario(true)}
+                  className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer flex items-center gap-1"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Crear cuenta ahora</span>
+                </button>
+              </div>
+            ) : (
+              <select
+                className="input-base"
+                value={staff}
+                onChange={(e) => setStaff(e.target.value)}
+              >
+                <option value="">Sin asignar por ahora (puedes asignarlo después)</option>
+                {usuariosDisponibles.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nombres} {u.apellidos} · {u.email}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <span className="text-[10px] text-muted block">
+              Este usuario podrá iniciar sesión en el portal Comercio para validar visitas y canjear premios. (Los usuarios ya asignados a otro local quedan excluidos automáticamente).
+            </span>
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-2xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40 flex items-center gap-3 text-xs">
+            <span className="text-xl">🏛️</span>
+            <div>
+              <p className="font-bold text-sky-900 dark:text-sky-200">
+                Modalidad Lugar / Destino Turístico Activa
+              </p>
+              <p className="text-[11px] text-sky-700 dark:text-sky-300/80">
+                Los lugares turísticos <strong>no requieren personal validador, cuenta de usuario ni horario de atención cerrado</strong>. Los visitantes sellan su pasaporte de forma autónoma mediante GPS y foto comprobatoria.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 2. Ubicación y Horarios */}
+      {/* 2. Ubicación y Enlaces */}
       <div className="bg-[#FAF8F5]/80 dark:bg-slate-850/60 p-4 sm:p-5 rounded-2xl border border-[#EFE7DE] dark:border-slate-800 space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b border-[#EFE7DE] dark:border-slate-800">
           <MapPin className="w-4 h-4 text-[#7C0A1E] dark:text-[#C5A059]" />
           <h4 className="text-xs font-bold uppercase tracking-wider text-[#2D1A1E] dark:text-white">
-            Ubicación & Horarios de Atención
+            {form.tipo === "LUGAR_TURISTICO" ? "Ubicación del Destino Turístico" : "Ubicación & Horarios de Atención"}
           </h4>
         </div>
 
         <Input
-          label="Dirección Principal *"
-          placeholder="Ej: Av. Larco 1234, Miraflores, Lima"
+          label={form.tipo === "LUGAR_TURISTICO" ? "Dirección o Referencia del Lugar *" : "Dirección Principal *"}
+          placeholder="Ej: Plaza Mayor de Chiclayo / Av. Larco 1234"
           value={form.direccion}
           required
           error={errors.direccion}
@@ -618,15 +797,17 @@ export const AdminLocales = () => {
           }}
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className={form.tipo === "LUGAR_TURISTICO" ? "grid grid-cols-1" : "grid grid-cols-1 sm:grid-cols-2 gap-4"}>
+          {form.tipo === "LOCAL" && (
+            <Input
+              label="Horario de Atención"
+              placeholder="Ej: Lun a Sáb: 8:00 AM - 10:00 PM"
+              value={form.horario}
+              onChange={(e) => setForm({ ...form, horario: e.target.value })}
+            />
+          )}
           <Input
-            label="Horario de Atención"
-            placeholder="Ej: Lun a Sáb: 8:00 AM - 10:00 PM"
-            value={form.horario}
-            onChange={(e) => setForm({ ...form, horario: e.target.value })}
-          />
-          <Input
-            label="Enlace Google Maps (Opcional)"
+            label="Enlace Google Maps (Recomendado para GPS)"
             placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
             value={form.google_maps_url}
             error={errors.google_maps_url}
@@ -636,6 +817,74 @@ export const AdminLocales = () => {
                 setErrors({ ...errors, google_maps_url: "" });
             }}
           />
+        </div>
+
+        {/* Configuración de Auto-sellado para Lugares Turísticos */}
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📍</span>
+              <div>
+                <h5 className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                  Lugar Turístico / Auto-sellado por GPS
+                </h5>
+                <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400">
+                  Permite a los turistas sellar su pasaporte con su ubicación física sin requerir personal validador.
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.permite_autosellado}
+                onChange={(e) =>
+                  setForm({ ...form, permite_autosellado: e.target.checked })
+                }
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7C0A1E]"></div>
+            </label>
+          </div>
+
+          {form.permite_autosellado && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-500/20">
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-[#736868] dark:text-slate-400 mb-1">
+                  Radio de tolerancia (metros)
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  max="1000"
+                  value={form.radio_tolerancia_metros}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      radio_tolerancia_metros: Math.max(50, Number(e.target.value)),
+                    })
+                  }
+                  className="input-base font-bold text-xs"
+                />
+                <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-amber-500/20">
+                <div>
+                  <span className="text-xs font-bold text-[#2D1A1E] dark:text-white block">
+                    ¿Requiere foto de evidencia?
+                  </span>
+                  <span className="text-[10px] text-muted">Exige foto en el lugar para auto-sellar</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={form.requiere_foto}
+                  onChange={(e) =>
+                    setForm({ ...form, requiere_foto: e.target.checked })
+                  }
+                  className="w-4 h-4 text-[#7C0A1E] rounded"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -849,59 +1098,149 @@ export const AdminLocales = () => {
           </div>
         </div>
 
-        <div className="space-y-1.5 w-full text-left pt-1">
-          <div className="flex items-center justify-between gap-2 pb-0.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
-              Usuario Encargado (Cuenta COMERCIO)
-            </label>
+        {/* Selector de Tipo en Edición */}
+        <div className="space-y-1.5 w-full text-left">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+            Tipo de Registro *
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => setModalNuevoUsuario(true)}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
+              onClick={() =>
+                setForm({
+                  ...form,
+                  tipo: "LOCAL",
+                })
+              }
+              className={`p-3 rounded-2xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                form.tipo === "LOCAL"
+                  ? "bg-[#7C0A1E]/10 border-[#7C0A1E] dark:border-[#C5A059] ring-2 ring-[#7C0A1E]/20"
+                  : "bg-white dark:bg-slate-900 border-[#EFE7DE] dark:border-slate-800 hover:bg-slate-50"
+              }`}
             >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>+ Registrar nuevo usuario</span>
-            </button>
-          </div>
-
-          {usuariosDisponibles.length === 0 ? (
-            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-3 text-xs">
-              <div className="min-w-0">
-                <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">
-                  Sin usuarios COMERCIO disponibles
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  form.tipo === "LOCAL"
+                    ? "bg-[#7C0A1E] text-white"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                }`}
+              >
+                <Store className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                  Local Comercial
                 </p>
-                <p className="text-[11px] text-amber-700 dark:text-amber-300/80 truncate">
-                  Todos los usuarios existentes ya están asignados a otros locales.
+                <p className="text-[10px] text-[#8E7D7D] dark:text-slate-400">
+                  Valida con lector NFC y personal
                 </p>
               </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setForm({
+                  ...form,
+                  tipo: "LUGAR_TURISTICO",
+                  permite_autosellado: true,
+                })
+              }
+              className={`p-3 rounded-2xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                form.tipo === "LUGAR_TURISTICO"
+                  ? "bg-amber-500/10 border-amber-600 dark:border-amber-400 ring-2 ring-amber-500/20"
+                  : "bg-white dark:bg-slate-900 border-[#EFE7DE] dark:border-slate-800 hover:bg-slate-50"
+              }`}
+            >
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  form.tipo === "LUGAR_TURISTICO"
+                    ? "bg-amber-600 text-white"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                }`}
+              >
+                <Compass className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                  Lugar Turístico
+                </p>
+                <p className="text-[10px] text-[#8E7D7D] dark:text-slate-400">
+                  Auto-sellado GPS (sin personal)
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Solo mostrar asignación de personal si es LOCAL comercial */}
+        {form.tipo === "LOCAL" ? (
+          <div className="space-y-1.5 w-full text-left pt-1">
+            <div className="flex items-center justify-between gap-2 pb-0.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+                Usuario Encargado (Cuenta COMERCIO)
+              </label>
               <button
                 type="button"
                 onClick={() => setModalNuevoUsuario(true)}
-                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer flex items-center gap-1"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7C0A1E] dark:text-[#E8D3A2] hover:underline cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>Crear cuenta ahora</span>
+                <span>+ Registrar nuevo usuario</span>
               </button>
             </div>
-          ) : (
-            <select
-              className="input-base"
-              value={staff}
-              onChange={(e) => setStaff(e.target.value)}
-            >
-              <option value="">Sin usuario asignado</option>
-              {usuariosDisponibles.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.nombres} {u.apellidos} · {u.email}
-                </option>
-              ))}
-            </select>
-          )}
 
-          <span className="text-[10px] text-muted block">
-            Puedes cambiar o reasignar qué cuenta de comercio administra y valida las visitas de este local.
-          </span>
-        </div>
+            {usuariosDisponibles.length === 0 ? (
+              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">
+                    Sin usuarios COMERCIO disponibles
+                  </p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300/80 truncate">
+                    Todos los usuarios existentes ya están asignados a otros locales.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoUsuario(true)}
+                  className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition cursor-pointer flex items-center gap-1"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Crear cuenta ahora</span>
+                </button>
+              </div>
+            ) : (
+              <select
+                className="input-base"
+                value={staff}
+                onChange={(e) => setStaff(e.target.value)}
+              >
+                <option value="">Sin usuario asignado</option>
+                {usuariosDisponibles.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nombres} {u.apellidos} · {u.email}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <span className="text-[10px] text-muted block">
+              Puedes cambiar o reasignar qué cuenta de comercio administra y valida las visitas de este local.
+            </span>
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-2xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40 flex items-center gap-3 text-xs">
+            <span className="text-xl">🏛️</span>
+            <div>
+              <p className="font-bold text-sky-900 dark:text-sky-200">
+                Modalidad Lugar / Destino Turístico Activa
+              </p>
+              <p className="text-[11px] text-sky-700 dark:text-sky-300/80">
+                Sin personal físico. Los visitantes obtendrán el sello de forma autónoma mediante GPS y foto comprobatoria.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. Ubicación del Lugar / Local */}
@@ -924,14 +1263,17 @@ export const AdminLocales = () => {
           }}
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className={form.tipo === "LUGAR_TURISTICO" ? "grid grid-cols-1" : "grid grid-cols-1 sm:grid-cols-2 gap-4"}>
+          {form.tipo === "LOCAL" && (
+            <Input
+              label="Horario de Atención"
+              placeholder="Ej: Lun a Sáb: 8:00 AM - 10:00 PM"
+              value={form.horario}
+              onChange={(e) => setForm({ ...form, horario: e.target.value })}
+            />
+          )}
           <Input
-            label="Horario de Atención"
-            value={form.horario}
-            onChange={(e) => setForm({ ...form, horario: e.target.value })}
-          />
-          <Input
-            label="Enlace Google Maps (Opcional)"
+            label="Enlace Google Maps (Recomendado para GPS)"
             placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
             value={form.google_maps_url}
             error={errors.google_maps_url}
@@ -941,6 +1283,74 @@ export const AdminLocales = () => {
                 setErrors({ ...errors, google_maps_url: "" });
             }}
           />
+        </div>
+
+        {/* Configuración de Auto-sellado para Lugares Turísticos */}
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📍</span>
+              <div>
+                <h5 className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                  Lugar Turístico / Auto-sellado por GPS
+                </h5>
+                <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400">
+                  Permite a los turistas sellar su pasaporte con su ubicación física sin requerir personal validador.
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.permite_autosellado}
+                onChange={(e) =>
+                  setForm({ ...form, permite_autosellado: e.target.checked })
+                }
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7C0A1E]"></div>
+            </label>
+          </div>
+
+          {form.permite_autosellado && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-500/20">
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-[#736868] dark:text-slate-400 mb-1">
+                  Radio de tolerancia (metros)
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  max="1000"
+                  value={form.radio_tolerancia_metros}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      radio_tolerancia_metros: Math.max(50, Number(e.target.value)),
+                    })
+                  }
+                  className="input-base font-bold text-xs"
+                />
+                <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-amber-500/20">
+                <div>
+                  <span className="text-xs font-bold text-[#2D1A1E] dark:text-white block">
+                    ¿Requiere foto de evidencia?
+                  </span>
+                  <span className="text-[10px] text-muted">Exige foto en el lugar para auto-sellar</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={form.requiere_foto}
+                  onChange={(e) =>
+                    setForm({ ...form, requiere_foto: e.target.checked })
+                  }
+                  className="w-4 h-4 text-[#7C0A1E] rounded"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1282,6 +1692,15 @@ export const AdminLocales = () => {
         </div>
         <select
           className="input-base w-full sm:w-44 text-xs font-semibold shrink-0"
+          value={filtroTipo}
+          onChange={(e) => setFiltroTipo(e.target.value as any)}
+        >
+          <option value="TODOS">Todos los tipos</option>
+          <option value="LOCAL">🏪 Locales Comerciales</option>
+          <option value="LUGAR_TURISTICO">🏛️ Lugares Turísticos</option>
+        </select>
+        <select
+          className="input-base w-full sm:w-44 text-xs font-semibold shrink-0"
           value={filtroEstado}
           onChange={(e) => setFiltroEstado(e.target.value)}
         >
@@ -1336,14 +1755,34 @@ export const AdminLocales = () => {
                               className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-2xs shrink-0"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200/60 dark:border-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0">
-                              <Store className="w-5 h-5" />
+                            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                              l.tipo === "LUGAR_TURISTICO"
+                                ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200/60 dark:border-amber-500/20 text-amber-600 dark:text-amber-400"
+                                : "bg-teal-50 dark:bg-teal-500/10 border-teal-200/60 dark:border-teal-500/20 text-teal-600 dark:text-teal-400"
+                            }`}>
+                              {l.tipo === "LUGAR_TURISTICO" ? <Compass className="w-5 h-5" /> : <Store className="w-5 h-5" />}
                             </div>
                           )}
                           <div className="min-w-0">
-                            <strong className="text-slate-900 dark:text-white font-semibold block truncate max-w-[200px]">
-                              {l.razon_social}
-                            </strong>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <strong className="text-slate-900 dark:text-white font-semibold truncate max-w-[170px]">
+                                {l.razon_social}
+                              </strong>
+                              {l.tipo === "LUGAR_TURISTICO" ? (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                  Lugar Turístico
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                  Local
+                                </span>
+                              )}
+                              {Boolean((l as any).permite_autosellado) && (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700">
+                                  GPS Auto-sello
+                                </span>
+                              )}
+                            </div>
                             {l.nombre && l.nombre !== l.razon_social && (
                               <span className="text-[11px] text-muted truncate block max-w-[200px]">
                                 {l.nombre}
@@ -1374,7 +1813,11 @@ export const AdminLocales = () => {
                         )}
                       </td>
                       <td className="p-3.5">
-                        {l.usuario_encargado_email ? (
+                        {l.tipo === "LUGAR_TURISTICO" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-50 dark:bg-sky-950/30 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/40">
+                            Sin personal (Auto-sellado)
+                          </span>
+                        ) : l.usuario_encargado_email ? (
                           <div className="min-w-0">
                             <span className="font-bold text-slate-900 dark:text-white block truncate max-w-[170px]">
                               {l.usuario_encargado_nombre || "Encargado"}
@@ -1425,14 +1868,16 @@ export const AdminLocales = () => {
                           >
                             <SquarePen className="w-4 h-4" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => openPersonal(l)}
-                            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                            title="Asignar personal COMERCIO"
-                          >
-                            <UserPlus className="w-3.5 h-3.5" />
-                          </button>
+                          {l.tipo !== "LUGAR_TURISTICO" && (
+                            <button
+                              type="button"
+                              onClick={() => openPersonal(l)}
+                              className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                              title="Asignar personal COMERCIO"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => openEliminar(l)}
@@ -1643,37 +2088,51 @@ export const AdminLocales = () => {
                 </div>
               </div>
 
-              {/* Horario */}
-              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
-                  <Clock className="w-4 h-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    Horario de atención
-                  </p>
-                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200 mt-0.5 leading-relaxed">
-                    {localSeleccionado.horario || "No especificado"}
-                  </p>
-                </div>
-              </div>
-
-              {/* Usuario Encargado */}
-              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0 mt-0.5">
-                  <UserPlus className="w-4 h-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    Usuario Encargado (Comercio)
-                  </p>
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
-                    {localSeleccionado.usuario_encargado_nombre || "Sin usuario asignado"}
-                  </p>
-                  {localSeleccionado.usuario_encargado_email && (
-                    <p className="text-[11px] text-muted font-mono truncate">
-                      {localSeleccionado.usuario_encargado_email}
+              {/* Horario (Solo para Locales Comerciales) */}
+              {localSeleccionado.tipo !== "LUGAR_TURISTICO" && (
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Horario de atención
                     </p>
+                    <p className="text-xs font-medium text-slate-800 dark:text-slate-200 mt-0.5 leading-relaxed">
+                      {localSeleccionado.horario || "No especificado"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Usuario Encargado o Modo Auto-sellado */}
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                  localSeleccionado.tipo === "LUGAR_TURISTICO"
+                    ? "bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                    : "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                }`}>
+                  {localSeleccionado.tipo === "LUGAR_TURISTICO" ? <Compass className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    {localSeleccionado.tipo === "LUGAR_TURISTICO" ? "Modalidad Operativa" : "Usuario Encargado (Comercio)"}
+                  </p>
+                  {localSeleccionado.tipo === "LUGAR_TURISTICO" ? (
+                    <p className="text-xs font-bold text-amber-800 dark:text-amber-300 mt-0.5">
+                      Lugar Turístico (Auto-sellado GPS)
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
+                        {localSeleccionado.usuario_encargado_nombre || "Sin usuario asignado"}
+                      </p>
+                      {localSeleccionado.usuario_encargado_email && (
+                        <p className="text-[11px] text-muted font-mono truncate">
+                          {localSeleccionado.usuario_encargado_email}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -1850,6 +2309,8 @@ export const AdminLocales = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Modal Cambiar Contraseña del Encargado del Local */}
     </div>
   );
 };

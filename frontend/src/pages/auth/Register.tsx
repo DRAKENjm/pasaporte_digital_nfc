@@ -1,3 +1,4 @@
+import { LegalLink } from "../../components/common/LegalLink";
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, UserPlus, ShieldCheck } from "lucide-react";
@@ -26,7 +27,7 @@ export const Register: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await register(form);
+      await register({...form, nombres: form.nombres.trim(), apellidos: form.apellidos.trim(), email: form.email.trim()});
       showToast(
         "Cuenta de cliente creada exitosamente. Inicie sesión para comenzar.",
         "success",
@@ -40,7 +41,7 @@ export const Register: React.FC = () => {
   };
 
   return (
-    <div className="bg-white border border-slate-200 p-6 sm:p-8 rounded-2xl shadow-sm space-y-6">
+    <div className="bg-white border border-[#EFE7DE] p-6 sm:p-8 rounded-3xl shadow-sm space-y-6">
       <div className="text-center space-y-1">
         <h2 className="text-xl font-black tracking-tight text-slate-900">
           Registro de Cliente
@@ -95,13 +96,13 @@ export const Register: React.FC = () => {
         />
 
         <p className="text-[11px] text-slate-500 leading-tight">
-          Al registrarse, declara aceptar los términos del servicio y la política de privacidad de la red aliada.
+          Al registrarse, declara aceptar los <LegalLink type="TERMINOS_CONDICIONES">términos del servicio</LegalLink> y la <LegalLink type="POLITICA_PRIVACIDAD">política de privacidad</LegalLink>.
         </p>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 bg-sky-700 hover:bg-sky-800 disabled:opacity-50 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-xs transition"
+          className="w-full py-3 bg-[#7C0A1E] hover:bg-[#600616] disabled:opacity-50 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-xs transition"
         >
           {loading ? (
             "Creando pasaporte..."
@@ -119,7 +120,7 @@ export const Register: React.FC = () => {
           ¿Ya tiene una cuenta registrada?{" "}
           <Link
             to="/auth/login"
-            className="font-bold text-sky-700 hover:underline"
+            className="font-bold text-[#7C0A1E] hover:underline"
           >
             Iniciar sesión
           </Link>

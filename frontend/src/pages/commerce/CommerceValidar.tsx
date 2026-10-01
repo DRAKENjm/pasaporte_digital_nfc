@@ -13,13 +13,17 @@ import {
   ArrowRight,
   RefreshCw,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  QrCode,
+  Camera,
+  ScanLine
 } from "lucide-react";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
 import { useAuth } from "../../hooks/useAuth";
 import { useNFCReader } from "../../hooks/useNFCReader";
 import { loadCommercePreferences } from "../../utils/commercePreferences";
+import { QRScanner } from "../../components/nfc/QRScanner";
 
 export const CommerceValidar: React.FC = () => {
   const { user } = useAuth();
@@ -30,6 +34,10 @@ export const CommerceValidar: React.FC = () => {
   const audioRef = useRef<AudioContext | null>(null);
   const requestPending = useRef(false);
 
+  // Modo de validación: NFC o QR de Respaldo
+  const [metodoValidacion, setMetodoValidacion] = useState<"NFC" | "QR">("NFC");
+  const [mostrarCamaraQr, setMostrarCamaraQr] = useState(false);
+
   // 4 Estados del Flujo Principal
   // 1: WAITING (LISTO PARA LEER)
   // 2: IDENTIFIED (CLIENTE IDENTIFICADO + DETALLES DE COMPRA)
@@ -38,6 +46,7 @@ export const CommerceValidar: React.FC = () => {
   const [step, setStep] = useState<"WAITING" | "IDENTIFIED" | "SUCCESS">("WAITING");
   
   const [uidInput, setUidInput] = useState("");
+  const [qrInput, setQrInput] = useState("");
   const [clienteData, setClienteData] = useState<any>(null);
   const [montoCompra, setMontoCompra] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,6 +69,30 @@ export const CommerceValidar: React.FC = () => {
     void audioRef.current?.close().catch(() => {});
     audioRef.current = null;
   }, []);
+
+  const emitirBeep = (frecuencia = 880) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      audioRef.current ??= new AudioCtx();
+      if (audioRef.current.state === "suspended") {
+        void audioRef.current.resume().catch(() => {});
+      }
+      const audio = audioRef.current;
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.frequency.setValueAtTime(frecuencia, audio.currentTime);
+      gain.gain.setValueAtTime(0.08, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.18);
+      osc.connect(gain);
+      gain.connect(audio.destination);
+      osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+      osc.start();
+      osc.stop(audio.currentTime + 0.18);
+    } catch {
+      // Audio playback fallback
+    }
+  };
 
   const cargarSellosDeSucursal = async (idSucursal: string) => {
     const res = await api.get(`/establishments/me/sellos?id_sucursal=${encodeURIComponent(idSucursal)}`);
@@ -105,9 +138,41 @@ export const CommerceValidar: React.FC = () => {
       });
       setClienteData(res.data.data);
       setStep("IDENTIFIED");
+      if (preferences.sonidoLectura) {
+        emitirBeep(880);
+      }
       showToast("¡Cliente identificado con éxito!", "success");
     } catch (err: any) {
       showToast(err?.response?.data?.message || "Tarjeta no registrada o inactiva", "error");
+    } finally {
+      requestPending.current = false;
+      setLoading(false);
+    }
+  };
+
+  // 1.B Identificar por Código QR de Respaldo
+  const handleIdentificarQr = async (codigo = qrInput) => {
+    if (requestPending.current || loadingSucursales || !selectedSucursal) return;
+    if (!codigo.trim()) {
+      showToast("Escanea o escribe el código QR de respaldo", "error");
+      return;
+    }
+
+    setMostrarCamaraQr(false);
+    requestPending.current = true;
+    setLoading(true);
+    try {
+      const res = await api.post("/nfc/identificar", {
+        qr_code: codigo.trim()
+      });
+      setClienteData(res.data.data);
+      setStep("IDENTIFIED");
+      if (preferences.sonidoQr) {
+        emitirBeep(1046);
+      }
+      showToast("¡Cliente identificado por QR de respaldo!", "success");
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Código QR no válido o inactivo", "error");
     } finally {
       requestPending.current = false;
       setLoading(false);
@@ -132,14 +197,6 @@ export const CommerceValidar: React.FC = () => {
       return;
     }
 
-    if (preferences.sonidoLectura) {
-      try {
-        audioRef.current ??= new AudioContext();
-        void audioRef.current.resume().catch(() => {});
-      } catch {
-        // La visita puede registrarse aunque el navegador no admita audio.
-      }
-    }
     requestPending.current = true;
     setLoading(true);
     try {
@@ -148,28 +205,18 @@ export const CommerceValidar: React.FC = () => {
         id_tarjeta: clienteData.id_tarjeta,
         id_sucursal: selectedSucursal,
         monto_compra: montoCompra,
-        id_programa: selectedPrograma || undefined
+        id_programa: selectedPrograma || undefined,
+        metodo_validacion: clienteData.metodo_identificacion || metodoValidacion,
       });
 
       setResultadoVisita(res.data.data);
       setStep("SUCCESS");
       showToast("¡Visita registrada, sello y puntos acreditados!", "success");
-      if (preferences.sonidoLectura && audioRef.current?.state === "running") {
-        try {
-          const audio = audioRef.current;
-          const oscillator = audio.createOscillator();
-          const gain = audio.createGain();
-          oscillator.frequency.value = 880;
-          gain.gain.setValueAtTime(0.08, audio.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.2);
-          oscillator.connect(gain);
-          gain.connect(audio.destination);
-          oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-          oscillator.start();
-          oscillator.stop(audio.currentTime + 0.2);
-        } catch {
-          // Un fallo de sonido no debe convertir una visita confirmada en un error.
-        }
+      const sonidoHabilitado = (clienteData.metodo_identificacion === "QR" || metodoValidacion === "QR") 
+        ? preferences.sonidoQr 
+        : preferences.sonidoLectura;
+      if (sonidoHabilitado) {
+        emitirBeep(880);
       }
     } catch (err: any) {
       showToast(err?.response?.data?.message || "Error al registrar la visita", "error");
@@ -187,12 +234,14 @@ export const CommerceValidar: React.FC = () => {
     setResultadoVisita(null);
     setMontoCompra("");
     setUidInput("");
+    setQrInput("");
+    setMostrarCamaraQr(false);
   };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[#2D1A1E] font-serif">Terminal de Validación NFC</h1>
           <p className="text-xs text-[#8E7D7D] mt-0.5">
@@ -201,8 +250,8 @@ export const CommerceValidar: React.FC = () => {
         </div>
 
         {sucursales.length > 1 && (
-          <div className="flex items-center gap-2 bg-white border border-[#EFE7DE] px-3 py-1.5 rounded-xl text-xs font-semibold text-[#2D1A1E]">
-            <Store className="w-4 h-4 text-[#7C0A1E]" />
+          <div className="flex items-center gap-2 bg-white border border-[#EFE7DE] px-3 py-2 rounded-xl text-xs font-semibold text-[#2D1A1E] w-full sm:w-auto">
+            <Store className="w-4 h-4 text-[#7C0A1E] shrink-0" />
             <select
               value={selectedSucursal || ""}
               disabled={loading || isScanning || step === "SUCCESS"}
@@ -244,8 +293,46 @@ export const CommerceValidar: React.FC = () => {
         </p>
       )}
 
-      {/* ESTADO 1: LISTO PARA LEER */}
+      {/* SELECTOR DE MÉTODO DE VALIDACIÓN: NFC vs QR DE RESPALDO */}
       {step === "WAITING" && (
+        <div className="flex justify-center">
+          <div className="bg-white p-1 rounded-2xl border border-[#EFE7DE] shadow-xs flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setMetodoValidacion("NFC");
+                setMostrarCamaraQr(false);
+              }}
+              className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                metodoValidacion === "NFC"
+                  ? "bg-[#7C0A1E] text-white shadow-xs"
+                  : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+              }`}
+            >
+              <Wifi size={14} className="rotate-90" />
+              <span>Lector Tarjeta NFC</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMetodoValidacion("QR");
+                stopScan();
+              }}
+              className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                metodoValidacion === "QR"
+                  ? "bg-[#7C0A1E] text-white shadow-xs"
+                  : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+              }`}
+            >
+              <QrCode size={14} />
+              <span>QR de Respaldo</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ESTADO 1: LISTO PARA LEER (NFC O QR) */}
+      {step === "WAITING" && metodoValidacion === "NFC" && (
         <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#EFE7DE] shadow-sm text-center flex flex-col items-center justify-center space-y-6 animate-fadeIn">
           {/* Ilustración de Ondas NFC Animadas */}
           <div className="relative w-40 h-40 flex items-center justify-center">
@@ -258,7 +345,7 @@ export const CommerceValidar: React.FC = () => {
 
           <div className="space-y-1 max-w-sm">
             <span className="text-[11px] font-black uppercase tracking-widest text-[#C5A059] bg-amber-50 px-3 py-1 rounded-full border border-[#C5A059]/30">
-              LISTO PARA LEER
+              LISTO PARA LEER NFC
             </span>
             <h2 className="text-2xl font-black text-[#2D1A1E] pt-2">
               {preferences.modoLector === "MANUAL" ? "Ingresa el UID de la tarjeta" : "Acerca la tarjeta NFC"}
@@ -319,6 +406,75 @@ export const CommerceValidar: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ESTADO 1.B: VALIDACIÓN POR QR DE RESPALDO */}
+      {step === "WAITING" && metodoValidacion === "QR" && (
+        <div className="bg-white rounded-3xl p-8 sm:p-10 border border-[#EFE7DE] shadow-sm text-center flex flex-col items-center justify-center space-y-6 animate-fadeIn">
+          <div className="w-20 h-20 rounded-3xl bg-amber-50 border border-[#C5A059]/30 text-[#7C0A1E] flex items-center justify-center shadow-inner">
+            <QrCode size={40} className="text-[#7C0A1E]" />
+          </div>
+
+          <div className="space-y-1 max-w-sm">
+            <span className="text-[11px] font-black uppercase tracking-widest text-[#C5A059] bg-amber-50 px-3 py-1 rounded-full border border-[#C5A059]/30">
+              RESPALDO DIGITAL
+            </span>
+            <h2 className="text-2xl font-black text-[#2D1A1E] pt-2">
+              Escanear QR del Cliente
+            </h2>
+            <p className="text-xs text-[#8E7D7D]">
+              Si el cliente no llevó su tarjeta NFC física, escanea con la cámara su pantalla o escribe su código de pasaporte.
+            </p>
+          </div>
+
+          {/* Cámara Scanner QR */}
+          <div className="w-full max-w-md space-y-3">
+            <button
+              type="button"
+              onClick={() => setMostrarCamaraQr(!mostrarCamaraQr)}
+              className="w-full py-3 px-4 rounded-2xl bg-[#FAF8F5] border border-[#C5A059] text-[#7C0A1E] text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-50 transition-colors"
+            >
+              <Camera size={16} />
+              <span>{mostrarCamaraQr ? "Cerrar cámara" : "Escanear con cámara del dispositivo"}</span>
+            </button>
+
+            {mostrarCamaraQr && (
+              <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#EFE7DE]">
+                <QRScanner
+                  onScanCode={(code) => {
+                    setQrInput(code);
+                    void handleIdentificarQr(code);
+                  }}
+                />
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleIdentificarQr();
+              }}
+              className="flex gap-2 pt-2"
+            >
+              <input
+                type="text"
+                aria-label="Código QR o código de cliente"
+                disabled={loading}
+                placeholder="Código de Respaldo (ej. NFC-101234 o CLI-100234)"
+                value={qrInput}
+                onChange={(e) => setQrInput(e.target.value)}
+                className="flex-1 px-4 py-3 rounded-2xl border border-[#EFE7DE] text-xs font-mono font-bold text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
+              />
+              <button
+                type="submit"
+                disabled={loading || loadingSucursales || !selectedSucursal}
+                className="px-6 py-3 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] active:scale-95 transition-all shadow-md flex items-center gap-1.5"
+              >
+                {loading ? <RotateCw className="w-4 h-4 animate-spin" /> : "VALIDAR QR"}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 

@@ -1,0 +1,14 @@
+.user-surface { overflow-wrap: anywhere; }
+.user-surface main { min-width: 0; }
+.user-surface nav { padding-bottom: max(.5rem, env(safe-area-inset-bottom)); }
+.user-surface main > div { min-height: calc(100dvh - 6rem); }
+.user-surface input, .user-surface select, .auth-surface input { font-size: 16px; }
+.user-surface button, .user-surface select { touch-action: manipulation; }
+.user-surface [role="dialog"] { overscroll-behavior: contain; }
+@media(min-width: 768px) {
+  .user-surface main > div.max-w-md { max-width: 100%; }
+  .user-surface main > div { padding-bottom: 2rem; }
+}
+@media(prefers-reduced-motion: reduce) {
+  .user-surface *, .auth-surface * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

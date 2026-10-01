@@ -22,7 +22,6 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useLanguage } from "../../context/LanguageContext";
-import type { Lang } from "../../i18n/translations";
 
 const IDIOMAS = [
   { code: "es", label: "Español", flag: "🇵🇪" },
@@ -134,7 +133,7 @@ export const PerfilPage: React.FC = () => {
 
   const cambiarIdioma = async (code: IdiomaCode) => {
     setIdioma(code);
-    setLang(code as Lang);
+    setLang(code);
     try {
       await api.patch("/auth/preferencias", { idioma: code });
     } catch {
@@ -577,8 +576,8 @@ export const PerfilPage: React.FC = () => {
           <ChevronRight size={16} className="text-[#8E7D7D]" />
         </Link>
 
-        <button
-          onClick={() => abrirLegal("terminos")}
+        <Link
+          to="/user/legal?tipo=terminos"
           className="w-full flex items-center justify-between p-3.5 hover:bg-[#FAF8F5] transition-colors border-b border-[#EFE7DE] text-left"
         >
           <div className="flex items-center space-x-3 text-[#2D1A1E]">
@@ -586,10 +585,10 @@ export const PerfilPage: React.FC = () => {
             <span className="text-xs font-medium">Términos y condiciones</span>
           </div>
           <ChevronRight size={16} className="text-[#8E7D7D]" />
-        </button>
+        </Link>
 
-        <button
-          onClick={() => abrirLegal("privacidad")}
+        <Link
+          to="/user/legal?tipo=privacidad"
           className="w-full flex items-center justify-between p-3.5 hover:bg-[#FAF8F5] transition-colors text-left"
         >
           <div className="flex items-center space-x-3 text-[#2D1A1E]">
@@ -597,7 +596,7 @@ export const PerfilPage: React.FC = () => {
             <span className="text-xs font-medium">Política de privacidad</span>
           </div>
           <ChevronRight size={16} className="text-[#8E7D7D]" />
-        </button>
+        </Link>
       </div>
 
       <button

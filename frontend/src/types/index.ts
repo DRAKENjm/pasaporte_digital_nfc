@@ -22,6 +22,8 @@ export interface User {
   avatar_url?: string;
   phone?: string;
   telefono?: string;
+  codigo_cliente?: string;
+  id_cliente?: string | number;
 }
 
 export interface NivelPasaporte {
@@ -68,6 +70,10 @@ export interface Establecimiento {
   usuario_encargado_email?: string;
   usuario_encargado_nombre?: string;
   recompensas?: any[];
+  tipo?: "LOCAL" | "LUGAR_TURISTICO" | string;
+  permite_autosellado?: number | boolean;
+  radio_tolerancia_metros?: number;
+  requiere_foto?: number | boolean;
 }
 
 export interface ReglaSello {

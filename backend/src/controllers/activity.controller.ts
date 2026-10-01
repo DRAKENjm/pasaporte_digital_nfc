@@ -70,11 +70,10 @@ export const ActivityController = {
           e.logo AS establecimiento_logo,
           sd.numero_sello,
           sd.estado AS sello_estado,
-          COALESCE(sd.meta_sellos_snapshot, ps.meta_sellos) AS meta_sellos,
-          COALESCE(sd.nombre_sello_snapshot, ps.nombre_sello) AS nombre_sello,
-          COALESCE(sd.imagen_sello_snapshot, ps.imagen_sello) AS imagen_sello,
-          COALESCE(sd.color_sello_snapshot, ps.color_sello, '#7C0A1E') AS color_sello,
-          sd.puntos_sello_snapshot AS puntos_por_sello
+          ps.meta_sellos,
+          ps.nombre_sello,
+          ps.imagen_sello,
+          COALESCE(ps.color_sello, '#7C0A1E') AS color_sello
          FROM visitas v
          JOIN sucursales s ON s.id_sucursal = v.id_sucursal
          JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
@@ -129,6 +128,7 @@ export const ActivityController = {
       next(error);
     }
   },
+
   /** Sellos del usuario agrupados por establecimiento y categoría */
   async misSellos(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
@@ -155,6 +155,7 @@ export const ActivityController = {
           e.telefono,
           e.email,
           s.direccion,
+          s.google_maps_url,
           c.id AS categoria_id,
           COALESCE(c.nombre, 'General') AS categoria_nombre,
           COALESCE(c.icono_url, 'coffee') AS categoria_icono,
@@ -221,7 +222,7 @@ export const ActivityController = {
           LIMIT 1
         ) ps ON true
         LEFT JOIN LATERAL (
-          SELECT direccion
+          SELECT direccion, google_maps_url
           FROM sucursales
           WHERE id_establecimiento = e.id_establecimiento AND estado = 1
           ORDER BY es_principal DESC

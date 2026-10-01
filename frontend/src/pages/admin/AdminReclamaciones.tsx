@@ -548,14 +548,48 @@ export const AdminReclamaciones: React.FC = () => {
               </label>
               <select
                 value={nuevoEstado}
-                onChange={(e: any) => setNuevoEstado(e.target.value)}
+                onChange={(e: any) => {
+                  const val = e.target.value;
+                  setNuevoEstado(val);
+                  if (val === "RECHAZADO" && !respuestaTexto) {
+                    setRespuestaTexto("Estimado consumidor, luego de la revisión correspondiente, se declara improcedente su reclamación debido a que no se adjuntaron los medios probatorios suficientes o los hechos no corresponden a una infracción de los términos del servicio.");
+                  }
+                }}
                 className="input-base"
               >
                 <option value="ATENDIDO">ATENDIDO (Reclamo resuelto formalmente)</option>
                 <option value="EN_PROCESO">EN PROCESO (En investigación o peritaje)</option>
-                <option value="RECHAZADO">RECHAZADO (Improcedente conforme a términos)</option>
+                <option value="RECHAZADO">RECHAZADO (Improcedente conforme a términos / Falta de pruebas)</option>
               </select>
             </div>
+
+            {nuevoEstado === "RECHAZADO" && (
+              <div className="flex gap-1.5 flex-wrap items-center">
+                <span className="text-[10px] text-slate-400">Motivo rápido:</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRespuestaTexto(
+                      "Estimado consumidor, su reclamación es declarada improcedente por falta de medios probatorios que acrediten la infracción reportada conforme al Art. 24 del Código del Consumidor.",
+                    )
+                  }
+                  className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
+                >
+                  Falta de pruebas
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRespuestaTexto(
+                      "Estimado consumidor, el reclamo no procede al verificarse que el servicio y la bonificación de sellos se ejecutaron en estricta conformidad con los términos y condiciones vigentes.",
+                    )
+                  }
+                  className="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 transition cursor-pointer"
+                >
+                  Conforme a términos
+                </button>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">

@@ -21,7 +21,14 @@ import {
   RefreshCw,
   XCircle,
   FileText,
+  QrCode,
+  Download,
+  Copy,
+  UserPlus,
+  UserCheck,
+  UserX,
 } from "lucide-react";
+import QRCode from "qrcode";
 
 export type EstadoNfc =
   | "DISPONIBLE"
@@ -37,15 +44,32 @@ interface TarjetaItem {
   id: string | number;
   uid_nfc: string;
   codigo_interno?: string;
+  qr_respaldo?: string;
   estado: EstadoNfc;
   fecha_asignacion?: string;
+  fecha_activacion?: string;
   fecha_bloqueo?: string;
   motivo_bloqueo?: string;
   usuario_id?: string;
+  id_usuario?: string | number;
+  id_cliente?: string | number;
+  codigo_cliente?: string;
   nombres?: string;
   apellidos?: string;
   email?: string;
   created_at: string;
+}
+
+interface ClienteOption {
+  id: string | number;
+  id_cliente?: string | number;
+  codigo_cliente?: string;
+  nombres: string;
+  apellidos?: string;
+  email: string;
+  total_sellos?: number;
+  puntos_globales?: number;
+  estado?: string;
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -115,7 +139,17 @@ export const AdminTarjetas: React.FC = () => {
   const [modalStockOpen, setModalStockOpen] = useState(false);
   const [modalVer, setModalVer] = useState(false);
   const [modalEstadoOpen, setModalEstadoOpen] = useState(false);
+  const [modalQrOpen, setModalQrOpen] = useState(false);
+  const [modalAsignarOpen, setModalAsignarOpen] = useState(false);
   const [selectedTarjeta, setSelectedTarjeta] = useState<TarjetaItem | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+
+  // Asignación de cliente
+  const [clientes, setClientes] = useState<ClienteOption[]>([]);
+  const [loadingClientes, setLoadingClientes] = useState(false);
+  const [busquedaCliente, setBusquedaCliente] = useState("");
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<ClienteOption | null>(null);
+  const [savingAsignacion, setSavingAsignacion] = useState(false);
 
   // Formulario de cambio de estado
   const [nuevoEstado, setNuevoEstado] = useState<EstadoNfc>("ACTIVA");
@@ -141,9 +175,190 @@ export const AdminTarjetas: React.FC = () => {
     }
   };
 
+  const loadClientes = async () => {
+    setLoadingClientes(true);
+    try {
+      const { data } = await api.get("/admin/usuarios", { params: { rol: "CLIENTE" } });
+      const list = data?.data ?? data ?? [];
+      setClientes(Array.isArray(list) ? list : []);
+    } catch {
+      // Silencioso o con toast suave
+    } finally {
+      setLoadingClientes(false);
+    }
+  };
+
   useEffect(() => {
     loadTarjetas();
+    loadClientes();
   }, []);
+
+  const openAsignarModal = (t: TarjetaItem) => {
+    setSelectedTarjeta(t);
+    setBusquedaCliente("");
+    // Si ya tiene cliente asignado, pre-seleccionarlo
+    if (t.id_usuario || t.email) {
+      const actual = clientes.find(
+        (c) => String(c.id) === String(t.id_usuario) || c.email === t.email
+      );
+      setClienteSeleccionado(actual || null);
+    } else {
+      setClienteSeleccionado(null);
+    }
+    setModalAsignarOpen(true);
+  };
+
+  const handleGuardarAsignacion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTarjeta) return;
+    if (!clienteSeleccionado) {
+      showToast("Por favor selecciona un cliente de la lista", "info");
+      return;
+    }
+
+    setSavingAsignacion(true);
+    try {
+      await api.patch(`/admin/tarjetas/${selectedTarjeta.id}/asignar`, {
+        id_cliente: clienteSeleccionado.id_cliente || undefined,
+        id_usuario: clienteSeleccionado.id,
+      });
+
+      showToast(`Tarjeta ${selectedTarjeta.uid_nfc} asignada exitosamente a ${clienteSeleccionado.nombres}`, "success");
+
+      setTarjetas((prev) =>
+        prev.map((card) =>
+          card.id === selectedTarjeta.id
+            ? {
+                ...card,
+                estado: "ACTIVA",
+                id_cliente: clienteSeleccionado.id_cliente,
+                id_usuario: clienteSeleccionado.id,
+                codigo_cliente: clienteSeleccionado.codigo_cliente,
+                nombres: clienteSeleccionado.nombres,
+                apellidos: clienteSeleccionado.apellidos,
+                email: clienteSeleccionado.email,
+              }
+            : card
+        )
+      );
+
+      if (selectedTarjeta) {
+        setSelectedTarjeta((prev) =>
+          prev
+            ? {
+                ...prev,
+                estado: "ACTIVA",
+                id_cliente: clienteSeleccionado.id_cliente,
+                id_usuario: clienteSeleccionado.id,
+                codigo_cliente: clienteSeleccionado.codigo_cliente,
+                nombres: clienteSeleccionado.nombres,
+                apellidos: clienteSeleccionado.apellidos,
+                email: clienteSeleccionado.email,
+              }
+            : null
+        );
+      }
+
+      setModalAsignarOpen(false);
+      await loadTarjetas();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Error al asignar la tarjeta al cliente", "error");
+    } finally {
+      setSavingAsignacion(false);
+    }
+  };
+
+  const handleDesvincularTarjeta = async () => {
+    if (!selectedTarjeta) return;
+    if (!window.confirm(`¿Estás seguro de desvincular la tarjeta ${selectedTarjeta.uid_nfc}? Volverá a estar DISPONIBLE en almacén.`)) {
+      return;
+    }
+
+    setSavingAsignacion(true);
+    try {
+      await api.patch(`/admin/tarjetas/${selectedTarjeta.id}/asignar`, {
+        desvincular: true,
+      });
+
+      showToast("Tarjeta desvinculada exitosamente. Ahora está DISPONIBLE en almacén.", "success");
+
+      setTarjetas((prev) =>
+        prev.map((card) =>
+          card.id === selectedTarjeta.id
+            ? {
+                ...card,
+                estado: "DISPONIBLE",
+                id_cliente: undefined,
+                id_usuario: undefined,
+                codigo_cliente: undefined,
+                nombres: undefined,
+                apellidos: undefined,
+                email: undefined,
+              }
+            : card
+        )
+      );
+
+      if (selectedTarjeta) {
+        setSelectedTarjeta((prev) =>
+          prev
+            ? {
+                ...prev,
+                estado: "DISPONIBLE",
+                id_cliente: undefined,
+                id_usuario: undefined,
+                codigo_cliente: undefined,
+                nombres: undefined,
+                apellidos: undefined,
+                email: undefined,
+              }
+            : null
+        );
+      }
+
+      setModalAsignarOpen(false);
+      await loadTarjetas();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Error al desvincular la tarjeta", "error");
+    } finally {
+      setSavingAsignacion(false);
+    }
+  };
+
+  const openVerQr = async (t: TarjetaItem) => {
+    setSelectedTarjeta(t);
+    const code = t.qr_respaldo || t.codigo_interno || t.uid_nfc;
+    try {
+      const url = await QRCode.toDataURL(code, {
+        width: 320,
+        margin: 2,
+        color: {
+          dark: "#2D1A1E",
+          light: "#FFFFFF",
+        },
+      });
+      setQrDataUrl(url);
+      setModalQrOpen(true);
+    } catch {
+      showToast("No se pudo generar el código QR", "error");
+    }
+  };
+
+  const handleDescargarQr = () => {
+    if (!qrDataUrl || !selectedTarjeta) return;
+    const a = document.createElement("a");
+    a.href = qrDataUrl;
+    a.download = `QR_Respaldo_${selectedTarjeta.codigo_interno || selectedTarjeta.uid_nfc}.png`;
+    a.click();
+    showToast("QR descargado exitosamente", "success");
+  };
+
+  const handleCopiarCodigoQr = () => {
+    if (!selectedTarjeta) return;
+    const code = selectedTarjeta.qr_respaldo || selectedTarjeta.codigo_interno || selectedTarjeta.uid_nfc;
+    navigator.clipboard.writeText(code);
+    showToast("Código copiado al portapapeles", "success");
+  };
 
   const handleRegistrarStock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -457,6 +672,16 @@ export const AdminTarjetas: React.FC = () => {
                       {/* Acciones */}
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5">
+                          {/* Botón Ver QR */}
+                          <button
+                            type="button"
+                            onClick={() => openVerQr(t)}
+                            className="p-2 rounded-xl text-[#7C0A1E] dark:text-[#E8D3A2] hover:bg-[#7C0A1E]/10 transition cursor-pointer"
+                            title="Ver código QR de respaldo"
+                          >
+                            <QrCode className="w-4 h-4" />
+                          </button>
+
                           {/* Botón Ver */}
                           <button
                             type="button"
@@ -465,6 +690,17 @@ export const AdminTarjetas: React.FC = () => {
                             title="Ver ficha completa"
                           >
                             <Eye className="w-4 h-4" />
+                          </button>
+
+                          {/* Botón Asignar / Cambiar Cliente */}
+                          <button
+                            type="button"
+                            onClick={() => openAsignarModal(t)}
+                            className="px-2.5 py-1 text-[#C5A059] hover:bg-[#C5A059]/10 rounded-lg text-xs font-bold border border-[#C5A059]/30 transition flex items-center gap-1 cursor-pointer"
+                            title={t.nombres ? "Reasignar o cambiar cliente" : "Asignar a un cliente"}
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>{t.nombres ? "Reasignar" : "Asignar"}</span>
                           </button>
 
                           {/* Botón Editar Estado (Abre el Modal de Estados) */}
@@ -741,22 +977,114 @@ export const AdminTarjetas: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-2 flex justify-between items-center border-t border-[#EFE7DE] dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setModalVer(false);
-                  openEditarEstado(selectedTarjeta);
-                }}
-                className="px-4 py-2 rounded-xl bg-[#7C0A1E]/10 text-[#7C0A1E] font-bold text-xs hover:bg-[#7C0A1E]/20 transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Modificar Estado</span>
-              </button>
+            <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-[#EFE7DE] dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openVerQr(selectedTarjeta)}
+                  className="px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 font-bold text-xs border border-amber-300 dark:border-amber-700/50 hover:bg-amber-100 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>Ver QR Respaldo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalVer(false);
+                    openAsignarModal(selectedTarjeta);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#C5A059]/10 text-[#C5A059] hover:bg-[#C5A059]/20 font-bold text-xs border border-[#C5A059]/30 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>{selectedTarjeta.nombres ? "Reasignar Cliente" : "Asignar Cliente"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalVer(false);
+                    openEditarEstado(selectedTarjeta);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#7C0A1E]/10 text-[#7C0A1E] font-bold text-xs hover:bg-[#7C0A1E]/20 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Modificar Estado</span>
+                </button>
+              </div>
 
               <button
                 onClick={() => setModalVer(false)}
                 className="px-5 py-2 rounded-xl border border-[#D9D0C7] text-[#5A4B4B] font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ========================================================= */}
+      {/* MODAL QR: CÓDIGO QR DE RESPALDO                           */}
+      {/* ========================================================= */}
+      <Modal
+        open={modalQrOpen}
+        onClose={() => setModalQrOpen(false)}
+        title="Código QR de Respaldo"
+        subtitle={`Tarjeta UID: ${selectedTarjeta?.uid_nfc || ""}`}
+        size="md"
+      >
+        {selectedTarjeta && (
+          <div className="space-y-4 text-center">
+            <p className="text-xs text-[#736868] dark:text-slate-300">
+              Este QR sirve como alternativa de validación para comercios o locales si el usuario no porta la tarjeta física NFC.
+            </p>
+
+            <div className="flex justify-center p-4 bg-white rounded-2xl border-2 border-[#EFE7DE] shadow-inner max-w-xs mx-auto">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt="QR Respaldo"
+                  className="w-56 h-56 object-contain"
+                />
+              ) : (
+                <div className="w-56 h-56 flex items-center justify-center">
+                  <Spinner size={32} />
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-[#FAF8F5] dark:bg-slate-800/80 rounded-xl border border-[#EFE7DE] dark:border-slate-700 max-w-sm mx-auto text-left">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-[#8E7D7D] font-bold uppercase text-[10px]">Código asignado:</span>
+                <button
+                  type="button"
+                  onClick={handleCopiarCodigoQr}
+                  className="text-[#7C0A1E] dark:text-[#E8D3A2] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar</span>
+                </button>
+              </div>
+              <p className="font-mono text-xs font-bold text-[#2D1A1E] dark:text-white mt-1 break-all">
+                {selectedTarjeta.qr_respaldo || selectedTarjeta.codigo_interno || selectedTarjeta.uid_nfc}
+              </p>
+            </div>
+
+            <div className="flex justify-center gap-3 pt-3 border-t border-[#EFE7DE] dark:border-slate-800">
+              <button
+                type="button"
+                onClick={handleDescargarQr}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white font-bold text-xs shadow hover:bg-[#600616] transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Descargar PNG</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModalQrOpen(false)}
+                className="px-4 py-2 rounded-xl border border-[#D9D0C7] text-[#5A4B4B] font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
               >
                 Cerrar
               </button>
@@ -810,6 +1138,198 @@ export const AdminTarjetas: React.FC = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* ========================================================= */}
+      {/* MODAL 4: ASIGNAR / VINCULAR A CLIENTE                     */}
+      {/* ========================================================= */}
+      <Modal
+        open={modalAsignarOpen}
+        onClose={() => setModalAsignarOpen(false)}
+        title="Asignar Tarjeta NFC a Cliente"
+        subtitle={`Tarjeta UID: ${selectedTarjeta?.uid_nfc || ""}`}
+        size="lg"
+      >
+        {selectedTarjeta && (
+          <form onSubmit={handleGuardarAsignacion} className="space-y-4">
+            {/* Resumen de la Tarjeta */}
+            <div className="p-3.5 rounded-2xl bg-[#FAF8F5] dark:bg-slate-800/60 border border-[#EFE7DE] dark:border-slate-700/60 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7C0A1E] to-[#9B1B30] text-white flex items-center justify-center font-bold">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="font-mono font-bold text-xs text-[#2D1A1E] dark:text-white">
+                    {selectedTarjeta.uid_nfc}
+                  </p>
+                  <p className="text-[11px] text-[#8E7D7D] font-mono">
+                    ID #{selectedTarjeta.id} {selectedTarjeta.codigo_interno ? `• ${selectedTarjeta.codigo_interno}` : ""}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                  (ESTADOS_CONFIG[selectedTarjeta.estado] || ESTADOS_CONFIG.DISPONIBLE).badge
+                }`}
+              >
+                {(ESTADOS_CONFIG[selectedTarjeta.estado] || ESTADOS_CONFIG.DISPONIBLE).label}
+              </span>
+            </div>
+
+            {/* Asignación Actual (si tiene) */}
+            {selectedTarjeta.nombres && (
+              <div className="p-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-800/40 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <UserCheck className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                      Actualmente asignada a: {selectedTarjeta.nombres} {selectedTarjeta.apellidos || ""}
+                    </p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                      {selectedTarjeta.email}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDesvincularTarjeta}
+                  disabled={savingAsignacion}
+                  className="px-3 py-1.5 rounded-xl border border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-900 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Liberar tarjeta y regresar al almacén como DISPONIBLE"
+                >
+                  <UserX className="w-3.5 h-3.5" />
+                  <span>Desvincular</span>
+                </button>
+              </div>
+            )}
+
+            {/* Buscador de clientes */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+                Selecciona el Cliente a quien asignar esta tarjeta:
+              </label>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-[#8E7D7D] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, apellido, código o email..."
+                  value={busquedaCliente}
+                  onChange={(e) => setBusquedaCliente(e.target.value)}
+                  className="input-base pl-9 text-xs"
+                />
+              </div>
+
+              {/* Lista scrolleable de Clientes */}
+              <div className="max-h-60 overflow-y-auto divide-y divide-[#EFE7DE] dark:divide-slate-800 border border-[#EFE7DE] dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900">
+                {loadingClientes ? (
+                  <div className="p-6 text-center">
+                    <Spinner size={24} />
+                    <p className="text-xs text-[#8E7D7D] mt-2">Cargando clientes...</p>
+                  </div>
+                ) : (() => {
+                  const q = busquedaCliente.toLowerCase().trim();
+                  const filtrados = clientes.filter((c) => {
+                    if (!q) return true;
+                    const nombreCompleto = `${c.nombres || ""} ${c.apellidos || ""}`.toLowerCase();
+                    const email = (c.email || "").toLowerCase();
+                    const cod = (c.codigo_cliente || "").toLowerCase();
+                    return nombreCompleto.includes(q) || email.includes(q) || cod.includes(q);
+                  });
+
+                  if (filtrados.length === 0) {
+                    return (
+                      <div className="p-6 text-center text-xs text-[#8E7D7D]">
+                        No se encontraron clientes registrados con ese criterio.
+                      </div>
+                    );
+                  }
+
+                  return filtrados.slice(0, 50).map((cli) => {
+                    const isSelected = clienteSeleccionado?.id === cli.id;
+                    return (
+                      <div
+                        key={cli.id}
+                        onClick={() => setClienteSeleccionado(cli)}
+                        className={`p-3 flex items-center justify-between cursor-pointer transition ${
+                          isSelected
+                            ? "bg-[#7C0A1E]/10 dark:bg-[#7C0A1E]/20"
+                            : "hover:bg-[#FAF8F5] dark:hover:bg-slate-800/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                              isSelected
+                                ? "bg-[#7C0A1E] text-white"
+                                : "bg-slate-100 dark:bg-slate-800 text-[#736868] dark:text-slate-300"
+                            }`}
+                          >
+                            <User className="w-4 h-4" />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                              {cli.nombres} {cli.apellidos || ""}
+                            </p>
+                            <p className="text-[11px] text-[#8E7D7D]">
+                              {cli.email} {cli.codigo_cliente ? `• ${cli.codigo_cliente}` : ""}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {cli.puntos_globales !== undefined && (
+                            <span className="text-[11px] font-bold text-[#C5A059] bg-[#C5A059]/10 px-2 py-0.5 rounded-md">
+                              {cli.puntos_globales} pts
+                            </span>
+                          )}
+                          <input
+                            type="radio"
+                            name="clienteSelectRadio"
+                            checked={isSelected}
+                            onChange={() => setClienteSeleccionado(cli)}
+                            className="accent-[#7C0A1E] cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              {clienteSeleccionado && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <p className="text-xs text-emerald-800 dark:text-emerald-300">
+                    Cliente seleccionado: <strong>{clienteSeleccionado.nombres} {clienteSeleccionado.apellidos || ""}</strong> ({clienteSeleccionado.email})
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-[#8E7D7D]">
+              Al confirmar, la tarjeta pasará al estado <strong>ACTIVA</strong> y se vinculará a la cuenta del usuario para registrar visitas, sellos y recompensas.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-[#EFE7DE] dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setModalAsignarOpen(false)}
+                className="px-5 py-2.5 rounded-xl border border-[#D9D0C7] text-[#5A4B4B] font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={savingAsignacion || !clienteSeleccionado}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] hover:bg-[#600616] text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {savingAsignacion ? <Spinner size={16} /> : <span>Confirmar Asignación</span>}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

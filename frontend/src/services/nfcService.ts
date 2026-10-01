@@ -37,4 +37,21 @@ export const nfcService = {
     const res = await api.post("/nfc/asignar-tarjeta", { uid_nfc });
     return res.data.data;
   },
+
+  async autosellar(payload: {
+    id_sucursal: string | number;
+    latitud: number;
+    longitud: number;
+    foto_evidencia?: string;
+    id_programa?: string | number;
+  }) {
+    const res = await api.post("/nfc/autosellar", payload);
+    return res.data;
+  },
+
+  async identificar(payload: { uid_nfc?: string; qr_code?: string }) {
+    const res = await api.post("/nfc/identificar", payload);
+    return res.data;
+  },
 };
+

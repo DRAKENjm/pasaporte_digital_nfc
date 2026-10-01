@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { CategoryIcon } from "./CategoryIcon";
 import { getStampIcon } from "../../utils/stampIcons";
 
@@ -74,9 +74,9 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       borderInner: "border",
       textTop: "text-[7px]",
       textBottom: "text-[6px]",
-      centerIcon: "text-lg",
-      centerVector: "w-10 h-10",
-      centerImg: "w-9 h-9",
+      centerIcon: "text-xl",
+      centerVector: "w-13 h-13",
+      centerImg: "w-14 h-14 max-h-14",
       numberBadge: "text-[8px] px-1 py-0.2",
     },
     md: {
@@ -85,9 +85,9 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       borderInner: "border-[1.5px]",
       textTop: "text-[8.5px]",
       textBottom: "text-[7.5px]",
-      centerIcon: "text-2xl",
-      centerVector: "w-11 h-11",
-      centerImg: "w-10 h-10",
+      centerIcon: "text-3xl",
+      centerVector: "w-16 h-16",
+      centerImg: "w-17 h-17 max-h-17",
       numberBadge: "text-[9px] px-1.5 py-0.5",
     },
     lg: {
@@ -96,9 +96,9 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       borderInner: "border-2",
       textTop: "text-[10.5px]",
       textBottom: "text-[9px]",
-      centerIcon: "text-3xl",
-      centerVector: "w-16 h-16",
-      centerImg: "w-14 h-14",
+      centerIcon: "text-4xl",
+      centerVector: "w-22 h-22",
+      centerImg: "w-24 h-24 max-h-24",
       numberBadge: "text-[10px] px-2 py-0.5",
     },
     xl: {
@@ -107,9 +107,9 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       borderInner: "border-2",
       textTop: "text-[13px]",
       textBottom: "text-[11px]",
-      centerIcon: "text-5xl",
-      centerVector: "w-24 h-24",
-      centerImg: "w-20 h-20",
+      centerIcon: "text-6xl",
+      centerVector: "w-32 h-32",
+      centerImg: "w-34 h-34 max-h-34",
       numberBadge: "text-xs px-2.5 py-1",
     },
     xxl: {
@@ -118,9 +118,9 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       borderInner: "border-[3px]",
       textTop: "text-[16px]",
       textBottom: "text-[13px]",
-      centerIcon: "text-7xl",
-      centerVector: "w-36 h-36",
-      centerImg: "w-32 h-32",
+      centerIcon: "text-8xl",
+      centerVector: "w-52 h-52",
+      centerImg: "w-52 h-52 max-h-52",
       numberBadge: "text-sm px-3 py-1",
     },
   };
@@ -176,15 +176,16 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       </div>
 
       {/* 3. Centro: Insignia, Imagen o Icono vectorial con tinta notarial */}
-      <div className="relative z-10 flex flex-col items-center justify-center my-auto">
+      <div className="relative z-10 flex flex-col items-center justify-center my-auto w-full px-2">
         {isImage ? (
           <img
             src={resolvedImg}
             alt={nombre_sello}
             onError={() => setImgError(true)}
-            className={`${s.centerImg} object-contain rounded-full filter drop-shadow-xs`}
+            className={`${s.centerImg} object-contain rounded-full transition-transform duration-300 filter drop-shadow-[0_1px_2px_rgba(0,0,0,0.12)]`}
             style={{
               mixBlendMode: "multiply",
+              opacity: 0.95,
             }}
           />
         ) : StampIcon ? (

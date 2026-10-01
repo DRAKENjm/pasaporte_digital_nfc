@@ -11,6 +11,8 @@ import {
 import { AuthenticatedRequest } from "../types";
 import { query } from "../config/database";
 
+const failedAttemptsMap = new Map<string, number>();
+
 export const AuthController = {
   async register(req: Request, res: Response, next: NextFunction) {
     try {
@@ -89,7 +91,8 @@ export const AuthController = {
         throw new ApiError(400, "Ingresa email y contraseña");
       }
 
-      const user = await UserModel.findByEmail(String(email).toLowerCase().trim());
+      const emailLower = String(email).toLowerCase().trim();
+      const user = await UserModel.findByEmail(emailLower);
       if (!user) {
         throw new ApiError(401, "Credenciales incorrectas");
       }
@@ -100,13 +103,26 @@ export const AuthController = {
 
       const valid = await comparePassword(password, user.password_hash);
       if (!valid) {
+        const attempts = (failedAttemptsMap.get(emailLower) || 0) + 1;
+        failedAttemptsMap.set(emailLower, attempts);
+
         await query(
           `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion, ip, user_agent)
            VALUES ($1, 'USUARIOS', 'LOGIN_FALLIDO', 'usuarios', $1, 'Intento de login con contraseña incorrecta', $2, $3)`,
           [user.id_usuario, req.ip || null, req.headers["user-agent"] || null],
         );
-        throw new ApiError(401, "Credenciales incorrectas");
+
+        if (attempts >= 3) {
+          await query(`UPDATE usuarios SET estado = 0 WHERE id_usuario = $1`, [user.id_usuario]);
+          failedAttemptsMap.delete(emailLower);
+          throw new ApiError(403, "Cuenta bloqueada por demasiados intentos fallidos. Por favor comuníquese con el administrador.");
+        }
+
+        const remaining = 3 - attempts;
+        throw new ApiError(401, `Contraseña incorrecta. Le queda${remaining === 1 ? '' : 'n'} ${remaining} intento${remaining === 1 ? '' : 's'}.`);
       }
+
+      failedAttemptsMap.delete(emailLower);
 
       await UserModel.updateUltimoAcceso(user.id_usuario);
 

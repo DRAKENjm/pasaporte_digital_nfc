@@ -1,33 +1,42 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Navigation, Search, X, Info } from "lucide-react";
+import { ArrowLeft, MapPin, Navigation, Search, Info, Heart } from "lucide-react";
 import api from "../../services/api";
 
 export const LocalesPage: React.FC = () => {
   const navigate = useNavigate();
   const [locales, setLocales] = useState<any[]>([]);
   const [categorias, setCategorias] = useState<any[]>([]);
-  const [catActiva, setCatActiva] = useState<string>("Todos");
+  const [favoritosIds, setFavoritosIds] = useState<Set<string>>(new Set());
+  const [catActiva, setCatActiva] = useState("Todos");
   const [busqueda, setBusqueda] = useState("");
   const [loading, setLoading] = useState(true);
-  const [modalLocal, setModalLocal] = useState<any | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [locRes, catRes, favRes] = await Promise.all([
+        api.get("/establishments"),
+        api.get("/establishments/categorias").catch(() => ({ data: { data: [] } })),
+        api.get("/establishments/favoritos").catch(() => ({ data: { data: [] } })),
+      ]);
+      setLocales(locRes.data?.data || []);
+      const cats = catRes.data?.data || [];
+      setCategorias(cats);
+      const favs = favRes.data?.data || [];
+      setFavoritosIds(
+        new Set(favs.map((f: any) => String(f.id_establecimiento)))
+      );
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [locRes, catRes] = await Promise.all([
-          api.get("/establishments"),
-          api.get("/establishments/categorias").catch(() => ({ data: { data: [] } })),
-        ]);
-        setLocales(locRes.data?.data || []);
-        setCategorias(catRes.data?.data || []);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    load();
+  }, [load]);
 
   const cats = useMemo(() => {
     const names = ["Todos", ...categorias.map((c: any) => c.nombre).filter(Boolean)];
@@ -38,16 +47,32 @@ export const LocalesPage: React.FC = () => {
     return locales.filter((loc) => {
       const matchSearch =
         !busqueda.trim() ||
-        loc.nombre_comercial?.toLowerCase().includes(busqueda.toLowerCase()) ||
-        loc.descripcion?.toLowerCase().includes(busqueda.toLowerCase());
-      const catName = loc.categoria_nombre || categorias.find((c: any) => c.id === loc.categoria_id)?.nombre;
-      const matchCat =
-        catActiva === "Todos" ||
-        catName === catActiva ||
-        loc.nombre_comercial?.toLowerCase().includes(catActiva.toLowerCase());
+        loc.nombre_comercial?.toLowerCase().includes(busqueda.toLowerCase());
+      const catName =
+        loc.categoria_nombre ||
+        categorias.find((c: any) => c.id === loc.categoria_id)?.nombre ||
+        "";
+      const matchCat = catActiva === "Todos" || catName === catActiva;
       return matchSearch && matchCat;
     });
   }, [locales, busqueda, catActiva, categorias]);
+
+  const toggleFav = async (id: string | number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const sid = String(id);
+    try {
+      const res = await api.post(`/establishments/${id}/favorito`);
+      const isFav = !!res.data?.data?.favorito;
+      setFavoritosIds((prev) => {
+        const next = new Set(prev);
+        if (isFav) next.add(sid);
+        else next.delete(sid);
+        return next;
+      });
+    } catch {
+      /* ignore */
+    }
+  };
 
   const iniciarRuta = (loc: any) => {
     const suc = loc.sucursales?.[0];
@@ -84,6 +109,7 @@ export const LocalesPage: React.FC = () => {
           {cats.map((c) => (
             <button
               key={c}
+              type="button"
               onClick={() => setCatActiva(c)}
               className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${
                 catActiva === c
@@ -103,109 +129,76 @@ export const LocalesPage: React.FC = () => {
             <div className="w-8 h-8 border-2 border-[#7C0A1E] border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filtrados.length === 0 ? (
-          <p className="text-center text-xs text-[#8E7D7D] py-10">No hay locales en esta categoría.</p>
+          <p className="text-center text-xs text-[#8E7D7D] py-10">No hay locales.</p>
         ) : (
-          filtrados.map((loc) => (
-            <div
-              key={loc.id_establecimiento}
-              className="bg-white rounded-2xl border border-[#EFE7DE] p-3.5 shadow-sm"
-            >
-              <div className="flex gap-3">
-                {/* Imagen: solo animación, no navega */}
-                <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 border border-[#EFE7DE] transition-transform hover:scale-105">
-                  <img
-                    src={
-                      loc.logo ||
-                      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=100"
-                    }
-                    alt=""
-                    className="w-full h-full object-cover pointer-events-none"
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-bold text-[#2D1A1E] truncate">{loc.nombre_comercial}</h3>
-                  <p className="text-[11px] text-[#8E7D7D] truncate flex items-center gap-1 mt-0.5">
-                    <MapPin size={11} />
-                    {loc.sucursales?.[0]?.direccion || "Chiclayo"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2 mt-3">
+          filtrados.map((loc) => {
+            const isFav = favoritosIds.has(String(loc.id_establecimiento));
+            return (
+              <div
+                key={loc.id_establecimiento}
+                className="bg-white rounded-2xl border border-[#EFE7DE] p-3.5 shadow-sm relative"
+              >
                 <button
                   type="button"
-                  onClick={() => iniciarRuta(loc)}
-                  className="flex-1 py-2 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-1.5"
+                  onClick={(e) => toggleFav(loc.id_establecimiento, e)}
+                  className={`absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center ${
+                    isFav ? "bg-[#7C0A1E] text-white" : "bg-[#FAF8F5] text-[#8E7D7D]"
+                  }`}
+                  title={isFav ? "Quitar de favoritos" : "Añadir a favoritos"}
                 >
-                  <Navigation size={14} />
-                  Iniciar
+                  <Heart size={14} fill={isFav ? "currentColor" : "none"} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setModalLocal(loc)}
-                  className="flex-1 py-2 rounded-xl border border-[#EFE7DE] text-[#2D1A1E] text-xs font-semibold flex items-center justify-center gap-1.5"
-                >
-                  <Info size={14} />
-                  Ver detalles
-                </button>
+                <div className="flex gap-3 pr-8">
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 border border-[#EFE7DE]">
+                    <img
+                      src={loc.logo || "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=100"}
+                      alt=""
+                      className="w-full h-full object-cover pointer-events-none"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-bold text-[#2D1A1E] truncate">{loc.nombre_comercial}</h3>
+                    <p className="text-[11px] text-[#8E7D7D] truncate flex items-center gap-1 mt-0.5">
+                      <MapPin size={11} />
+                      {loc.sucursales?.[0]?.direccion || "Chiclayo"}
+                    </p>
+                    {(loc.categoria_nombre || isFav) && (
+                      <div className="flex gap-1.5 mt-1 flex-wrap">
+                        {loc.categoria_nombre && (
+                          <span className="text-[9px] font-bold bg-[#FAF8F5] text-[#7C0A1E] px-1.5 py-0.5 rounded-full">
+                            {loc.categoria_nombre}
+                          </span>
+                        )}
+                        {isFav && (
+                          <span className="text-[9px] font-bold bg-[#7C0A1E]/10 text-[#7C0A1E] px-1.5 py-0.5 rounded-full">
+                            Favorito
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => iniciarRuta(loc)}
+                    className="flex-1 py-2 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <Navigation size={14} /> Iniciar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/user/locales/${loc.id_establecimiento || loc.id}`)}
+                    className="flex-1 py-2 rounded-xl border border-[#EFE7DE] bg-[#FAF8F5] hover:bg-[#EFE7DE] text-[#2D1A1E] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Info size={14} /> Ver detalles
+                  </button>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
-
-      {/* Modal detalles (reemplaza panel azul feo) */}
-      {modalLocal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end justify-center" onClick={() => setModalLocal(null)}>
-          <div
-            className="bg-white rounded-t-3xl w-full max-w-lg p-5 relative max-h-[50vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setModalLocal(null)}
-              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-[#FAF8F5] flex items-center justify-center"
-            >
-              <X size={16} />
-            </button>
-            <div className="flex gap-3 pr-8">
-              <img
-                src={
-                  modalLocal.logo ||
-                  "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=100"
-                }
-                alt=""
-                className="w-16 h-16 rounded-2xl object-cover border border-[#EFE7DE]"
-              />
-              <div>
-                <h3 className="text-base font-bold text-[#2D1A1E]">{modalLocal.nombre_comercial}</h3>
-                <p className="text-[11px] text-[#8E7D7D] mt-0.5">
-                  {modalLocal.sucursales?.[0]?.direccion || "—"}
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-[#8E7D7D] mt-3 leading-relaxed">
-              {modalLocal.descripcion || "Establecimiento afiliado."}
-            </p>
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => {
-                  setModalLocal(null);
-                  iniciarRuta(modalLocal);
-                }}
-                className="flex-1 py-2.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-1.5"
-              >
-                <Navigation size={14} /> Iniciar
-              </button>
-              <Link
-                to={`/user/locales/${modalLocal.id_establecimiento}`}
-                onClick={() => setModalLocal(null)}
-                className="flex-1 py-2.5 rounded-2xl border border-[#EFE7DE] text-xs font-semibold text-center text-[#2D1A1E]"
-              >
-                Perfil completo
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

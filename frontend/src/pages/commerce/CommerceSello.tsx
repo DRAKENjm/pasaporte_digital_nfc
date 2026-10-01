@@ -21,6 +21,8 @@ import {
   Store,
   Pencil,
   Archive,
+  Trash2,
+  AlertCircle,
 } from "lucide-react";
 
 // Paleta oficial de tintas notariales y de pasaportes históricos
@@ -337,6 +339,11 @@ export const CommerceSello: React.FC = () => {
 
   const handleToggleEstado = async (d: any) => {
     if (busy.current || toggling) return;
+    const esPrincipal = sellos.length > 0 && String(sellos[0].id_programa) === String(d.id_programa);
+    if (esPrincipal && d.estado === "ACTIVO") {
+      showToast("El sello principal no se puede desactivar porque es el sello oficial de tu local", "info");
+      return;
+    }
     const nuevo = d.estado === "ACTIVO" ? "INACTIVO" : "ACTIVO";
     busy.current = true;
     setToggling(true);
@@ -395,6 +402,24 @@ export const CommerceSello: React.FC = () => {
       showToast(active ? "Insignia archivada" : "Insignia restaurada", "success");
     } catch (error: any) {
       showToast(error.response?.data?.message || "No se pudo actualizar la insignia", "error");
+    } finally {
+      busy.current = false;
+    }
+  };
+
+  const handleEliminarInsignia = async (item: any) => {
+    if (busy.current) return;
+    if (!window.confirm(`¿Deseas eliminar definitivamente la insignia "${item.nombre}" de tu biblioteca?`)) return;
+    busy.current = true;
+    try {
+      const res = await api.delete(`/establishments/me/insignias/${item.id_insignia}${branchQuery()}`);
+      if (imagenSello === item.imagen_url) {
+        setImagenSello("icon:coffee");
+      }
+      await fetchInsignias();
+      showToast(res.data?.message || "Insignia eliminada de la biblioteca", "success");
+    } catch (error: any) {
+      showToast(error.response?.data?.message || "No se pudo eliminar la insignia", "error");
     } finally {
       busy.current = false;
     }
@@ -560,26 +585,43 @@ export const CommerceSello: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-2.5">
-                    <span
-                      className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                        activo
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : "bg-slate-100 text-slate-500 border-slate-200"
-                      }`}
-                    >
-                      {activo ? "Activo" : "Inactivo"}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={toggling || saving || uploading}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleToggleEstado(d);
-                      }}
-                      className="text-[10px] font-bold text-[#7C0A1E] hover:underline disabled:opacity-50"
-                    >
-                      {activo ? "Desactivar" : "Activar"}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                          activo
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-slate-100 text-slate-500 border-slate-200"
+                        }`}
+                      >
+                        {activo ? "Activo" : "Inactivo"}
+                      </span>
+                      {sellos.length > 0 && String(sellos[0].id_programa) === String(d.id_programa) && (
+                        <span className="text-[9px] font-bold text-amber-800 bg-amber-100/70 dark:bg-amber-950/40 px-1.5 py-0.5 rounded-md border border-amber-300">
+                          Principal
+                        </span>
+                      )}
+                    </div>
+
+                    {sellos.length > 0 && String(sellos[0].id_programa) === String(d.id_programa) ? (
+                      <span
+                        className="text-[10px] font-semibold text-slate-400 cursor-not-allowed"
+                        title="El sello principal oficial siempre debe permanecer activo"
+                      >
+                        Fijo
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={toggling || saving || uploading}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleToggleEstado(d);
+                        }}
+                        className="text-[10px] font-bold text-[#7C0A1E] hover:underline disabled:opacity-50"
+                      >
+                        {activo ? "Desactivar" : "Activar"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -641,45 +683,85 @@ export const CommerceSello: React.FC = () => {
             </div>
 
             {/* 3. Selección de Color de Tinta Digital */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-2">
-                Color de Tinta Digital (Tono de Estampado)
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {INK_PALETTE.map((ink) => (
-                  <button
-                    key={ink.hex}
-                    type="button"
-                    onClick={() => setColorSello(ink.hex)}
-                    className={`p-2.5 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
-                      colorSello.toLowerCase() === ink.hex.toLowerCase()
-                        ? "border-[#7C0A1E] bg-[#FAF8F5] shadow-xs ring-2 ring-[#7C0A1E]/20"
-                        : "border-[#EFE7DE] hover:border-slate-300"
-                    }`}
-                  >
-                    <span
-                      className="w-5 h-5 rounded-full shrink-0 shadow-inner border border-black/10"
-                      style={{ backgroundColor: ink.hex }}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-bold text-[#2D1A1E] truncate">{ink.name}</p>
-                      <p className="text-[9px] text-[#8E7D7D] font-mono">{ink.hex}</p>
-                    </div>
-                  </button>
-                ))}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868]">
+                  Color de Tinta Digital (Tono de Estampado)
+                </label>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-5 h-5 rounded-full border border-black/20 shadow-xs"
+                    style={{ backgroundColor: colorSello }}
+                  />
+                  <span className="font-mono text-xs font-bold text-[#2D1A1E] uppercase">
+                    {colorSello}
+                  </span>
+                </div>
               </div>
 
-              {/* Selector personalizado */}
-              <div className="mt-3 flex items-center gap-3">
-                <input
-                  type="color"
-                  value={colorSello}
-                  onChange={(e) => setColorSello(e.target.value)}
-                  className="w-8 h-8 rounded-lg cursor-pointer border border-[#EFE7DE]"
-                />
-                <span className="text-xs text-[#8E7D7D]">
-                  O elige un color personalizado: <strong className="font-mono text-[#2D1A1E]">{colorSello}</strong>
-                </span>
+              {/* Barra interactiva de espectro continuo de color (Slider de tonalidad) */}
+              <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#EFE7DE] space-y-2.5">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] text-[#8E7D7D] font-medium">
+                    <span>Barra de tonos (desliza para cambiar el color):</span>
+                    <span>Tinta continua</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="360"
+                    defaultValue="350"
+                    onChange={(e) => {
+                      const h = Number(e.target.value);
+                      // Convertir HSL(h, 85%, 26%) a Hex
+                      const s = 80;
+                      const l = 28;
+                      const l_dec = l / 100;
+                      const a = (s * Math.min(l_dec, 1 - l_dec)) / 100;
+                      const f = (n: number) => {
+                        const k = (n + h / 30) % 12;
+                        const color = l_dec - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                        return Math.round(255 * color).toString(16).padStart(2, "0");
+                      };
+                      setColorSello(`#${f(0)}${f(8)}${f(4)}`);
+                    }}
+                    className="w-full h-4 rounded-xl appearance-none cursor-pointer border border-[#EFE7DE] shadow-inner"
+                    style={{
+                      background: "linear-gradient(to right, #7C0A1E, #B45309, #ca8a04, #065F46, #0284c7, #1E3A8A, #581C87, #9d174d, #7C0A1E)",
+                    }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-1 gap-3">
+                  {/* Selector libre con cuentagotas nativo */}
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-[#7C0A1E] hover:underline">
+                    <input
+                      type="color"
+                      value={colorSello}
+                      onChange={(e) => setColorSello(e.target.value)}
+                      className="w-7 h-7 rounded-lg cursor-pointer border border-[#EFE7DE] p-0.5 bg-white"
+                    />
+                    <span>Elegir tono exacto en paleta</span>
+                  </label>
+
+                  {/* Acceso rápido a las tintas clásicas */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    {["#7C0A1E", "#1E3A8A", "#065F46", "#451A03", "#B45309", "#18181B", "#581C87"].map((hex) => (
+                      <button
+                        key={hex}
+                        type="button"
+                        onClick={() => setColorSello(hex)}
+                        className={`w-6 h-6 rounded-full border transition-transform ${
+                          colorSello.toLowerCase() === hex.toLowerCase()
+                            ? "scale-115 ring-2 ring-[#7C0A1E] ring-offset-1 border-white"
+                            : "border-black/10 hover:scale-110"
+                        }`}
+                        style={{ backgroundColor: hex }}
+                        title={hex}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -803,14 +885,14 @@ export const CommerceSello: React.FC = () => {
                               </button>
                             )}
                           </div>
-                          <div className="flex justify-end gap-3 border-t border-[#EFE7DE] pt-1.5">
+                          <div className="flex items-center justify-end gap-2.5 border-t border-[#EFE7DE] pt-1.5">
                             <button
                               type="button"
                               disabled={archived || uploading || saving}
                               onClick={() => void handleRenameInsignia(item)}
                               className="text-[9px] font-bold text-[#7C0A1E] hover:underline disabled:opacity-50"
                             >
-                              {editing ? "Guardar nombre" : "Renombrar"}
+                              {editing ? "Guardar" : "Renombrar"}
                             </button>
                             {editing && (
                               <button type="button" onClick={() => setEditingInsigniaId(null)} className="text-[9px] text-[#8E7D7D] hover:underline">
@@ -824,6 +906,16 @@ export const CommerceSello: React.FC = () => {
                               className="text-[9px] font-bold text-[#8E7D7D] hover:underline disabled:opacity-50"
                             >
                               {archived ? "Restaurar" : "Archivar"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={uploading || saving}
+                              onClick={() => void handleEliminarInsignia(item)}
+                              className="text-[9px] font-bold text-rose-600 hover:underline flex items-center gap-0.5 disabled:opacity-50"
+                              title="Eliminar de la biblioteca"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
+                              <span>Eliminar</span>
                             </button>
                           </div>
                         </div>

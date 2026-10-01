@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Volume2, Save, CheckCircle2, ShieldCheck, Laptop } from "lucide-react";
+import { Volume2, VolumeX, Save, CheckCircle2, ShieldCheck, Laptop, QrCode } from "lucide-react";
 import { useUI } from "../../hooks/useUI";
 import { useAuth } from "../../hooks/useAuth";
 import { isReaderMode, loadCommercePreferences, saveCommercePreferences } from "../../utils/commercePreferences";
@@ -7,10 +7,29 @@ import { isReaderMode, loadCommercePreferences, saveCommercePreferences } from "
 export const CommerceConfiguracion: React.FC = () => {
   const { user } = useAuth();
   const [preferences, setPreferences] = useState(() => loadCommercePreferences(user?.id));
-  const { sonidoLectura, modoLector } = preferences;
+  const { sonidoLectura, sonidoQr, modoLector } = preferences;
   const webNfcSupported = "NDEFReader" in window && window.isSecureContext;
   const [saved, setSaved] = useState(false);
   const { showToast } = useUI();
+
+  const playPreviewSound = (freq = 880) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+    } catch {
+      // Audio preview fallback
+    }
+  };
 
   useEffect(() => {
     setPreferences(loadCommercePreferences(user?.id));
@@ -83,9 +102,20 @@ export const CommerceConfiguracion: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-[#8E7D7D] block mb-1 uppercase">
-                Alerta Sonora al Validar
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-bold text-[#8E7D7D] block uppercase">
+                  Alerta Sonora al Validar NFC
+                </label>
+                {sonidoLectura && (
+                  <button
+                    type="button"
+                    onClick={() => playPreviewSound(880)}
+                    className="text-[10px] text-[#7C0A1E] hover:underline font-semibold"
+                  >
+                    Probar tono
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 aria-pressed={sonidoLectura}
@@ -100,10 +130,46 @@ export const CommerceConfiguracion: React.FC = () => {
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <Volume2 size={16} />
-                  {sonidoLectura ? "Sonido Activado" : "Silenciado"}
+                  {sonidoLectura ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                  {sonidoLectura ? "Sonido NFC Activado" : "NFC Silenciado"}
                 </span>
                 <span className="text-[10px] uppercase font-bold">{sonidoLectura ? "ON" : "OFF"}</span>
+              </button>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-bold text-[#8E7D7D] block uppercase">
+                  Alerta Sonora al Escanear QR
+                </label>
+                {sonidoQr && (
+                  <button
+                    type="button"
+                    onClick={() => playPreviewSound(1046)}
+                    className="text-[10px] text-[#7C0A1E] hover:underline font-semibold"
+                  >
+                    Probar tono
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                aria-pressed={sonidoQr}
+                onClick={() => {
+                  setPreferences({ ...preferences, sonidoQr: !sonidoQr });
+                  setSaved(false);
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
+                  sonidoQr
+                    ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                    : "bg-[#FAF8F5] border-[#EFE7DE] text-[#8E7D7D]"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <QrCode size={16} className={sonidoQr ? "text-emerald-700" : "text-[#8E7D7D]"} />
+                  {sonidoQr ? "Sonido QR Activado" : "QR Silenciado"}
+                </span>
+                <span className="text-[10px] uppercase font-bold">{sonidoQr ? "ON" : "OFF"}</span>
               </button>
             </div>
           </div>

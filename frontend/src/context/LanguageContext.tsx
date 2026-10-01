@@ -4,7 +4,7 @@ import { Lang, TranslationKey, translate } from "../i18n/translations";
 type Ctx = {
   lang: Lang;
   setLang: (l: Lang) => void;
-  t: (key: TranslationKey) => string;
+  t: (key: TranslationKey | string) => string;
 };
 
 const LanguageContext = createContext<Ctx | null>(null);
@@ -29,7 +29,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     () => ({
       lang,
       setLang,
-      t: (key: TranslationKey) => translate(lang, key),
+      t: (key: TranslationKey | string) => {
+        try {
+          return translate(lang, key as TranslationKey);
+        } catch {
+          return String(key);
+        }
+      },
     }),
     [lang]
   );
@@ -37,8 +43,16 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 };
 
-export const useLanguage = () => {
+/** Nunca lanza error si falta el Provider */
+export const useLanguage = (): Ctx => {
   const ctx = useContext(LanguageContext);
-  if (!ctx) throw new Error("useLanguage must be used within LanguageProvider");
+  if (!ctx) {
+    const fallbackLang = (localStorage.getItem("pd_idioma") || "es") as Lang;
+    return {
+      lang: fallbackLang,
+      setLang: (l: Lang) => localStorage.setItem("pd_idioma", l),
+      t: (key: string) => String(key),
+    };
+  }
   return ctx;
 };

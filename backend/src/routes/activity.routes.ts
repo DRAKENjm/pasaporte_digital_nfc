@@ -9,6 +9,9 @@ router.use(authMiddleware);
 // Feed unificado de actividad (visitas, sellos y puntos ledger)
 router.get("/feed", ActivityController.feed);
 
+// Sellos del usuario agrupados por establecimiento
+router.get("/mis-sellos", ActivityController.misSellos);
+
 // Notificaciones del usuario
 router.get("/notificaciones", ActivityController.notificaciones);
 router.patch("/notificaciones/:id/leer", ActivityController.marcarNotificacionLeida);

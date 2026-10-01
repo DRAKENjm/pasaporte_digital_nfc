@@ -22,6 +22,7 @@ import {
   Award,
   Coins,
   Calendar,
+  KeyRound,
 } from "lucide-react";
 import { initials } from "../../utils/levels";
 
@@ -229,6 +230,46 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
     setModalEditar(true);
   };
 
+  const [modalPassword, setModalPassword] = useState(false);
+  const [nuevaPassword, setNuevaPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [cambiandoPassword, setCambiandoPassword] = useState(false);
+
+  const openPasswordModal = (u: URow) => {
+    setUsuarioSeleccionado(u);
+    setNuevaPassword("");
+    setPasswordError("");
+    setModalPassword(true);
+  };
+
+  const handleCambiarPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usuarioSeleccionado) return;
+    if (!nuevaPassword.trim()) {
+      setPasswordError("Debes ingresar una contraseña");
+      return;
+    }
+    if (nuevaPassword.trim().length < 6) {
+      setPasswordError("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+
+    setCambiandoPassword(true);
+    try {
+      await api.patch(`/admin/usuarios/${usuarioSeleccionado.id}/password`, {
+        password: nuevaPassword.trim(),
+      });
+      showToast(`Contraseña actualizada con éxito para ${usuarioSeleccionado.email}`, "success");
+      setModalPassword(false);
+      setNuevaPassword("");
+      await load();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Error al actualizar contraseña", "error");
+    } finally {
+      setCambiandoPassword(false);
+    }
+  };
+
   const openVer = (u: URow) => {
     setUsuarioSeleccionado(u);
     setModalVer(true);
@@ -294,12 +335,13 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
     if (!usuarioSeleccionado) return;
     setBusy(true);
     try {
-      await api.delete(`/admin/usuarios/${usuarioSeleccionado.id}`);
-      showToast("Usuario eliminado", "success");
+      const res = await api.delete(`/admin/usuarios/${usuarioSeleccionado.id}`);
+      const mensaje = res.data?.message || (isClientes ? "Cliente actualizado" : "Usuario actualizado");
+      showToast(mensaje, "success");
       setModalEliminar(false);
       await load();
     } catch (err: any) {
-      showToast(err.response?.data?.message || "Error al eliminar", "error");
+      showToast(err.response?.data?.message || "No se pudo completar la operación", "error");
     } finally {
       setBusy(false);
     }
@@ -504,18 +546,21 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
   const modalEliminarContent = (
     <div className="space-y-4">
       <p className="text-sm text-slate-600 dark:text-slate-400">
-        ¿Estás seguro de que deseas eliminar permanentemente a{" "}
+        ¿Estás seguro de que deseas dar de baja o eliminar a{" "}
         <strong className="text-slate-900 dark:text-white">
           {usuarioSeleccionado?.nombres} {usuarioSeleccionado?.apellidos}
         </strong>
         ?
       </p>
-      <div className="p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 rounded-lg text-xs font-medium border border-amber-200 dark:border-amber-900/50">
-        Esta acción no se puede deshacer. El usuario desaparecerá completamente del sistema.
+      <div className="p-3.5 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 rounded-xl text-xs font-medium border border-amber-200 dark:border-amber-900/50 space-y-1">
+        <p className="font-bold">Protección de integridad del sistema:</p>
+        <p>
+          Si el {isClientes ? "cliente" : "usuario"} cuenta con sellos, visitas o transacciones previas, el sistema <strong>inactivará y archivará su cuenta</strong> de la vista activa para proteger la consistencia de reportes y canjes.
+        </p>
       </div>
       <div className="flex gap-2 pt-2">
         <Button variant="danger" fullWidth onClick={handleEliminar} loading={busy}>
-          Sí, eliminar
+          Sí, proceder
         </Button>
         <Button
           variant="secondary"
@@ -707,6 +752,17 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
                           >
                             <SquarePen className="w-4 h-4" />
                           </button>
+                          {/* Botón Cambiar Contraseña: Solo en Gestión de Usuarios (no en Gestión de Clientes) */}
+                          {!isClientes && (
+                            <button
+                              type="button"
+                              onClick={() => openPasswordModal(u)}
+                              className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition"
+                              title="Cambiar / Desbloquear contraseña"
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+                          )}
                           {u.rol_nombre !== "ADMIN" && u.rol_nombre !== "ADMIN_GENERAL" && (
                             <button
                               type="button"
@@ -922,6 +978,90 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
         size="md"
       >
         {formCrearModal}
+      </Modal>
+
+      {/* Modal Cambiar / Desbloquear Contraseña */}
+      <Modal
+        open={modalPassword}
+        onClose={() => setModalPassword(false)}
+        title="Restablecer o Cambiar Contraseña"
+        size="sm"
+      >
+        {usuarioSeleccionado && (
+          <form onSubmit={handleCambiarPassword} className="space-y-4">
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/50 rounded-xl text-xs">
+              <p className="font-bold text-slate-900 dark:text-white">
+                {usuarioSeleccionado.nombres} {usuarioSeleccionado.apellidos}
+              </p>
+              <p className="text-slate-600 dark:text-slate-300 font-mono mt-0.5">
+                {usuarioSeleccionado.email}
+              </p>
+              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-800 dark:text-amber-300">
+                <Shield className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  La contraseña se cifrará con <strong>bcrypt</strong> antes de guardarse en la base de datos.
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  Nueva Contraseña *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$";
+                    let gen = "";
+                    for (let i = 0; i < 10; i++) {
+                      gen += chars.charAt(Math.floor(Math.random() * chars.length));
+                    }
+                    setNuevaPassword(gen);
+                    setPasswordError("");
+                  }}
+                  className="text-[11px] font-bold text-teal-600 hover:text-teal-700 dark:text-teal-400 hover:underline cursor-pointer"
+                >
+                  Generar segura
+                </button>
+              </div>
+
+              <input
+                type="text"
+                placeholder="Mínimo 6 caracteres (ej. Pass2026!)"
+                value={nuevaPassword}
+                onChange={(e) => {
+                  setNuevaPassword(e.target.value);
+                  if (passwordError) setPasswordError("");
+                }}
+                className="input-base font-mono text-sm"
+                required
+              />
+
+              {passwordError && (
+                <p className="text-xs text-rose-500 mt-1">{passwordError}</p>
+              )}
+
+              <p className="text-[11px] text-slate-400 mt-1">
+                Al aplicar el cambio, si la cuenta estaba bloqueada se desbloqueará y reactivará automáticamente.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" loading={cambiandoPassword} fullWidth className="bg-[#7C0A1E] hover:bg-[#600616] text-white">
+                Aplicar Contraseña
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                fullWidth
+                onClick={() => setModalPassword(false)}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

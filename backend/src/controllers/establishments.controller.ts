@@ -69,15 +69,18 @@ export const EstablishmentsController = {
   async misSucursales(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const result = await query(
-        `SELECT s.id_sucursal, s.nombre, s.direccion, s.telefono,
+        `SELECT s.id_sucursal, s.nombre, s.direccion, s.telefono, s.horario, s.google_maps_url,
                 e.id_establecimiento, e.nombre_comercial, e.razon_social, e.ruc,
                 e.email, e.telefono AS telefono_establecimiento,
+                e.logo, e.imagen_portada, e.descripcion,
+                cat.icono_url AS categoria_icono, cat.nombre AS categoria_nombre,
                 ps.id_programa, ps.nombre AS programa_nombre, ps.meta_sellos,
                 CASE WHEN ps.id_programa IS NOT NULL
                   THEN COALESCE(ps.puntos_por_visita, rp.valor, 20)
                 END AS puntos_por_visita
          FROM sucursales s
          JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
          LEFT JOIN LATERAL (
            SELECT id_programa, nombre, meta_sellos, puntos_por_visita
            FROM programas_sellos
@@ -98,6 +101,65 @@ export const EstablishmentsController = {
         [req.user!.id],
       );
       sendResponse(res, 200, result.rows, "Sucursales asignadas");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Actualizar perfil del establecimiento por el comercio asignado (imágenes, teléfono, etc.) */
+  async actualizarMiPerfil(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const { logo, imagen_portada, telefono, email, descripcion, horario, id_sucursal } = req.body;
+
+      // Obtener el establecimiento del usuario
+      const sucRes = await query(
+        `SELECT s.id_establecimiento, s.id_sucursal
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+         WHERE us.id_usuario = $1 AND us.estado = 1 AND s.estado = 1 AND e.estado = 'ACTIVO'
+           AND ($2::bigint IS NULL OR s.id_sucursal = $2)
+         ORDER BY s.es_principal DESC, s.id_sucursal ASC
+         LIMIT 1`,
+        [idUsuario, id_sucursal ? Number(id_sucursal) : null],
+      );
+      if (!sucRes.rows[0]) {
+        throw new ApiError(404, "No tienes un establecimiento asignado");
+      }
+      const idEst = sucRes.rows[0].id_establecimiento;
+      const idSucTarget = sucRes.rows[0].id_sucursal;
+
+      const updateRes = await query(
+        `UPDATE establecimientos
+         SET logo = COALESCE($1, logo),
+             imagen_portada = COALESCE($2, imagen_portada),
+             telefono = COALESCE($3, telefono),
+             email = COALESCE($4, email),
+             descripcion = COALESCE($5, descripcion)
+         WHERE id_establecimiento = $6
+         RETURNING id_establecimiento, nombre_comercial, logo, imagen_portada, telefono, email, descripcion`,
+        [
+          logo !== undefined ? (logo || null) : null,
+          imagen_portada !== undefined ? (imagen_portada || null) : null,
+          telefono !== undefined ? (telefono || null) : null,
+          email !== undefined ? (email || null) : null,
+          descripcion !== undefined ? (descripcion || null) : null,
+          idEst,
+        ],
+      );
+
+      // Si se proporcionó horario, actualizar la sucursal asignada
+      if (horario !== undefined) {
+        await query(
+          `UPDATE sucursales
+           SET horario = $1
+           WHERE id_sucursal = $2`,
+          [horario ? String(horario).trim() : null, idSucTarget],
+        );
+      }
+
+      sendResponse(res, 200, { ...updateRes.rows[0], horario }, "Perfil del establecimiento actualizado exitosamente");
     } catch (error) {
       next(error);
     }
@@ -126,9 +188,9 @@ export const EstablishmentsController = {
           ps.id_programa,
           ps.nombre AS programa_nombre,
           ps.meta_sellos,
-          ps.nombre_sello,
-          ps.imagen_sello,
-          ps.color_sello,
+          COALESCE(ps.nombre_sello, 'Sello ' || e.nombre_comercial) AS nombre_sello,
+          COALESCE(ps.imagen_sello, cat.icono_url, e.logo, 'landmark') AS imagen_sello,
+          COALESCE(ps.color_sello, '#7C0A1E') AS color_sello,
           COALESCE(rp.valor, 20) AS puntos_por_visita,
           -- Sucursales agrupadas en JSON
           COALESCE(
@@ -140,7 +202,10 @@ export const EstablishmentsController = {
                 'latitud', s.latitud,
                 'longitud', s.longitud,
                 'telefono', s.telefono,
-                'es_principal', s.es_principal
+                'es_principal', s.es_principal,
+                'permite_autosellado', COALESCE(s.permite_autosellado, 0),
+                'radio_tolerancia_metros', COALESCE(s.radio_tolerancia_metros, 150),
+                'requiere_foto', COALESCE(s.requiere_foto, 0)
               )
             ) FILTER (WHERE s.id_sucursal IS NOT NULL),
             '[]'::json
@@ -151,8 +216,8 @@ export const EstablishmentsController = {
         LEFT JOIN LATERAL (
           SELECT id_programa, nombre, meta_sellos, nombre_sello, imagen_sello, color_sello, puntos_por_visita
           FROM programas_sellos
-          WHERE id_establecimiento = e.id_establecimiento AND estado = 'ACTIVO'
-          ORDER BY id_programa DESC
+          WHERE id_establecimiento = e.id_establecimiento
+          ORDER BY (CASE WHEN estado = 'ACTIVO' THEN 1 ELSE 0 END) DESC, fecha_actualizacion DESC, id_programa DESC
           LIMIT 1
         ) ps ON true
         LEFT JOIN LATERAL (
@@ -211,19 +276,34 @@ export const EstablishmentsController = {
       const result = await query(
         `SELECT 
           e.*,
+          cat.nombre AS categoria_nombre,
+          cat.icono_url AS categoria_icono,
           ps.id_programa,
           ps.nombre AS programa_nombre,
           ps.meta_sellos,
-          ps.nombre_sello,
-          ps.imagen_sello,
-          ps.color_sello,
-          COALESCE(rp.valor, 20) AS puntos_por_visita
+          COALESCE(ps.nombre_sello, 'Sello ' || e.nombre_comercial) AS nombre_sello,
+          COALESCE(ps.imagen_sello, cat.icono_url, e.logo, 'landmark') AS imagen_sello,
+          COALESCE(ps.color_sello, '#7C0A1E') AS color_sello,
+          COALESCE(rp.valor, ps.puntos_por_visita, 20) AS puntos_por_visita
          FROM establecimientos e
-         LEFT JOIN programas_sellos ps ON ps.id_establecimiento = e.id_establecimiento AND ps.estado = 'ACTIVO'
-         LEFT JOIN reglas_puntos rp ON rp.id_programa = ps.id_programa AND rp.tipo_regla = 'POR_SELLO' AND rp.estado = 1
+         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
+         LEFT JOIN LATERAL (
+           SELECT id_programa, nombre, meta_sellos, nombre_sello, imagen_sello, color_sello, puntos_por_visita
+           FROM programas_sellos
+           WHERE id_establecimiento = e.id_establecimiento
+           ORDER BY (CASE WHEN estado = 'ACTIVO' THEN 1 ELSE 0 END) DESC, fecha_actualizacion DESC, id_programa DESC
+           LIMIT 1
+         ) ps ON true
+         LEFT JOIN LATERAL (
+           SELECT valor
+           FROM reglas_puntos
+           WHERE id_programa = ps.id_programa AND tipo_regla = 'POR_SELLO' AND estado = 1
+           LIMIT 1
+         ) rp ON true
          WHERE e.id_establecimiento = $1`,
         [id],
       );
+
 
       if (!result.rows[0]) {
         throw new ApiError(404, "Establecimiento no encontrado");
@@ -256,10 +336,12 @@ export const EstablishmentsController = {
 
       // Obtener sucursales del usuario autenticado
       const sucRes = await query(
-        `SELECT us.id_sucursal, s.nombre, s.id_establecimiento, e.nombre_comercial
+        `SELECT us.id_sucursal, s.nombre, s.id_establecimiento, e.nombre_comercial,
+                e.logo, cat.icono_url AS categoria_icono, cat.nombre AS categoria_nombre
          FROM usuario_sucursal us
          JOIN sucursales s ON s.id_sucursal = us.id_sucursal
          JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
          WHERE us.id_usuario = $1 AND us.estado = 1`,
         [idUsuario],
       );
@@ -267,7 +349,14 @@ export const EstablishmentsController = {
       const sucursales = sucRes.rows;
       if (sucursales.length === 0) {
         return sendResponse(res, 200, {
-          establecimiento: { nombre: "Mi Local" },
+          establecimiento: {
+            id_establecimiento: null,
+            nombre: "Mi Local",
+            sucursal: "Principal",
+            logo: null,
+            categoria_icono: "store",
+            categoria_nombre: "Comercio"
+          },
           visitas_hoy: 0,
           visitas_mes: 0,
           puntos_hoy: 0,
@@ -399,8 +488,12 @@ export const EstablishmentsController = {
 
       sendResponse(res, 200, {
         establecimiento: {
+          id_establecimiento: sucursales[0].id_establecimiento,
           nombre: sucursales[0].nombre_comercial,
-          sucursal: sucursales[0].nombre
+          sucursal: sucursales[0].nombre,
+          logo: sucursales[0].logo,
+          categoria_icono: sucursales[0].categoria_icono,
+          categoria_nombre: sucursales[0].categoria_nombre
         },
         visitas_hoy: visitasHoyRes.rows[0]?.total || 0,
         visitas_mes: visitasMesRes.rows[0]?.total || 0,
@@ -1013,40 +1106,7 @@ export const EstablishmentsController = {
   },
 
   async getById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-    try {
-      const id = Number(req.params.id);
-      const result = await query(
-        `SELECT e.*,
-                c.nombre AS categoria_nombre,
-                c.icono_url AS categoria_icono,
-                COALESCE(
-                  json_agg(
-                    DISTINCT jsonb_build_object(
-                      'id_sucursal', s.id_sucursal,
-                      'nombre', s.nombre,
-                      'direccion', s.direccion,
-                      'latitud', s.latitud,
-                      'longitud', s.longitud,
-                      'telefono', s.telefono,
-                      'horario', s.horario,
-                      'es_principal', s.es_principal,
-                      'google_maps_url', s.google_maps_url
-                    )
-                  ) FILTER (WHERE s.id_sucursal IS NOT NULL),
-                  '[]'::json
-                ) AS sucursales
-         FROM establecimientos e
-         LEFT JOIN categorias_establecimiento c ON c.id = e.categoria_id
-         LEFT JOIN sucursales s ON s.id_establecimiento = e.id_establecimiento AND s.estado = 1
-         WHERE e.id_establecimiento = $1
-         GROUP BY e.id_establecimiento, c.nombre, c.icono_url`,
-        [id],
-      );
-      if (!result.rows[0]) throw new ApiError(404, "Establecimiento no encontrado");
-      sendResponse(res, 200, result.rows[0]);
-    } catch (error) {
-      next(error);
-    }
+    return this.detalle(req, res, next);
   },
   /** Guardar una insignia personalizada para reutilizarla en varios diseños */
   async crearMiInsignia(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -1145,6 +1205,64 @@ export const EstablishmentsController = {
       if (!result.rows[0]) throw new ApiError(404, "Insignia no encontrada");
       await client.query("COMMIT");
       sendResponse(res, 200, result.rows[0], estado === "ACTIVO" ? "Insignia restaurada" : "Insignia archivada");
+    } catch (error) {
+      if (client) await client.query("ROLLBACK");
+      next(error);
+    } finally {
+      client?.release();
+    }
+  },
+
+  /** Eliminar definitivamente una insignia de la biblioteca si no está en uso activo */
+  async eliminarMiInsignia(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    let client: any;
+    try {
+      const idInsignia = req.params.id;
+      if (!isValidId(idInsignia)) throw new ApiError(400, "Identificador de insignia inválido");
+
+      client = await pool.connect();
+      await client.query("BEGIN");
+      const est = await establecimientoDelUsuario(
+        (sql, params) => client.query(sql, params),
+        req.user!.id,
+        req.query?.id_sucursal,
+      );
+
+      const check = await client.query(
+        `SELECT id_insignia, nombre, imagen_url FROM insignias_sello
+         WHERE id_insignia = $1 AND id_establecimiento = $2`,
+        [idInsignia, est.id_establecimiento],
+      );
+      if (!check.rows[0]) throw new ApiError(404, "Insignia no encontrada");
+
+      // Comprobar si algún diseño de sello activo está usando la URL de esta insignia
+      const enUso = await client.query(
+        `SELECT COUNT(*)::int AS count FROM programas_sellos
+         WHERE id_establecimiento = $1 AND imagen_sello = $2`,
+        [est.id_establecimiento, check.rows[0].imagen_url],
+      );
+
+      if ((enUso.rows[0]?.count || 0) > 0) {
+        // En lugar de romper diseños existentes, hacemos un archivado elegante
+        await client.query(
+          `UPDATE insignias_sello SET estado = 'INACTIVO' WHERE id_insignia = $1`,
+          [idInsignia],
+        );
+        await client.query("COMMIT");
+        return sendResponse(
+          res,
+          200,
+          { id_insignia: idInsignia, archivada: true },
+          "La insignia está asociada a sellos existentes. Ha sido archivada para no romper los diseños.",
+        );
+      }
+
+      await client.query(
+        `DELETE FROM insignias_sello WHERE id_insignia = $1 AND id_establecimiento = $2`,
+        [idInsignia, est.id_establecimiento],
+      );
+      await client.query("COMMIT");
+      sendResponse(res, 200, { id_insignia: idInsignia, eliminada: true }, "Insignia eliminada de la biblioteca con éxito");
     } catch (error) {
       if (client) await client.query("ROLLBACK");
       next(error);

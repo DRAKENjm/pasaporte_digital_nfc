@@ -44,6 +44,7 @@ export const UserModel = {
                   'id_tarjeta', t.id_tarjeta,
                   'uid_nfc', t.uid_nfc,
                   'codigo_interno', t.codigo_interno,
+                  'qr_respaldo', COALESCE(t.qr_respaldo, t.codigo_interno),
                   'estado', t.estado
                 )
                 FROM tarjetas_nfc t

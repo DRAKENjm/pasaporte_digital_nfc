@@ -16,6 +16,8 @@ import {
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { Spinner } from "../../components/common/Spinner";
+import { CategoryIcon } from "../../components/common/CategoryIcon";
+import { resolveImageUrl, isImageUrl } from "../../components/common/DigitalStampBadge";
 
 export const CommerceHome: React.FC = () => {
   const { user } = useAuth();
@@ -51,8 +53,13 @@ export const CommerceHome: React.FC = () => {
     return <div className="py-16 text-center text-sm text-[#8E7D7D]">No se pudo cargar el panel del establecimiento. Intenta nuevamente más tarde.</div>;
   }
 
-  const localNombre = stats?.establecimiento?.nombre || "Aroma Café";
+  const localNombre = stats?.establecimiento?.nombre || "Mi Establecimiento";
   const sucursalNombre = stats?.establecimiento?.sucursal || "Principal";
+  const logo = stats?.establecimiento?.logo;
+  const categoriaIcono = stats?.establecimiento?.categoria_icono || "store";
+  const categoriaNombre = stats?.establecimiento?.categoria_nombre;
+  const hasLogoImage = Boolean(logo && isImageUrl(logo));
+  const iconFallback = (!hasLogoImage && logo) ? logo : categoriaIcono;
   const visitasHoy = stats?.visitas_hoy ?? 0;
   const visitasTotales = stats?.visitas_mes ?? 0;
   const puntosHoy = stats?.puntos_hoy ?? 0;
@@ -71,8 +78,26 @@ export const CommerceHome: React.FC = () => {
       {/* 1. Header del Comercio con Acción Principal */}
       <div className="bg-white rounded-3xl p-6 border border-[#EFE7DE] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
-          <div className="w-14 h-14 rounded-2xl bg-[#7C0A1E] text-white flex items-center justify-center font-bold text-2xl shadow-md">
-            ☕
+          <div className="relative w-14 h-14 rounded-2xl bg-white border border-[#EFE7DE] shadow-md flex items-center justify-center overflow-hidden shrink-0">
+            {hasLogoImage ? (
+              <img
+                src={resolveImageUrl(logo)}
+                alt={localNombre}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = "none";
+                  const fallback = e.currentTarget.parentElement?.querySelector(".avatar-fallback");
+                  if (fallback) fallback.classList.remove("hidden");
+                }}
+              />
+            ) : null}
+            <div
+              className={`avatar-fallback w-full h-full bg-[#7C0A1E] text-white flex items-center justify-center ${
+                hasLogoImage ? "hidden" : ""
+              }`}
+            >
+              <CategoryIcon icon={iconFallback} className="w-7 h-7 text-white" />
+            </div>
           </div>
           <div>
             <div className="flex items-center space-x-2">
@@ -82,6 +107,7 @@ export const CommerceHome: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-[#8E7D7D] mt-0.5">
+              {categoriaNombre && <span className="font-semibold text-[#7C0A1E]">{categoriaNombre} · </span>}
               Panel de control de sucursal · Métricas de visitas y lectura NFC
             </p>
           </div>

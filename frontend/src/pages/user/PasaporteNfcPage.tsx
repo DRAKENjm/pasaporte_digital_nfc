@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Wifi, Award, Info, CheckCircle2, QrCode, Upload } from "lucide-react";
+import { ArrowLeft, Wifi, Award, Info, CheckCircle2, QrCode, Upload, Eye, X, Copy, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import QRCode from "qrcode";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 
@@ -23,6 +24,12 @@ export const PasaporteNfcPage: React.FC = () => {
   const [tarjetaInfo, setTarjetaInfo] = useState<any>(null);
   const [nivelNombre, setNivelNombre] = useState("Iniciador");
   const [guardando, setGuardando] = useState(false);
+  
+  // Modal QR de Respaldo
+  const [mostrarModalQr, setMostrarModalQr] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [copiado, setCopiado] = useState(false);
+
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,19 +40,36 @@ export const PasaporteNfcPage: React.FC = () => {
           api.get("/nfc/tarjeta/personalizacion").catch(() => null),
         ]);
         const data = prof.data?.data;
-        setTarjetaInfo(data?.tarjeta_activa || null);
+        const tarjeta = data?.tarjeta_activa || null;
+        setTarjetaInfo(tarjeta);
         setNivelNombre(data?.nivel?.nombre || "Iniciador");
         const img =
           pers?.data?.data?.imagen_fondo ||
           data?.tarjeta_personalizacion?.imagen_fondo ||
           null;
         if (img) setImagenFondo(img);
+
+        // Generar QR de respaldo usando el código de respaldo, código interno o código cliente
+        const valorQr = tarjeta?.qr_respaldo || tarjeta?.codigo_interno || data?.codigo_cliente || `CLI-${data?.id || user?.id}`;
+        try {
+          const url = await QRCode.toDataURL(valorQr, {
+            width: 280,
+            margin: 2,
+            color: {
+              dark: "#2D1A1E",
+              light: "#FFFFFF",
+            },
+          });
+          setQrDataUrl(url);
+        } catch (err) {
+          console.error("Error generando código QR:", err);
+        }
       } catch {
         /* ignore */
       }
     };
     load();
-  }, []);
+  }, [user?.id]);
 
   const handleImagen = async (file: File) => {
     setGuardando(true);
@@ -75,59 +99,65 @@ export const PasaporteNfcPage: React.FC = () => {
     setTimeout(async () => {
       setMensaje("Validando con terminal...");
       try {
+        const uid = tarjetaInfo?.uid_nfc || "04:A1:B2:C3:D4:E5:1234";
         const idRes = await api.post("/nfc/identificar", {
-          uid_nfc: "04:A1:B2:C3:D4:E5:1234",
-        });
-        await api.post("/nfc/confirmar-visita", {
-          id_tarjeta: idRes.data.data.id_tarjeta,
-          id_sucursal: 1,
-          observacion: "Lectura desde Pasaporte Web",
+          uid_nfc: uid,
         });
         setExito(true);
-        setMensaje("¡Visita registrada!");
+        setMensaje(`¡Identificado como ${idRes.data?.data?.cliente?.nombres || "Cliente"}!`);
       } catch (err: any) {
         setExito(false);
         setMensaje(err.response?.data?.message || "Lectura completada");
       } finally {
         setEscaneando(false);
       }
-    }, 1500);
+    }, 1200);
   };
 
-  const codigo = tarjetaInfo?.codigo_interno || "NFC-2025-0001";
-  const nombre = user?.nombres || "Usuario";
+  const codigo = tarjetaInfo?.codigo_interno || user?.codigo_cliente || "NFC-2025-0001";
+  const qrRespaldoTexto = tarjetaInfo?.qr_respaldo || tarjetaInfo?.codigo_interno || user?.codigo_cliente || codigo;
+  const nombre = user?.nombres ? `${user.nombres} ${user?.apellidos || ""}`.trim() : "Usuario Pasaporte";
   const marco = frameColorForLevel(nivelNombre);
+
+  const copiarCodigo = () => {
+    navigator.clipboard.writeText(qrRespaldoTexto);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  };
 
   return (
     <div className="w-full min-h-screen bg-[#FAF8F5] flex flex-col p-4 sm:p-5 pb-8 max-w-lg mx-auto">
       <div className="flex items-center justify-between pt-2 mb-4">
         <button
           onClick={() => (vista === "escanear" ? setVista("tarjeta") : navigate(-1))}
-          className="w-9 h-9 rounded-full bg-white border border-[#EFE7DE] flex items-center justify-center"
+          className="w-9 h-9 rounded-full bg-white border border-[#EFE7DE] flex items-center justify-center text-[#2D1A1E]"
         >
           <ArrowLeft size={18} />
         </button>
         <h1 className="text-base font-bold text-[#2D1A1E]">
-          {vista === "tarjeta" ? "Mi Tarjeta NFC" : "Registrar visita"}
+          {vista === "tarjeta" ? "Mi Tarjeta NFC y QR" : "Validar NFC"}
         </h1>
         <div className="flex items-center space-x-1 bg-[#7C0A1E] text-white px-2.5 py-1 rounded-full text-[11px] font-bold">
           <Wifi size={13} className="rotate-90" />
-          <span>NFC</span>
+          <span>NFC + QR</span>
         </div>
       </div>
 
       {vista === "tarjeta" ? (
         <>
+          {/* Tarjeta Digital */}
           <div
-            className="relative w-full max-w-sm mx-auto aspect-[1.586/1] rounded-2xl overflow-hidden shadow-xl"
+            onClick={() => setMostrarModalQr(true)}
+            className="relative w-full max-w-sm mx-auto aspect-[1.586/1] rounded-2xl overflow-hidden shadow-xl cursor-pointer group transition-transform active:scale-[0.99]"
             style={{ border: `3px solid ${marco}`, boxShadow: `0 8px 24px ${marco}40` }}
+            title="Toca para ampliar el QR de Respaldo"
           >
             {imagenFondo ? (
               <img src={imagenFondo} alt="" className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0 bg-gradient-to-br from-[#7C0A1E] via-[#9B1B30] to-[#580614]" />
             )}
-            <div className="absolute inset-0 bg-black/30" />
+            <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
             <div className="relative h-full flex flex-col justify-between p-4 text-white">
               <div className="flex items-start justify-between">
                 <div>
@@ -140,22 +170,43 @@ export const PasaporteNfcPage: React.FC = () => {
                     {nivelNombre}
                   </span>
                 </div>
-                <Wifi size={22} className="rotate-90 opacity-90" />
+                <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-xs px-2 py-1 rounded-lg">
+                  <Wifi size={16} className="rotate-90 opacity-90" />
+                  <span className="text-[10px] font-mono font-bold tracking-wider">NFC</span>
+                </div>
               </div>
+
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-[9px] opacity-70">Código</p>
-                  <p className="font-mono text-sm tracking-wider">{codigo}</p>
+                  <p className="text-[9px] opacity-70">Código / Respaldo</p>
+                  <p className="font-mono text-sm tracking-wider font-bold">{codigo}</p>
                 </div>
-                <div className="w-14 h-14 bg-white/90 rounded-lg flex items-center justify-center">
-                  <QrCode size={32} className="text-[#7C0A1E]" />
+
+                {/* Minicuadro QR interactivo */}
+                <div className="w-14 h-14 bg-white rounded-lg p-1 flex items-center justify-center shadow-md">
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt="QR de respaldo" className="w-full h-full object-contain" />
+                  ) : (
+                    <QrCode size={30} className="text-[#7C0A1E]" />
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
-          <p className="text-center text-xs text-[#8E7D7D] my-4 px-2">
-            El marco cambia según tu nivel. Sube una imagen; se guarda en tu cuenta.
+          {/* Botón directo para Ver QR de Respaldo */}
+          <div className="mt-3 flex justify-center">
+            <button
+              onClick={() => setMostrarModalQr(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#EFE7DE] shadow-xs text-xs font-bold text-[#7C0A1E] hover:bg-[#FAF8F5]"
+            >
+              <QrCode size={16} className="text-[#C5A059]" />
+              <span>Ver QR de Respaldo en pantalla completa</span>
+            </button>
+          </div>
+
+          <p className="text-center text-xs text-[#8E7D7D] my-3 px-2">
+            ¿Olvidaste tu tarjeta NFC física? Muestra este QR al comercio para que te otorguen tus sellos y puntos.
           </p>
 
           <div className="space-y-2.5 max-w-sm mx-auto w-full">
@@ -172,17 +223,18 @@ export const PasaporteNfcPage: React.FC = () => {
             <button
               onClick={() => fileRef.current?.click()}
               disabled={guardando}
-              className="w-full py-3 rounded-2xl border border-dashed border-[#C5A059] bg-white text-[#7C0A1E] text-xs font-bold flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-2xl border border-dashed border-[#C5A059] bg-white text-[#7C0A1E] text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-50/40 transition-colors"
             >
               <Upload size={16} />
-              {guardando ? "Guardando..." : imagenFondo ? "Cambiar imagen (se guarda)" : "Agregar imagen de fondo"}
+              {guardando ? "Guardando..." : imagenFondo ? "Cambiar foto de fondo" : "Personalizar fondo de tarjeta"}
             </button>
+
             <button
               onClick={() => setVista("escanear")}
-              className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md"
+              className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#600616] transition-colors"
             >
               <Wifi size={16} className="rotate-90" />
-              Registrar visita con NFC
+              Probar lectura de chip NFC
             </button>
           </div>
         </>
@@ -194,24 +246,89 @@ export const PasaporteNfcPage: React.FC = () => {
               <Wifi size={48} className="rotate-90" />
             </div>
           </div>
-          <h2 className="text-xl font-bold text-[#2D1A1E]">Acerca tu tarjeta NFC</h2>
+          <h2 className="text-xl font-bold text-[#2D1A1E]">Terminal de prueba NFC</h2>
+          <p className="text-xs text-[#8E7D7D] mt-1 text-center max-w-xs">
+            Comprueba que tu credencial digital esté correctamente vinculada al sistema.
+          </p>
           <button
             onClick={simularLecturaNfc}
             disabled={escaneando}
             className="mt-6 w-full max-w-xs py-3.5 rounded-2xl bg-[#7C0A1E] text-white font-bold text-xs shadow-md flex items-center justify-center gap-2"
           >
             {escaneando ? mensaje : exito ? (
-              <><CheckCircle2 size={16} /> ¡Registrado!</>
+              <><CheckCircle2 size={16} /> {mensaje || "¡Registrado!"}</>
             ) : (
-              <><Wifi size={16} className="rotate-90" /> Simular NFC</>
+              <><Wifi size={16} className="rotate-90" /> Probar Identificación</>
             )}
           </button>
           <div className="bg-[#F5EFEB] rounded-2xl p-3.5 flex items-start gap-2 border border-[#EFE7DE] mt-6 max-w-xs w-full">
             <Info size={16} className="text-[#7C0A1E] shrink-0 mt-0.5" />
-            <p className="text-[11px] text-[#8E7D7D]">Mantén la tarjeta cerca del lector del local.</p>
+            <p className="text-[11px] text-[#8E7D7D]">
+              En los locales también puedes validar presentando tu <strong>código QR de respaldo</strong> en caso de no contar con el chip físico.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal QR de Respaldo */}
+      {mostrarModalQr && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative border border-[#EFE7DE]">
+            <button
+              onClick={() => setMostrarModalQr(false)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800"
+            >
+              <X size={18} />
+            </button>
+
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#C5A059] bg-amber-50 px-3 py-1 rounded-full border border-[#C5A059]/30">
+                RESPALDO DIGITAL
+              </span>
+              <h3 className="text-lg font-black text-[#2D1A1E] mt-2">
+                Tu Código QR de Pasaporte
+              </h3>
+              <p className="text-xs text-[#8E7D7D] mt-0.5">
+                Presenta este código en caja para registrar tu visita y recibir tus sellos.
+              </p>
+            </div>
+
+            {/* Código QR renderizado en grande */}
+            <div className="p-4 bg-white rounded-2xl border-2 border-dashed border-[#7C0A1E]/30 flex flex-col items-center justify-center shadow-inner">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="QR Pasaporte" className="w-56 h-56 object-contain" />
+              ) : (
+                <div className="w-56 h-56 flex items-center justify-center">
+                  <QrCode size={64} className="text-[#7C0A1E] animate-pulse" />
+                </div>
+              )}
+            </div>
+
+            {/* Código en texto y botón copiar */}
+            <div className="bg-[#FAF8F5] border border-[#EFE7DE] rounded-xl p-3 flex items-center justify-between">
+              <div className="text-left">
+                <span className="text-[10px] font-bold text-[#8E7D7D] block uppercase">Código de Respaldo</span>
+                <span className="font-mono text-sm font-black text-[#7C0A1E]">{qrRespaldoTexto}</span>
+              </div>
+              <button
+                onClick={copiarCodigo}
+                className="px-3 py-1.5 rounded-lg bg-white border border-[#EFE7DE] text-xs font-bold text-[#2D1A1E] flex items-center gap-1.5 hover:bg-slate-50"
+              >
+                {copiado ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                <span>{copiado ? "Copiado" : "Copiar"}</span>
+              </button>
+            </div>
+
+            <button
+              onClick={() => setMostrarModalQr(false)}
+              className="w-full py-3 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold shadow-md hover:bg-[#600616]"
+            >
+              Listo, cerrar
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 };
+

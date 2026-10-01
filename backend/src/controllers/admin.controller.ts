@@ -182,6 +182,7 @@ export const AdminController = {
       const { rol, estado, q } = req.query;
       let sql = `
         SELECT u.id_usuario AS id, u.nombres, u.apellidos, u.email, u.telefono, u.foto_perfil AS avatar_url,
+               c.id_cliente, c.codigo_cliente,
                COALESCE((SELECT COUNT(*) FROM sellos_digitales s JOIN visitas v ON v.id_visita = s.id_visita WHERE v.id_cliente = c.id_cliente), 0)::int AS total_sellos,
                COALESCE((SELECT SUM(cantidad) FROM movimientos_puntos WHERE id_cliente = c.id_cliente), 0)::int AS puntos_globales,
                CASE WHEN u.estado = 1 THEN 'ACTIVO' ELSE 'INACTIVO' END AS estado,
@@ -357,7 +358,7 @@ export const AdminController = {
     }
   },
 
-  /** Eliminar usuario */
+  /** Eliminar o Archivar usuario / cliente (Soft delete inteligente con preservación histórica) */
   async eliminarUsuario(
     req: AuthenticatedRequest,
     res: Response,
@@ -366,39 +367,201 @@ export const AdminController = {
     try {
       const { id } = req.params;
 
-      // Prevent deleting the main admin
+      // Prevenir eliminar administradores generales
       const checkRes = await query(
-        `SELECT u.email, r.nombre as rol_nombre 
+        `SELECT u.id_usuario, u.email, u.nombres, u.apellidos, u.estado, r.nombre as rol_nombre 
          FROM usuarios u 
          JOIN roles r ON u.id_rol = r.id_rol 
          WHERE u.id_usuario = $1`,
-        [id]
+        [id],
       );
       if (!checkRes.rows[0]) throw new ApiError(404, "Usuario no encontrado");
-      if (checkRes.rows[0].rol_nombre === "ADMIN" || checkRes.rows[0].rol_nombre === "ADMIN_GENERAL") {
-        throw new ApiError(403, "No se puede eliminar a un administrador general");
+      const usuarioObj = checkRes.rows[0];
+
+      if (usuarioObj.rol_nombre === "ADMIN" || usuarioObj.rol_nombre === "ADMIN_GENERAL") {
+        throw new ApiError(403, "No se puede eliminar a una cuenta de administrador general");
       }
 
-      // Desvincular de usuario_sucursal si tiene asignaciones antes de eliminar
-      await query(`DELETE FROM usuario_sucursal WHERE id_usuario = $1`, [id]);
-
-      // Eliminar registros dependientes si es cliente (sellos, tarjetas, clientes)
+      // Comprobar si tiene registros de cliente
       const cliRes = await query(`SELECT id_cliente FROM clientes WHERE id_usuario = $1`, [id]);
-      if (cliRes.rows[0]) {
-        const idCliente = cliRes.rows[0].id_cliente;
+      const idCliente = cliRes.rows[0]?.id_cliente || null;
+
+      // Verificar si tiene transacciones o historial que impida el borrado físico
+      let tieneHistorial = false;
+      if (idCliente) {
+        const checkVisitas = await query(
+          `SELECT (SELECT COUNT(*) FROM visitas WHERE id_cliente = $1)::int AS count_visitas,
+                  (SELECT COUNT(*) FROM canjes WHERE id_cliente = $1)::int AS count_canjes,
+                  (SELECT COUNT(*) FROM movimientos_puntos WHERE id_cliente = $1)::int AS count_puntos`,
+          [idCliente],
+        );
+        const { count_visitas, count_canjes, count_puntos } = checkVisitas.rows[0] || {};
+        if ((count_visitas || 0) > 0 || (count_canjes || 0) > 0 || (count_puntos || 0) > 0) {
+          tieneHistorial = true;
+        }
+      }
+
+      // También verificar si operó como validador de visitas o sucursales
+      const checkValidador = await query(
+        `SELECT (SELECT COUNT(*) FROM visitas WHERE id_usuario_validador = $1)::int AS count_validador,
+                (SELECT COUNT(*) FROM usuario_sucursal WHERE id_usuario = $1)::int AS count_sucursal`,
+        [id],
+      );
+      if ((checkValidador.rows[0]?.count_validador || 0) > 0) {
+        tieneHistorial = true;
+      }
+
+      // Si tiene historial, aplicamos SOFT DELETE (Archivado lógico seguro)
+      if (tieneHistorial) {
+        // 1. Inactivar cuenta de usuario y revocar acceso
+        await query(
+          `UPDATE usuarios 
+           SET estado = 0, 
+               fecha_actualizacion = CURRENT_TIMESTAMP
+           WHERE id_usuario = $1`,
+          [id],
+        );
+
+        // 2. Si es cliente, desvincular y liberar sus tarjetas activas a DISPONIBLE
+        if (idCliente) {
+          await query(
+            `UPDATE tarjetas_nfc 
+             SET id_cliente = NULL, 
+                 estado = 'DISPONIBLE', 
+                 es_principal = 0,
+                 fecha_actualizacion = CURRENT_TIMESTAMP 
+             WHERE id_cliente = $1`,
+            [idCliente],
+          );
+          // Inactivar registro en clientes si la tabla tiene campo estado
+          try {
+            await query(`UPDATE clientes SET estado = 'INACTIVO' WHERE id_cliente = $1`, [idCliente]);
+          } catch {}
+        }
+
+        // 3. Desvincular de sucursales comerciales
+        await query(`DELETE FROM usuario_sucursal WHERE id_usuario = $1`, [id]);
+
+        // 4. Auditoría
+        try {
+          await query(
+            `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion, ip)
+             VALUES ($1, 'USUARIOS', 'EDITAR', 'usuarios', $2, $3, $4)`,
+            [
+              req.user?.id || id,
+              id,
+              `Baja lógica / Archivado de ${usuarioObj.email} (cuenta con historial histórico de visitas/puntos)`,
+              req.ip || null,
+            ],
+          );
+        } catch {}
+
+        return sendResponse(
+          res,
+          200,
+          { id, archivado: true, modo: "SOFT_DELETE" },
+          "El usuario cuenta con historial de actividad registrado. Ha sido archivado e inhabilitado de la vista activa con éxito para proteger los reportes.",
+        );
+      }
+
+      // Si NO tiene historial, realizar eliminación física limpia
+      if (idCliente) {
         await query(`UPDATE tarjetas_nfc SET id_cliente = NULL, estado = 'DISPONIBLE' WHERE id_cliente = $1`, [idCliente]);
-        await query(`DELETE FROM canjes WHERE id_cliente = $1`, [idCliente]);
-        await query(`DELETE FROM movimientos_puntos WHERE id_cliente = $1`, [idCliente]);
-        await query(`DELETE FROM sellos_digitales WHERE id_visita IN (SELECT id_visita FROM visitas WHERE id_cliente = $1)`, [idCliente]);
-        await query(`DELETE FROM visitas WHERE id_cliente = $1`, [idCliente]);
         await query(`DELETE FROM clientes WHERE id_cliente = $1`, [idCliente]);
       }
-
-      await query(`DELETE FROM auditoria WHERE id_usuario = $1`, [id]);
+      await query(`DELETE FROM usuario_sucursal WHERE id_usuario = $1`, [id]);
       await query(`DELETE FROM notificaciones WHERE id_usuario = $1`, [id]);
+      await query(`DELETE FROM auditoria WHERE id_usuario = $1`, [id]);
       await query(`DELETE FROM usuarios WHERE id_usuario = $1`, [id]);
 
-      sendResponse(res, 200, null, "Usuario eliminado permanentemente");
+      sendResponse(res, 200, { id, archivado: false, modo: "HARD_DELETE" }, "Usuario eliminado del sistema correctamente");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Restablecer / Cambiar contraseña de un usuario o comercio (Admin) */
+  async cambiarPasswordUsuario(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+      const { password, nueva_password } = req.body;
+      const passToSet = (nueva_password || password || "").trim();
+
+      if (!passToSet) {
+        throw new ApiError(400, "Debe ingresar la nueva contraseña");
+      }
+      if (passToSet.length < 6) {
+        throw new ApiError(400, "La contraseña debe tener un mínimo de 6 caracteres");
+      }
+
+      // Verificar existencia del usuario
+      const userRes = await query(
+        `SELECT u.id_usuario, u.email, u.nombres, u.apellidos, u.estado, r.nombre AS rol_nombre
+         FROM usuarios u
+         JOIN roles r ON r.id_rol = u.id_rol
+         WHERE u.id_usuario = $1`,
+        [id],
+      );
+      const user = userRes.rows[0];
+      if (!user) {
+        throw new ApiError(404, "Usuario no encontrado");
+      }
+
+      // Encriptar contraseña de forma segura con bcrypt
+      const passwordHash = await hashPassword(passToSet);
+
+      // Si la cuenta estaba inactiva/bloqueada, opcionalmente reactivarla
+      await query(
+        `UPDATE usuarios
+         SET password_hash = $1,
+             estado = 1,
+             fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_usuario = $2`,
+        [passwordHash, id],
+      );
+
+      // Registrar en auditoría
+      try {
+        await query(
+          `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion, ip, user_agent)
+           VALUES ($1, 'USUARIOS', 'EDITAR', 'usuarios', $2, $3, $4, $5)`,
+          [
+            req.user?.id || user.id_usuario,
+            user.id_usuario,
+            `Restablecimiento de contraseña administrativa para ${user.email} (${user.rol_nombre})`,
+            req.ip || null,
+            req.headers["user-agent"] || null,
+          ],
+        );
+      } catch (e) {
+        console.error("Error al registrar auditoría de cambio password:", e);
+      }
+
+      // Notificar al usuario afectado en su buzón del pasaporte
+      try {
+        await query(
+          `INSERT INTO notificaciones (id_usuario, tipo_notificacion, titulo, mensaje, canal, estado_envio, leida)
+           VALUES ($1, 'SISTEMA', $2, $3, 'APP', 'ENVIADA', 0)`,
+          [
+            user.id_usuario,
+            "Seguridad de la Cuenta",
+            "La administración ha actualizado tu contraseña de acceso. Si no solicitaste este cambio, contacta de inmediato con soporte.",
+          ],
+        );
+      } catch (e) {
+        console.error("Error al insertar notificación de cambio password:", e);
+      }
+
+      sendResponse(
+        res,
+        200,
+        { id: user.id_usuario, email: user.email, updated: true },
+        `Contraseña actualizada con éxito para ${user.email}`,
+      );
     } catch (error) {
       next(error);
     }
@@ -413,8 +576,11 @@ export const AdminController = {
     try {
       const { estado } = req.query;
       let sql = `
-        SELECT t.id_tarjeta AS id, t.uid_nfc, t.codigo_interno, t.estado, t.fecha_creacion AS created_at,
-               u.nombres, u.apellidos, u.email
+        SELECT t.id_tarjeta AS id, t.uid_nfc, t.codigo_interno, 
+               COALESCE(t.qr_respaldo, t.codigo_interno) AS qr_respaldo,
+               t.estado, t.fecha_creacion AS created_at, t.fecha_activacion,
+               t.id_cliente, c.codigo_cliente,
+               u.id_usuario, u.nombres, u.apellidos, u.email
         FROM tarjetas_nfc t
         LEFT JOIN clientes c ON c.id_cliente = t.id_cliente
         LEFT JOIN usuarios u ON u.id_usuario = c.id_usuario
@@ -531,6 +697,111 @@ export const AdminController = {
       }
 
       sendResponse(res, 200, result.rows[0], "Estado de tarjeta actualizado");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Asignar o desvincular una tarjeta NFC a un Cliente desde el panel de administración */
+  async asignarTarjetaCliente(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params; // id_tarjeta
+      const { id_cliente, id_usuario, desvincular } = req.body;
+
+      const tarjetaRes = await query(
+        `SELECT id_tarjeta, uid_nfc, codigo_interno, estado, id_cliente FROM tarjetas_nfc WHERE id_tarjeta = $1`,
+        [id],
+      );
+      if (!tarjetaRes.rows[0]) throw new ApiError(404, "Tarjeta NFC no encontrada");
+      const tarjetaActual = tarjetaRes.rows[0];
+
+      // Caso Desvincular tarjeta
+      if (desvincular || (!id_cliente && !id_usuario)) {
+        await query(
+          `UPDATE tarjetas_nfc 
+           SET id_cliente = NULL, 
+               estado = 'DISPONIBLE', 
+               es_principal = 0,
+               fecha_actualizacion = CURRENT_TIMESTAMP
+           WHERE id_tarjeta = $1`,
+          [id],
+        );
+
+        try {
+          await query(
+            `INSERT INTO historial_tarjeta_nfc (id_tarjeta, id_usuario_accion, accion, estado_anterior, estado_nuevo, motivo, fecha_hora)
+             VALUES ($1, $2, 'DESVINCULAR', $3, 'DISPONIBLE', 'Tarjeta desvinculada del cliente por el administrador', CURRENT_TIMESTAMP)`,
+            [id, req.user?.id || null, tarjetaActual.estado],
+          );
+        } catch {}
+
+        return sendResponse(res, 200, { id, estado: "DISPONIBLE", id_cliente: null }, "Tarjeta desvinculada exitosamente y puesta en almacén (DISPONIBLE)");
+      }
+
+      // Resolver id_cliente
+      let targetClienteId = id_cliente;
+      if (!targetClienteId && id_usuario) {
+        // Buscar cliente por id_usuario
+        const cliCheck = await query(`SELECT id_cliente FROM clientes WHERE id_usuario = $1`, [id_usuario]);
+        if (cliCheck.rows[0]) {
+          targetClienteId = cliCheck.rows[0].id_cliente;
+        } else {
+          // Crear registro en clientes para este usuario si aún no lo tiene
+          const codGen = `CLI-${Date.now().toString().slice(-6)}`;
+          const newCli = await query(
+            `INSERT INTO clientes (id_usuario, codigo_cliente, fecha_creacion)
+             VALUES ($1, $2, CURRENT_TIMESTAMP)
+             RETURNING id_cliente`,
+            [id_usuario, codGen],
+          );
+          targetClienteId = newCli.rows[0].id_cliente;
+        }
+      }
+
+      if (!targetClienteId) {
+        throw new ApiError(400, "Debes seleccionar un cliente válido para asignar la tarjeta");
+      }
+
+      // Si el cliente ya tenía una tarjeta ACTIVA distinta a esta, pasarla a REEMPLAZADA
+      await query(
+        `UPDATE tarjetas_nfc
+         SET estado = 'REEMPLAZADA', fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_cliente = $1 AND estado = 'ACTIVA' AND id_tarjeta != $2`,
+        [targetClienteId, id],
+      );
+
+      // Asignar y activar la tarjeta
+      const updateRes = await query(
+        `UPDATE tarjetas_nfc
+         SET id_cliente = $1,
+             estado = 'ACTIVA',
+             es_principal = 1,
+             fecha_activacion = COALESCE(fecha_activacion, CURRENT_TIMESTAMP),
+             fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_tarjeta = $2
+         RETURNING id_tarjeta AS id, uid_nfc, codigo_interno, estado, id_cliente, fecha_activacion`,
+        [targetClienteId, id],
+      );
+
+      // Historial
+      try {
+        await query(
+          `INSERT INTO historial_tarjeta_nfc (id_tarjeta, id_usuario_accion, accion, estado_anterior, estado_nuevo, motivo, fecha_hora)
+           VALUES ($1, $2, 'ASIGNAR_CLIENTE', $3, 'ACTIVA', $4, CURRENT_TIMESTAMP)`,
+          [id, req.user?.id || null, tarjetaActual.estado, `Asignada al cliente ID #${targetClienteId} desde panel admin`],
+        );
+      } catch {}
+
+      sendResponse(
+        res,
+        200,
+        updateRes.rows[0],
+        "Tarjeta NFC asignada y activada al cliente exitosamente",
+      );
     } catch (error) {
       next(error);
     }
@@ -1240,11 +1511,14 @@ export const AdminController = {
         `),
         query(`
           SELECT 
-            id_reclamacion AS id, codigo_reclamacion AS codigo_seguimiento, tipo AS tipo_registro,
-            detalle, fecha_registro AS created_at
-          FROM reclamaciones
-          WHERE estado = 'PENDIENTE' OR estado = 'REGISTRADO'
-          ORDER BY fecha_registro DESC
+            r.id_reclamacion AS id, r.codigo_reclamacion AS codigo_seguimiento, r.tipo AS tipo_registro,
+            r.detalle, r.fecha_registro AS created_at,
+            r.nombres_consumidor, r.apellidos_consumidor,
+            COALESCE(r.nombres_consumidor || ' ' || r.apellidos_consumidor, 'Consumidor') AS reclamante_nombre,
+            r.email
+          FROM reclamaciones r
+          WHERE r.estado = 'PENDIENTE' OR r.estado = 'REGISTRADO'
+          ORDER BY r.fecha_registro DESC
           LIMIT 5
         `),
       ]);
@@ -1319,12 +1593,76 @@ export const AdminController = {
   ) {
     try {
       const result = await query(
-        `SELECT id_documento AS id, id_documento, tipo_documento, titulo, version, contenido_url, 
+        `SELECT id_documento AS id, id_documento, tipo_documento, titulo, version, contenido_url, contenido_html,
                 fecha_publicacion AS fecha_creacion, fecha_publicacion, fecha_vigencia, estado 
          FROM documentos_legales 
          ORDER BY fecha_publicacion DESC`
       );
       sendResponse(res, 200, result.rows, "Documentos legales");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Guardar / Actualizar Documento Legal */
+  async guardarDocumentoLegal(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const id = req.params?.id;
+      const { tipo_documento, titulo, version, contenido_html, contenido_url, estado = 1 } = req.body;
+
+      if (!tipo_documento && !id) {
+        throw new ApiError(400, "El tipo de documento es obligatorio");
+      }
+
+      if (id) {
+        const result = await query(
+          `UPDATE documentos_legales
+           SET titulo = COALESCE($1, titulo),
+               version = COALESCE($2, version),
+               contenido_html = COALESCE($3, contenido_html),
+               contenido_url = COALESCE($4, contenido_url),
+               estado = COALESCE($5, estado),
+               fecha_vigencia = CURRENT_TIMESTAMP
+           WHERE id_documento = $6
+           RETURNING *`,
+          [titulo, version, contenido_html, contenido_url, estado, id]
+        );
+        return sendResponse(res, 200, result.rows[0], "Documento legal actualizado");
+      }
+
+      // Upsert por tipo_documento
+      const existing = await query(
+        `SELECT id_documento FROM documentos_legales WHERE tipo_documento = $1 LIMIT 1`,
+        [tipo_documento]
+      );
+
+      if (existing.rows[0]) {
+        const result = await query(
+          `UPDATE documentos_legales
+           SET titulo = COALESCE($1, titulo),
+               version = COALESCE($2, version),
+               contenido_html = COALESCE($3, contenido_html),
+               contenido_url = COALESCE($4, contenido_url),
+               estado = COALESCE($5, estado),
+               fecha_vigencia = CURRENT_TIMESTAMP
+           WHERE id_documento = $6
+           RETURNING *`,
+          [titulo, version, contenido_html, contenido_url, estado, existing.rows[0].id_documento]
+        );
+        return sendResponse(res, 200, result.rows[0], "Documento legal actualizado");
+      }
+
+      const result = await query(
+        `INSERT INTO documentos_legales (tipo_documento, titulo, version, contenido_html, contenido_url, estado, fecha_publicacion, fecha_vigencia)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING *`,
+        [tipo_documento, titulo || tipo_documento, version || "1.0", contenido_html || null, contenido_url || null, estado]
+      );
+      sendResponse(res, 201, result.rows[0], "Documento legal creado");
     } catch (error) {
       next(error);
     }
@@ -1394,6 +1732,7 @@ export const AdminController = {
           e.telefono,
           e.email,
           e.estado,
+          COALESCE(e.tipo, 'LOCAL') AS tipo,
           e.categoria_id,
           e.fecha_afiliacion,
           cat.nombre AS categoria_nombre,
@@ -1406,6 +1745,9 @@ export const AdminController = {
           sp.longitud AS lng,
           sp.google_maps_url,
           sp.horario,
+          COALESCE(sp.permite_autosellado, 0) AS permite_autosellado,
+          COALESCE(sp.radio_tolerancia_metros, 150) AS radio_tolerancia_metros,
+          COALESCE(sp.requiere_foto, 0) AS requiere_foto,
           -- Usuario encargado (COMERCIO) asignado
           u.id_usuario AS usuario_encargado_id,
           u.email AS usuario_encargado_email,
@@ -1504,8 +1846,8 @@ export const AdminController = {
       const estRes = await query(
         `INSERT INTO establecimientos (
            nombre_comercial, razon_social, ruc, descripcion,
-           logo, imagen_portada, email, telefono, categoria_id, estado, fecha_afiliacion
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVO', CURRENT_TIMESTAMP)
+           logo, imagen_portada, email, telefono, categoria_id, estado, fecha_afiliacion, tipo
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVO', CURRENT_TIMESTAMP, $10)
          RETURNING *`,
         [
           razon_social.trim(),
@@ -1517,6 +1859,7 @@ export const AdminController = {
           email?.trim() || null,
           telefono?.trim() || null,
           categoria_id ? Number(categoria_id) : null,
+          req.body.tipo === "LUGAR_TURISTICO" ? "LUGAR_TURISTICO" : "LOCAL",
         ],
       );
 
@@ -1526,8 +1869,9 @@ export const AdminController = {
       const sucRes = await query(
         `INSERT INTO sucursales (
            id_establecimiento, nombre, direccion, latitud, longitud,
-           telefono, es_principal, estado, fecha_creacion, google_maps_url, horario
-         ) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, CURRENT_TIMESTAMP, $7, $8)
+           telefono, es_principal, estado, fecha_creacion, google_maps_url, horario,
+           permite_autosellado, radio_tolerancia_metros, requiere_foto
+         ) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, CURRENT_TIMESTAMP, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           nuevoEst.id_establecimiento,
@@ -1538,6 +1882,9 @@ export const AdminController = {
           telefono?.trim() || null,
           google_maps_url?.trim() || null,
           horario?.trim() || null,
+          req.body.permite_autosellado ? 1 : 0,
+          Number(req.body.radio_tolerancia_metros) || 150,
+          req.body.requiere_foto ? 1 : 0,
         ],
       );
 
@@ -1647,7 +1994,8 @@ export const AdminController = {
            categoria_id = CASE WHEN $7::boolean THEN $8::int ELSE categoria_id END,
            imagen_portada = COALESCE($9, imagen_portada),
            logo = COALESCE($9, logo),
-           estado = COALESCE($10, estado)
+           estado = COALESCE($10, estado),
+           tipo = CASE WHEN $11::boolean THEN $12 ELSE tipo END
          WHERE id_establecimiento = $1
          RETURNING *`,
         [
@@ -1661,6 +2009,8 @@ export const AdminController = {
           catVal,
           imagen_url !== undefined ? imagen_url : null,
           estado ?? null,
+          req.body.tipo !== undefined,
+          req.body.tipo === "LUGAR_TURISTICO" ? "LUGAR_TURISTICO" : "LOCAL",
         ],
       );
 
@@ -1679,7 +2029,10 @@ export const AdminController = {
              longitud = COALESCE($4::numeric, longitud),
              telefono = COALESCE($5, telefono),
              google_maps_url = CASE WHEN $6::boolean THEN $7 ELSE google_maps_url END,
-             horario = CASE WHEN $8::boolean THEN $9 ELSE horario END
+             horario = CASE WHEN $8::boolean THEN $9 ELSE horario END,
+             permite_autosellado = CASE WHEN $10::boolean THEN $11::smallint ELSE permite_autosellado END,
+             radio_tolerancia_metros = CASE WHEN $12::boolean THEN $13::int ELSE radio_tolerancia_metros END,
+             requiere_foto = CASE WHEN $14::boolean THEN $15::smallint ELSE requiere_foto END
            WHERE id_sucursal = $1`,
           [
             sucPrincipal.rows[0].id_sucursal,
@@ -1691,12 +2044,18 @@ export const AdminController = {
             google_maps_url?.trim() || null,
             horario !== undefined,
             horario?.trim() || null,
+            req.body.permite_autosellado !== undefined,
+            req.body.permite_autosellado ? 1 : 0,
+            req.body.radio_tolerancia_metros !== undefined,
+            Number(req.body.radio_tolerancia_metros) || 150,
+            req.body.requiere_foto !== undefined,
+            req.body.requiere_foto ? 1 : 0,
           ],
         );
       } else if (direccion) {
         const newSuc = await query(
-          `INSERT INTO sucursales (id_establecimiento, nombre, direccion, latitud, longitud, telefono, es_principal, estado, google_maps_url, horario)
-           VALUES ($1, 'Sede Principal', $2, $3, $4, $5, 1, 1, $6, $7)
+          `INSERT INTO sucursales (id_establecimiento, nombre, direccion, latitud, longitud, telefono, es_principal, estado, google_maps_url, horario, permite_autosellado, radio_tolerancia_metros, requiere_foto)
+           VALUES ($1, 'Sede Principal', $2, $3, $4, $5, 1, 1, $6, $7, $8, $9, $10)
            RETURNING id_sucursal`,
           [
             id,
@@ -1706,6 +2065,9 @@ export const AdminController = {
             telefono?.trim() || null,
             google_maps_url?.trim() || null,
             horario?.trim() || null,
+            req.body.permite_autosellado ? 1 : 0,
+            Number(req.body.radio_tolerancia_metros) || 150,
+            req.body.requiere_foto ? 1 : 0,
           ],
         );
         sucPrincipal = newSuc;
@@ -1884,6 +2246,7 @@ export const AdminController = {
           ps.id_establecimiento,
           e.nombre_comercial AS establecimiento_nombre,
           e.razon_social,
+          COALESCE(e.tipo, 'LOCAL') AS establecimiento_tipo,
           e.logo AS establecimiento_logo,
           e.imagen_portada AS establecimiento_portada,
           ps.nombre,
@@ -2005,31 +2368,35 @@ export const AdminController = {
            imagen_sello = COALESCE($3, imagen_sello),
            color_sello = COALESCE($4, color_sello),
            descripcion = COALESCE($5, descripcion),
-           meta_sellos = CASE WHEN $6 IS NOT NULL THEN $6::int ELSE meta_sellos END,
-           puntos_por_visita = CASE WHEN $7 IS NOT NULL THEN $7::int ELSE puntos_por_visita END,
+           meta_sellos = COALESCE($6::int, meta_sellos),
+           puntos_por_visita = COALESCE($7::numeric, puntos_por_visita),
            estado = COALESCE($8, estado),
            fecha_actualizacion = CURRENT_TIMESTAMP
          WHERE id_programa = $1
          RETURNING *`,
         [
-          id,
+          Number(id),
           nombre_sello !== undefined ? nombre_sello.trim() : null,
           imagen_sello !== undefined ? imagen_sello.trim() : null,
           color_sello !== undefined ? color_sello.trim() : null,
           descripcion !== undefined ? descripcion.trim() : null,
-          meta_sellos !== undefined ? Number(meta_sellos) : null,
-          puntos_por_visita !== undefined ? Number(puntos_por_visita) : null,
+          meta_sellos !== undefined && meta_sellos !== null ? Number(meta_sellos) : null,
+          puntos_por_visita !== undefined && puntos_por_visita !== null ? Number(puntos_por_visita) : null,
           estado || null,
         ],
       );
 
       if (puntos_por_visita !== undefined && result.rows[0]?.id_establecimiento) {
-        await query(
-          `UPDATE reglas_sellos 
-           SET valor_puntos_por_sello = $1 
-           WHERE establecimiento_id = $2`,
-          [Number(puntos_por_visita), result.rows[0].id_establecimiento],
-        );
+        try {
+          await query(
+            `UPDATE reglas_sellos 
+             SET valor_puntos_por_sello = $1 
+             WHERE establecimiento_id = $2`,
+            [Number(puntos_por_visita), result.rows[0].id_establecimiento],
+          );
+        } catch {
+          // Si reglas_sellos no existe para este establecimiento, no interrumpir
+        }
       }
 
       sendResponse(res, 200, result.rows[0], "Diseño de sello actualizado exitosamente");

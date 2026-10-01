@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   Bell,
   CreditCard,
@@ -11,6 +11,9 @@ import {
   MapPin,
   X,
   CheckCircle2,
+  Trophy,
+  Star,
+  ShieldCheck
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
@@ -30,14 +33,30 @@ interface DashboardData {
   };
 }
 
+const HOME_CACHE_KEY = "vp_home_cache_v1";
+
+function getCachedHomeData() {
+  try {
+    const raw = localStorage.getItem(HOME_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export const HomePage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [locales, setLocales] = useState<any[]>([]);
-  const [visitas, setVisitas] = useState<any[]>([]);
-  const [notificaciones, setNotificaciones] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Hidratación inmediata desde caché: CERO segundos en blanco
+  const cached = useMemo(() => getCachedHomeData(), []);
+
+  const [data, setData] = useState<DashboardData | null>(cached?.data || null);
+  const [locales, setLocales] = useState<any[]>(cached?.locales || []);
+  const [visitas, setVisitas] = useState<any[]>(cached?.visitas || []);
+  const [notificaciones, setNotificaciones] = useState<any[]>(cached?.notificaciones || []);
+  const [loading, setLoading] = useState(!cached);
   const [activeSlide, setActiveSlide] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -51,10 +70,30 @@ export const HomePage: React.FC = () => {
           api.get("/activity/feed").catch(() => ({ data: { data: { visitas_recientes: [] } } })),
           api.get("/activity/notificaciones").catch(() => ({ data: { data: [] } })),
         ]);
-        setData(profileRes.data.data);
-        setLocales(localesRes.data?.data || []);
-        setVisitas(feedRes.data?.data?.visitas_recientes || []);
-        setNotificaciones(notifRes.data?.data || []);
+        const newData = profileRes.data.data;
+        const newLocales = localesRes.data?.data || [];
+        const newVisitas = feedRes.data?.data?.visitas_recientes || [];
+        const newNotifs = notifRes.data?.data || [];
+
+        setData(newData);
+        setLocales(newLocales);
+        setVisitas(newVisitas);
+        setNotificaciones(newNotifs);
+
+        // Guardar en caché para futuras visitas instantáneas
+        try {
+          localStorage.setItem(
+            HOME_CACHE_KEY,
+            JSON.stringify({
+              data: newData,
+              locales: newLocales,
+              visitas: newVisitas,
+              notificaciones: newNotifs,
+            })
+          );
+        } catch {
+          /* ignore */
+        }
       } catch (err) {
         console.error("Error cargando datos de inicio", err);
       } finally {
@@ -100,36 +139,43 @@ export const HomePage: React.FC = () => {
   const currentLocal = locales[activeSlide] || locales[0] || null;
 
   return (
-    <div className="w-full flex flex-col p-4 sm:p-5 pb-8 animate-fadeIn space-y-5 bg-[#FAF8F5] relative">
-      {/* 1. Header Superior: Logo Circular + Campana de Notificaciones con Dropdown */}
-      <div className="flex items-center justify-between pt-1 relative z-30">
-        <Link
-          to="/user/home"
-          className="w-11 h-11 rounded-full bg-[#7C0A1E] border-2 border-[#C5A059] p-1.5 flex items-center justify-center shadow-md shadow-[#7C0A1E]/15 hover:scale-105 transition-transform"
-        >
-          <img
-            src="/logo-icon.png"
-            alt="Pasaporte Digital"
-            className="w-full h-full object-contain"
-            onError={(e) => {
-              (e.target as HTMLElement).style.display = "none";
-            }}
-          />
-        </Link>
-
-        {/* Campana y Popover Desplegable */}
-        <div className="relative" ref={notifRef}>
-          <button
-            type="button"
-            onClick={() => setShowNotifDropdown((prev) => !prev)}
-            className="w-11 h-11 rounded-full bg-[#7C0A1E] text-white flex items-center justify-center shadow-md shadow-[#7C0A1E]/20 hover:bg-[#630718] transition-all relative active:scale-95"
-            aria-label="Notificaciones"
+    <div className="w-full flex flex-col pb-8 animate-fadeIn relative">
+      {/* Fondo Superior de Cabecera Color Guinda */}
+      <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-b from-[#7C0A1E] to-[#600616] rounded-none shadow-md z-0" />
+      
+      {/* Contenedor Principal (Aplica Padding) */}
+      <div className="p-4 sm:p-5 space-y-5 relative z-10">
+        
+        {/* 1. Header Superior: Logo Circular + Campana de Notificaciones */}
+        <div className="flex items-center justify-between pt-2">
+          {/* Logo con borde dorado y fondo blanco para no opacarse */}
+          <Link
+            to="/user/home"
+            className="w-12 h-12 rounded-full bg-white border-[3px] border-[#C5A059] p-1.5 flex items-center justify-center shadow-lg shadow-black/20 hover:scale-105 transition-transform"
           >
-            <Bell size={20} />
-            {unreadNotifs > 0 && (
-              <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-[#C5A059] border-2 border-[#FAF8F5] rounded-full" />
-            )}
-          </button>
+            <img
+              src="/logo-icon.png"
+              alt="Pasaporte Digital"
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = "none";
+              }}
+            />
+          </Link>
+
+          {/* Campana y Popover Desplegable (Fondo blanco, icono negro) */}
+          <div className="relative" ref={notifRef}>
+            <button
+              type="button"
+              onClick={() => setShowNotifDropdown((prev) => !prev)}
+              className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-md hover:bg-gray-50 transition-all relative active:scale-95"
+              aria-label="Notificaciones"
+            >
+              <Bell size={22} className="fill-black/5" />
+              {unreadNotifs > 0 && (
+                <span className="absolute top-2 right-2.5 w-3 h-3 bg-red-600 border-2 border-white rounded-full animate-pulse" />
+              )}
+            </button>
 
           {/* Menú Flotante de Notificaciones */}
           {showNotifDropdown && (
@@ -207,26 +253,36 @@ export const HomePage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Sección Nivel y Barra de Progreso */}
-      <div className="w-full">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="flex items-center space-x-2">
-            {/* Roseta de premio bordada */}
-            <div className="w-8 h-8 rounded-full bg-[#7C0A1E] border-2 border-[#C5A059] flex items-center justify-center shadow-xs text-[#C5A059]">
-              <Award size={16} fill="#C5A059" className="text-[#C5A059]" />
+        {/* 2. Sección Nivel y Barra de Progreso */}
+        <div className="w-full bg-white rounded-3xl p-5 shadow-[0_8px_30px_rgba(45,26,30,0.06)] border border-[#EFE7DE]/50 mt-4 relative overflow-hidden">
+          {/* Fondo sutil decorativo en la tarjeta */}
+          <div className="absolute -right-4 -top-4 w-24 h-24 bg-[#C5A059]/5 rounded-full blur-2xl pointer-events-none" />
+          
+          <div className="flex items-center justify-between mb-3 relative z-10">
+            <div className="flex items-center space-x-3">
+              {/* Badge Nivel Moderno */}
+              <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-[#E8D3A2] via-[#C5A059] to-[#8B6508] p-[2px] shadow-lg flex items-center justify-center transform -rotate-2 hover:rotate-0 transition-transform">
+                <div className="w-full h-full rounded-xl bg-gradient-to-b from-[#2D1A1E] to-[#7C0A1E] flex items-center justify-center border border-white/20 shadow-inner">
+                  <Star size={20} fill="#FFD700" className="text-[#FFD700] drop-shadow-[0_0_8px_rgba(255,215,0,0.6)]" />
+                </div>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase font-bold text-[#8E7D7D] tracking-wider mb-0.5">Nivel de Socio</span>
+                <span className="block text-lg font-black text-[#2D1A1E] leading-none">{nivelActual}</span>
+              </div>
             </div>
-            <span className="text-sm font-bold text-[#2D1A1E]">{nivelActual}</span>
+            
+            {/* Medalla Fantasma Fondo */}
+            <ShieldCheck size={40} className="text-[#EFE7DE] absolute right-0 top-0 opacity-40 pointer-events-none" />
           </div>
-          <span className="text-sm font-semibold text-[#2D1A1E]">Nivel Socio</span>
-        </div>
 
-        {/* Barra de progreso redondeada color vino */}
-        <div className="w-full bg-[#E5DCD0] h-2.5 rounded-full overflow-hidden shadow-inner">
-          <div
-            className="bg-[#7C0A1E] h-full rounded-full transition-all duration-700 ease-out"
-            style={{ width: `${Math.max(8, puntosProgreso)}%` }}
-          />
-        </div>
+          {/* Barra de progreso redondeada color vino */}
+          <div className="w-full bg-[#FAF8F5] h-3.5 rounded-full overflow-hidden shadow-inner border border-[#EFE7DE]">
+            <div
+              className="bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] h-full rounded-full transition-all duration-1000 ease-out shadow-[inset_0_2px_4px_rgba(255,255,255,0.2)]"
+              style={{ width: `${Math.max(8, puntosProgreso)}%` }}
+            />
+          </div>
 
         {/* Metas en puntos debajo de la barra */}
         <div className="flex items-center justify-between text-xs text-[#2D1A1E] mt-1.5 font-medium">
@@ -265,7 +321,7 @@ export const HomePage: React.FC = () => {
         </Link>
 
         <Link
-          to="/user/actividad"
+          to="/user/mis-sellos"
           className="bg-white/90 border border-[#EFE7DE] hover:border-[#C5A059]/50 rounded-2xl p-2.5 flex flex-col items-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group"
         >
           <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
@@ -301,32 +357,15 @@ export const HomePage: React.FC = () => {
           </Link>
         </div>
 
-        {currentLocal ? (
-          <div
-            className="relative w-full h-52 sm:h-56 rounded-[1.75rem] overflow-hidden shadow-md group"
-            onMouseEnter={() => { /* pause visual: user interacts */ }}
-            onTouchStart={() => {}}
-          >
-            {locales.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  aria-label="Anterior"
-                  onClick={() => setActiveSlide((p) => (p - 1 + locales.length) % locales.length)}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center opacity-80 hover:opacity-100"
-                >
-                  ‹
-                </button>
-                <button
-                  type="button"
-                  aria-label="Siguiente"
-                  onClick={() => setActiveSlide((p) => (p + 1) % locales.length)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center opacity-80 hover:opacity-100"
-                >
-                  ›
-                </button>
-              </>
-            )}
+        {loading && !currentLocal ? (
+          <div className="w-full h-52 sm:h-56 rounded-[1.75rem] bg-gradient-to-r from-[#EFE7DE]/70 via-[#FAF8F5] to-[#EFE7DE]/70 animate-pulse border border-[#EFE7DE] flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2">
+              <Store className="w-8 h-8 text-[#C5A059]/50 animate-bounce" />
+              <span className="text-xs font-semibold text-[#8E7D7D]">Cargando experiencias...</span>
+            </div>
+          </div>
+        ) : currentLocal ? (
+          <div className="relative w-full h-52 sm:h-56 rounded-[1.75rem] overflow-hidden shadow-md group">
             <img
               src={
                 currentLocal.imagen_portada ||
@@ -414,15 +453,27 @@ export const HomePage: React.FC = () => {
         <div className="flex items-center justify-between mb-3.5 px-0.5">
           <h3 className="text-base font-bold text-[#2D1A1E]">Tus últimos sellos</h3>
           <Link
-            to="/user/actividad"
+            to="/user/mis-sellos"
             className="text-xs font-semibold text-[#7C0A1E] hover:underline flex items-center gap-0.5"
           >
             Ver todos <ChevronRight size={14} />
           </Link>
         </div>
 
-        {/* Si el cliente tiene sellos reales recibidos */}
-        {visitas.length > 0 ? (
+        {/* Si está cargando y no hay sellos aún en caché */}
+        {loading && visitas.length === 0 ? (
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-[#FAF8F5] border border-[#EFE7DE] rounded-2xl p-4 flex flex-col items-center justify-center animate-pulse h-28"
+              >
+                <div className="w-10 h-10 rounded-full bg-[#EFE7DE] mb-2" />
+                <div className="w-16 h-2 bg-[#EFE7DE] rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : visitas.length > 0 ? (
           <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
             {visitas.slice(0, 6).map((v, idx) => (
               <div
@@ -477,6 +528,7 @@ export const HomePage: React.FC = () => {
             </Link>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import {
   Stamp,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import api from "../services/api";
 
 export const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -36,6 +37,55 @@ export const AdminLayout: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate("/auth/login");
+  };
+
+  // Notificaciones Admin
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifData, setNotifData] = useState<{
+    total_pendientes: number;
+    canjes_pendientes_count: number;
+    canjes_pendientes: Array<any>;
+    reclamaciones_pendientes_count: number;
+    reclamaciones_pendientes: Array<any>;
+  }>({
+    total_pendientes: 0,
+    canjes_pendientes_count: 0,
+    canjes_pendientes: [],
+    reclamaciones_pendientes_count: 0,
+    reclamaciones_pendientes: [],
+  });
+
+  const fetchNotificaciones = async () => {
+    try {
+      setNotifLoading(true);
+      const res = await api.get("/admin/notificaciones");
+      const d = res.data?.data || res.data || {};
+      setNotifData({
+        total_pendientes: d.total_pendientes || 0,
+        canjes_pendientes_count: d.canjes_pendientes_count || 0,
+        canjes_pendientes: d.canjes_pendientes || [],
+        reclamaciones_pendientes_count: d.reclamaciones_pendientes_count || 0,
+        reclamaciones_pendientes: d.reclamaciones_pendientes || [],
+      });
+    } catch {
+      /* Silencioso */
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchNotificaciones();
+    const interval = setInterval(fetchNotificaciones, 30000); // actualiza cada 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleToggleNotif = () => {
+    if (!notifOpen) {
+      fetchNotificaciones();
+    }
+    setNotifOpen(!notifOpen);
   };
 
   const navGroups: Array<{
@@ -234,15 +284,157 @@ export const AdminLayout: React.FC = () => {
               />
             </div>
 
-            {/* Notification & Profile Icons */}
-            <button
-              onClick={() => navigate("/admin/reclamaciones")}
-              className="w-9 h-9 rounded-2xl bg-white border border-[#E8DFD5] hover:border-[#7C0A1E]/40 flex items-center justify-center text-[#5A4B4B] hover:text-[#7C0A1E] transition-all relative shadow-2xs"
-              title="Notificaciones y reclamaciones"
-            >
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#7C0A1E]" />
-            </button>
+            {/* Notification Bell with Dropdown Popover */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={handleToggleNotif}
+                className="w-9 h-9 rounded-2xl bg-white border border-[#E8DFD5] hover:border-[#7C0A1E]/40 flex items-center justify-center text-[#5A4B4B] hover:text-[#7C0A1E] transition-all relative shadow-2xs"
+                title="Centro de Notificaciones"
+              >
+                <Bell className="w-4 h-4" />
+                {notifData.total_pendientes > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#7C0A1E] text-white text-[9px] font-black flex items-center justify-center border-2 border-white animate-pulse">
+                    {notifData.total_pendientes > 9 ? "9+" : notifData.total_pendientes}
+                  </span>
+                )}
+              </button>
+
+              {/* Dropdown Menu */}
+              {notifOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setNotifOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-[#E8DFD5] rounded-2xl shadow-2xl z-50 overflow-hidden animate-fadeIn text-[#2D1A1E]">
+                    <div className="p-3.5 border-b border-[#E8DFD5] bg-[#FAF8F5] flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4 text-[#7C0A1E]" />
+                        <h3 className="text-xs font-bold text-[#2D1A1E]">Notificaciones de Gestión</h3>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#7C0A1E]/10 text-[#7C0A1E]">
+                        {notifData.total_pendientes} pendientes
+                      </span>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto divide-y divide-[#E8DFD5]/60">
+                      {/* Reclamaciones Pendientes */}
+                      {notifData.reclamaciones_pendientes.length > 0 && (
+                        <div className="p-2">
+                          <div className="flex items-center justify-between px-2 py-1">
+                            <span className="text-[10px] font-bold text-[#7C0A1E] uppercase tracking-wider flex items-center gap-1">
+                              <ShieldAlert size={12} /> Libro de Reclamaciones
+                            </span>
+                            <span className="text-[10px] text-[#8E7D7D] font-mono">
+                              ({notifData.reclamaciones_pendientes_count})
+                            </span>
+                          </div>
+                          {notifData.reclamaciones_pendientes.map((rec: any) => (
+                            <div
+                              key={`rec-${rec.id}`}
+                              onClick={() => {
+                                setNotifOpen(false);
+                                navigate("/admin/reclamaciones");
+                              }}
+                              className="p-2 rounded-xl hover:bg-[#FAF8F5] cursor-pointer transition flex items-start gap-2.5 mt-1"
+                            >
+                              <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-bold text-[#2D1A1E] truncate">
+                                    {rec.reclamante_nombre || "Consumidor"}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-[#7C0A1E] bg-[#7C0A1E]/10 px-1 rounded shrink-0">
+                                    {rec.codigo_seguimiento}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-[#6E5D53] line-clamp-1 mt-0.5">
+                                  {rec.detalle || "Nueva reclamación registrada"}
+                                </p>
+                                <span className="text-[9px] text-[#8E7D7D] mt-0.5 block">
+                                  {new Date(rec.created_at).toLocaleDateString("es-PE")} {new Date(rec.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Canjes Pendientes */}
+                      {notifData.canjes_pendientes.length > 0 && (
+                        <div className="p-2">
+                          <div className="flex items-center justify-between px-2 py-1">
+                            <span className="text-[10px] font-bold text-[#C5A059] uppercase tracking-wider flex items-center gap-1">
+                              <Gift size={12} /> Canjes de Recompensas
+                            </span>
+                            <span className="text-[10px] text-[#8E7D7D] font-mono">
+                              ({notifData.canjes_pendientes_count})
+                            </span>
+                          </div>
+                          {notifData.canjes_pendientes.map((cnj: any) => (
+                            <div
+                              key={`canje-${cnj.id}`}
+                              onClick={() => {
+                                setNotifOpen(false);
+                                navigate("/admin/recompensas");
+                              }}
+                              className="p-2 rounded-xl hover:bg-[#FAF8F5] cursor-pointer transition flex items-start gap-2.5 mt-1"
+                            >
+                              <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-bold text-[#2D1A1E] truncate">
+                                    {cnj.usuario_nombre}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1 rounded shrink-0">
+                                    {cnj.puntos_gastados} pts
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-[#6E5D53] truncate mt-0.5">
+                                  {cnj.nombre_recompensa}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Sin notificaciones */}
+                      {notifData.total_pendientes === 0 && (
+                        <div className="p-8 text-center">
+                          <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2 border border-emerald-200">
+                            <Bell className="w-5 h-5" />
+                          </div>
+                          <p className="text-xs font-bold text-[#2D1A1E]">¡Al día!</p>
+                          <p className="text-[11px] text-[#8E7D7D] mt-0.5">No hay quejas, reclamos o canjes pendientes.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-2.5 bg-[#FAF8F5] border-t border-[#E8DFD5] flex items-center justify-between text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotifOpen(false);
+                          navigate("/admin/reclamaciones");
+                        }}
+                        className="text-[11px] font-bold text-[#7C0A1E] hover:underline"
+                      >
+                        Ver todas las reclamaciones →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNotifOpen(false)}
+                        className="text-[11px] text-[#8E7D7D] hover:text-[#2D1A1E]"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* User Avatar */}
             <div className="flex items-center gap-2.5 pl-2 border-l border-[#E8DFD5]">

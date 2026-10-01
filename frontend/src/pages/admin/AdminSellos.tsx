@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
 import { Modal } from "../../components/common/Modal";
@@ -9,7 +9,7 @@ import {
   DigitalStampBadge,
   resolveImageUrl,
 } from "../../components/common/DigitalStampBadge";
-import { CategoryIcon } from "../../components/common/CategoryIcon";
+import { CategoryIcon, MODERN_CATEGORY_PRESETS } from "../../components/common/CategoryIcon";
 import {
   Stamp,
   Search,
@@ -25,7 +25,37 @@ import {
   Sparkles,
   Info,
   AlertTriangle,
+  Pencil,
+  Upload,
+  Palette,
+  Save,
+  Image as ImageIcon,
+  Landmark,
+  Camera,
+  Compass,
+  Ticket,
 } from "lucide-react";
+
+// Paleta oficial de tintas notariales y de pasaporte
+const INK_PALETTE = [
+  { name: "Borgoña Pasaporte", hex: "#7C0A1E" },
+  { name: "Azul Notarial", hex: "#1E3A8A" },
+  { name: "Verde Esmeralda", hex: "#065F46" },
+  { name: "Café Espresso", hex: "#451A03" },
+  { name: "Ámbar Dorado", hex: "#B45309" },
+  { name: "Negro Carbón", hex: "#18181B" },
+  { name: "Violeta Diplomático", hex: "#581C87" },
+];
+
+// Insignias e íconos especializados únicamente en turismo, monumentos y experiencias
+const TOURISM_EXPERIENCE_ICONS = [
+  { id: "landmark", name: "Monumento / Patrimonio", icon: Landmark },
+  { id: "sparkles", name: "Experiencia Turística", icon: Sparkles },
+  { id: "camera", name: "Mirador / Fotografía", icon: Camera },
+  { id: "compass", name: "Exploración / Aventura", icon: Compass },
+  { id: "ticket", name: "Atracción / Pase", icon: Ticket },
+  { id: "building", name: "Centro Histórico", icon: Building2 },
+];
 
 export const AdminSellos: React.FC = () => {
   const [sellos, setSellos] = useState<any[]>([]);
@@ -36,10 +66,23 @@ export const AdminSellos: React.FC = () => {
 
   // Modales
   const [modalVer, setModalVer] = useState(false);
+  const [modalEditar, setModalEditar] = useState(false);
   const [modalRestablecer, setModalRestablecer] = useState(false);
   const [modalEliminar, setModalEliminar] = useState(false);
   const [selloSeleccionado, setSelloSeleccionado] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Estados de edición
+  const [editNombreSello, setEditNombreSello] = useState("");
+  const [editImagenSello, setEditImagenSello] = useState("landmark");
+  const [editColorSello, setEditColorSello] = useState("#7C0A1E");
+  const [editDescripcion, setEditDescripcion] = useState("");
+  const [editMetaSellos, setEditMetaSellos] = useState(8);
+  const [editPuntosPorVisita, setEditPuntosPorVisita] = useState(20);
+  const [editEstado, setEditEstado] = useState("ACTIVO");
+  const [customIconModeEdit, setCustomIconModeEdit] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
 
   const { showToast } = useUI();
   const ITEMS_PER_PAGE = 8;
@@ -97,9 +140,110 @@ export const AdminSellos: React.FC = () => {
     );
   };
 
+  const isLugarTuristico = (item: any) => {
+    if (!item) return false;
+    const t = String(item.establecimiento_tipo || item.tipo || "").toUpperCase();
+    if (t === "LUGAR" || t === "LUGAR_TURISTICO" || t === "TURISTICO") return true;
+    const cat = String(item.categoria_nombre || "").toLowerCase();
+    if (
+      cat.includes("turismo") ||
+      cat.includes("monumento") ||
+      cat.includes("cultura") ||
+      cat.includes("patrimonio") ||
+      cat.includes("parque")
+    ) {
+      return true;
+    }
+    const nombre = String(item.establecimiento_nombre || "").toLowerCase();
+    if (
+      nombre.includes("catedral") ||
+      nombre.includes("plaza") ||
+      nombre.includes("museo") ||
+      nombre.includes("bosque") ||
+      nombre.includes("monumento") ||
+      nombre.includes("ruina") ||
+      nombre.includes("huaca") ||
+      nombre.includes("mirador")
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   const openVer = (item: any) => {
     setSelloSeleccionado(item);
     setModalVer(true);
+  };
+
+  const openEditar = (item: any) => {
+    setSelloSeleccionado(item);
+    setEditNombreSello(item.nombre_sello || "");
+    setEditImagenSello(item.imagen_sello || item.categoria_icono || "landmark");
+    setEditColorSello(item.color_sello || "#7C0A1E");
+    setEditDescripcion(item.descripcion || "");
+    setEditMetaSellos(Number(item.meta_sellos ?? 8));
+    setEditPuntosPorVisita(Number(item.puntos_por_visita ?? 20));
+    setEditEstado(item.estado || "ACTIVO");
+    setCustomIconModeEdit(
+      !TOURISM_EXPERIENCE_ICONS.some((p) => p.id === item.imagen_sello) &&
+      Boolean(item.imagen_sello?.startsWith("http") || item.imagen_sello?.startsWith("/"))
+    );
+    setModalEditar(true);
+  };
+
+  const handleGuardarEdicion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selloSeleccionado) return;
+    if (!editNombreSello.trim()) {
+      showToast("El nombre del sello es obligatorio", "error");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await api.patch(`/admin/sellos/${selloSeleccionado.id_programa}`, {
+        nombre_sello: editNombreSello.trim(),
+        imagen_sello: editImagenSello.trim(),
+        color_sello: editColorSello,
+        descripcion: editDescripcion.trim(),
+        meta_sellos: editMetaSellos,
+        puntos_por_visita: editPuntosPorVisita,
+        estado: editEstado,
+      });
+      showToast("Diseño de sello actualizado con éxito", "success");
+      setModalEditar(false);
+      await loadSellos();
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Error al actualizar el sello", "error");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleUploadSelloImg = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"].includes(file.type)) {
+      showToast("Formato no soportado. Usa JPG, PNG, WebP o AVIF", "error");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("tipo", "sello");
+    setUploadingImg(true);
+    try {
+      const res = await api.post("/media/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const url = res.data?.data?.url || res.data?.url;
+      if (url) {
+        setEditImagenSello(url);
+        showToast("Imagen de insignia subida correctamente", "success");
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Error al subir la imagen", "error");
+    } finally {
+      setUploadingImg(false);
+    }
   };
 
   const openRestablecer = (item: any) => {
@@ -363,12 +507,23 @@ export const AdminSellos: React.FC = () => {
                 <div className="mt-4 pt-3 border-t border-[#EFE7DE] flex items-center gap-1.5">
                   <button
                     onClick={() => openVer(item)}
-                    className="flex-1 py-2 px-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#F0ECE6] border border-[#E8DFD5] text-xs font-bold text-[#2D1A1E] flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                    className="flex-1 py-2 px-2 rounded-xl bg-[#FAF8F5] hover:bg-[#F0ECE6] border border-[#E8DFD5] text-xs font-bold text-[#2D1A1E] flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
                     title="Visualizar sello en pasaporte digital"
                   >
                     <Eye className="w-3.5 h-3.5 text-[#7C0A1E]" />
                     <span>Ver</span>
                   </button>
+
+                  {isLugarTuristico(item) && (
+                    <button
+                      onClick={() => openEditar(item)}
+                      className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                      title="Editar sello del lugar turístico (auto-sellado)"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Editar</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => openRestablecer(item)}
@@ -502,6 +657,18 @@ export const AdminSellos: React.FC = () => {
 
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EFE7DE]">
             <div className="flex items-center gap-2">
+              {isLugarTuristico(selloSeleccionado) && (
+                <button
+                  onClick={() => {
+                    setModalVer(false);
+                    openEditar(selloSeleccionado);
+                  }}
+                  className="px-3 py-2 rounded-xl text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Editar Sello de Lugar</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   setModalVer(false);
@@ -530,6 +697,258 @@ export const AdminSellos: React.FC = () => {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal Editar Diseño de Sello para Lugares Turísticos */}
+      <Modal
+        open={modalEditar}
+        onClose={() => setModalEditar(false)}
+        title={`Editar Sello de Lugar Turístico · ${selloSeleccionado?.establecimiento_nombre || "Lugar"}`}
+        size="lg"
+      >
+        <form onSubmit={handleGuardarEdicion} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+            {/* Visualización en Vivo del Sello */}
+            <div className="md:col-span-4 bg-[#FAF8F5] border border-[#EFE7DE] rounded-3xl p-4 flex flex-col items-center justify-center text-center sticky top-2 shadow-2xs">
+              <span className="text-[10px] font-black uppercase text-[#8E7D7D] tracking-wider mb-3">
+                Vista Previa en Vivo
+              </span>
+              <div className="my-2">
+                <DigitalStampBadge
+                  nombre_sello={editNombreSello || "Sello Oficial"}
+                  establecimiento_nombre={selloSeleccionado?.establecimiento_nombre || "Lugar"}
+                  imagen_sello={editImagenSello}
+                  color_sello={editColorSello}
+                  numero_sello={1}
+                  fecha={new Date()}
+                  size="md"
+                  rotation={-3}
+                />
+              </div>
+              <p className="text-xs font-bold text-[#2D1A1E] mt-2 truncate w-full">
+                {editNombreSello || "Sello Sin Título"}
+              </p>
+              <p className="text-[10px] text-[#8E7D7D] italic mt-0.5 line-clamp-2">
+                "{editDescripcion || "Visita confirmada en pasaporte digital"}"
+              </p>
+
+              <div className="w-full mt-3 pt-2.5 border-t border-[#EFE7DE] space-y-1.5 text-[10px] text-left">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8E7D7D]">Meta ciclo:</span>
+                  <strong className="text-[#2D1A1E]">{editMetaSellos} sellos</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8E7D7D]">Puntos por visita:</span>
+                  <strong className="text-[#7C0A1E]">+{editPuntosPorVisita} pts</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8E7D7D]">Estado:</span>
+                  <span className={`font-bold px-1.5 py-0.2 rounded text-[9px] ${
+                    editEstado === "ACTIVO" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                  }`}>
+                    {editEstado}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Formulario de Configuración del Sello */}
+            <div className="md:col-span-8 space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-[#2D1A1E] mb-1">
+                  Nombre del Sello *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editNombreSello}
+                  onChange={(e) => setEditNombreSello(e.target.value)}
+                  placeholder="Ej: Sello Catedral Chiclayo, Sello Bosque de Pomac..."
+                  className="input-base w-full text-xs font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#2D1A1E] mb-1">
+                  Descripción / Leyenda del Sello
+                </label>
+                <input
+                  type="text"
+                  value={editDescripcion}
+                  onChange={(e) => setEditDescripcion(e.target.value)}
+                  placeholder="Ej: Visita y validación en monumento histórico"
+                  className="input-base w-full text-xs"
+                />
+              </div>
+
+              {/* Selector de Tinta Notarial */}
+              <div>
+                <label className="block text-xs font-bold text-[#2D1A1E] mb-1.5">
+                  Color de Tinta Oficial
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  {INK_PALETTE.map((ink) => (
+                    <button
+                      key={ink.hex}
+                      type="button"
+                      onClick={() => setEditColorSello(ink.hex)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition ${
+                        editColorSello === ink.hex
+                          ? "border-[#2D1A1E] bg-white shadow-2xs ring-2 ring-[#7C0A1E]/30 font-bold"
+                          : "border-[#EFE7DE] bg-white hover:bg-[#FAF8F5] text-[#2D1A1E]"
+                      }`}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full inline-block shrink-0"
+                        style={{ backgroundColor: ink.hex }}
+                      />
+                      <span>{ink.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Selección de Ícono o Insignia de Turismo y Experiencias */}
+              <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EFE7DE] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#2D1A1E] flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#7C0A1E]" />
+                    Insignia de Turismo o Experiencia
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCustomIconModeEdit(!customIconModeEdit)}
+                    className="text-[11px] font-bold text-[#7C0A1E] hover:underline"
+                  >
+                    {customIconModeEdit ? "Ver íconos de turismo" : "Ingresar URL / personalizado"}
+                  </button>
+                </div>
+
+                {!customIconModeEdit ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-1">
+                    {TOURISM_EXPERIENCE_ICONS.map((p) => {
+                      const IconComp = p.icon;
+                      const isSelected = editImagenSello === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setEditImagenSello(p.id)}
+                          className={`p-2.5 rounded-xl text-left border transition flex items-center gap-2.5 ${
+                            isSelected
+                              ? "bg-[#7C0A1E]/10 border-[#7C0A1E] text-[#7C0A1E] font-bold shadow-2xs"
+                              : "bg-white hover:bg-[#FAF8F5] border-[#E8DFD5] text-[#2D1A1E]"
+                          }`}
+                        >
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            isSelected ? "bg-[#7C0A1E] text-white" : "bg-[#FAF8F5] text-[#7C0A1E]"
+                          }`}>
+                            <IconComp className="w-4 h-4" />
+                          </div>
+                          <span className="text-[11px] font-semibold leading-tight">{p.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      value={editImagenSello}
+                      onChange={(e) => setEditImagenSello(e.target.value)}
+                      placeholder="Icono (ej: landmark, camera, sparkles) o URL de imagen"
+                      className="input-base w-full text-xs font-mono"
+                    />
+                  </div>
+                )}
+
+                {/* Subir imagen personalizada para el sello */}
+                <div className="pt-2 border-t border-[#EFE7DE] flex items-center justify-between gap-3">
+                  <div className="text-[11px] text-[#8E7D7D]">
+                    ¿Tienes un logo o escudo para este lugar turístico o local?
+                  </div>
+                  <label className="cursor-pointer shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-[#FAF8F5] border border-[#E8DFD5] text-xs font-bold text-[#7C0A1E] transition shadow-2xs">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{uploadingImg ? "Subiendo..." : "Subir Imagen"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleUploadSelloImg}
+                      disabled={uploadingImg}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Parámetros de Sellos y Puntos */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1">
+                    Meta de Sellos (Ciclo)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={editMetaSellos}
+                    onChange={(e) => setEditMetaSellos(Number(e.target.value))}
+                    className="input-base w-full text-xs font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1">
+                    Puntos por Visita
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={editPuntosPorVisita}
+                    onChange={(e) => setEditPuntosPorVisita(Number(e.target.value))}
+                    className="input-base w-full text-xs font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1">
+                    Estado del Sello
+                  </label>
+                  <select
+                    value={editEstado}
+                    onChange={(e) => setEditEstado(e.target.value)}
+                    className="input-base w-full text-xs font-semibold"
+                  >
+                    <option value="ACTIVO">Activo</option>
+                    <option value="INACTIVO">Inactivo</option>
+                    <option value="MODERADO">Moderado</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#EFE7DE]">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setModalEditar(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={savingEdit}
+            >
+              <Save className="w-4 h-4 mr-1.5" />
+              Guardar Cambios del Sello
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {/* Modal Restablecer Sello a Valores Básicos Iniciales */}

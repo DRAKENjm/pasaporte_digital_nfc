@@ -6,6 +6,7 @@ const router = Router();
 
 // Endpoints de métricas y gestión para el comercio autenticado
 router.get("/me/sucursales", authMiddleware, EstablishmentsController.misSucursales);
+router.put("/me/perfil", authMiddleware, EstablishmentsController.actualizarMiPerfil);
 router.get("/me/stats", authMiddleware, EstablishmentsController.misStats);
 router.get("/me/visitas", authMiddleware, EstablishmentsController.misVisitas);
 router.get("/me/clientes", authMiddleware, EstablishmentsController.misClientes);
@@ -23,6 +24,7 @@ router.get("/me/insignias", authMiddleware, EstablishmentsController.misInsignia
 router.post("/me/insignias", authMiddleware, EstablishmentsController.crearMiInsignia);
 router.put("/me/insignias/:id", authMiddleware, EstablishmentsController.renombrarMiInsignia);
 router.patch("/me/insignias/:id/estado", authMiddleware, EstablishmentsController.cambiarEstadoMiInsignia);
+router.delete("/me/insignias/:id", authMiddleware, EstablishmentsController.eliminarMiInsignia);
 
 // Categorías públicas / para el panel
 router.get("/categorias", authMiddleware, EstablishmentsController.listarCategorias);
@@ -31,6 +33,6 @@ router.post("/:id/favorito", authMiddleware, EstablishmentsController.toggleFavo
 router.delete("/:id/favorito", authMiddleware, EstablishmentsController.toggleFavorito);
 
 router.get("/", authMiddleware, EstablishmentsController.listar);
-router.get("/:id", authMiddleware, EstablishmentsController.getById);
+router.get("/:id", authMiddleware, EstablishmentsController.detalle);
 
 export default router;
