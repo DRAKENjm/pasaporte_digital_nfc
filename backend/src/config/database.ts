@@ -3,13 +3,18 @@ import dotenv from "dotenv";
 
 dotenv.config({ override: true });
 
+const rawUrl = process.env.DATABASE_URL || "";
 const isRemoteOrSupabase =
-  process.env.DATABASE_URL?.includes("supabase.com") ||
-  process.env.DB_HOST?.includes("supabase.com") ||
-  process.env.DATABASE_URL?.includes("sslmode=require");
+  process.env.NODE_ENV === "production" ||
+  rawUrl.includes("supabase") ||
+  Boolean(process.env.DB_HOST?.includes("supabase")) ||
+  rawUrl.includes("sslmode=");
+
+// Limpiar parámetro sslmode de la URL para que no sobreescriba rejectUnauthorized: false
+const cleanConnectionString = rawUrl.replace(/[?&]sslmode=[^&]*/g, "").replace(/\?$/, "");
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: cleanConnectionString || undefined,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
