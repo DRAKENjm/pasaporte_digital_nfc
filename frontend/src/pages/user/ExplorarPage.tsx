@@ -435,9 +435,60 @@ export const ExplorarPage: React.FC = () => {
     }
   };
 
+  // Extraer coordenadas de cualquier formato de URL de Google Maps si la sucursal no tiene lat/lng
+  const parseCoordsFromUrl = (url?: string): { lat: number; lng: number } | null => {
+    if (!url || !url.trim()) return null;
+    const patterns = [
+      /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+      /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+      /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+      /maps\?.*ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+      /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
+      /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
+    ];
+    for (const pat of patterns) {
+      const m = url.match(pat);
+      if (m) {
+        const lat = parseFloat(m[1]);
+        const lng = parseFloat(m[2]);
+        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { lat, lng };
+        }
+      }
+    }
+    return null;
+  };
+
   // ========== RUTA: calcular, cambiar modo y encuadrar con zoom óptimo ==========
   const calcularRuta = (travelMode: "DRIVING" | "WALKING" = modoViaje) => {
-    if (!localSeleccionado?.sucursales?.[0]) return;
+    if (!localSeleccionado) return;
+
+    const suc = localSeleccionado.sucursales?.[0];
+    let destLat = suc ? Number(suc.latitud) : NaN;
+    let destLng = suc ? Number(suc.longitud) : NaN;
+
+    // Si no tiene latitud/longitud directa o es 0/NaN, intentar extraer del google_maps_url
+    if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) {
+      const mapsUrl = suc?.google_maps_url || localSeleccionado.google_maps_url;
+      const parsed = parseCoordsFromUrl(mapsUrl);
+      if (parsed) {
+        destLat = parsed.lat;
+        destLng = parsed.lng;
+      }
+    }
+
+    // Si aún no hay coordenadas válidas
+    if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) {
+      const mapsUrl = suc?.google_maps_url || localSeleccionado.google_maps_url;
+      if (mapsUrl) {
+        showToast("Abriendo ubicación en Google Maps...", "info");
+        window.open(mapsUrl, "_blank");
+      } else {
+        const dir = suc?.direccion || localSeleccionado.direccion || "este establecimiento";
+        showToast(`Este local aún no cuenta con coordenadas GPS configuradas (${dir})`, "info");
+      }
+      return;
+    }
 
     if (!userCoords) {
       showToast("Activa tu ubicación para trazar la ruta", "info");
@@ -445,16 +496,16 @@ export const ExplorarPage: React.FC = () => {
       return;
     }
 
-    if (!window.google?.maps) return;
+    if (!window.google?.maps) {
+      showToast("Cargando servicios de mapa...", "info");
+      return;
+    }
 
     setCargandoRuta(true);
     lastRouteOriginRef.current = userCoords;
 
     const directionsService = new window.google.maps.DirectionsService();
-    const destino = {
-      lat: Number(localSeleccionado.sucursales[0].latitud),
-      lng: Number(localSeleccionado.sucursales[0].longitud),
-    };
+    const destino = { lat: destLat, lng: destLng };
 
     const gTravelMode =
       travelMode === "WALKING"
@@ -483,8 +534,9 @@ export const ExplorarPage: React.FC = () => {
           }
           showToast(travelMode === "WALKING" ? "Ruta a pie trazada" : "Ruta en auto trazada", "success");
         } else {
-          showToast("No se pudo calcular la ruta", "info");
-          console.warn("Directions error:", status);
+          showToast("No se pudo calcular ruta exacta. Abriendo en Google Maps...", "info");
+          const mapsUrl = suc?.google_maps_url || localSeleccionado.google_maps_url || `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+          window.open(mapsUrl, "_blank");
         }
       }
     );
@@ -492,11 +544,20 @@ export const ExplorarPage: React.FC = () => {
 
   const calcularRutaSilenciosa = (origen: { lat: number; lng: number }) => {
     if (!localSeleccionadoRef.current?.sucursales?.[0] || !window.google?.maps) return;
+    const suc = localSeleccionadoRef.current.sucursales[0];
+    let destLat = Number(suc.latitud);
+    let destLng = Number(suc.longitud);
+    if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) {
+      const parsed = parseCoordsFromUrl(suc.google_maps_url || localSeleccionadoRef.current.google_maps_url);
+      if (parsed) {
+        destLat = parsed.lat;
+        destLng = parsed.lng;
+      }
+    }
+    if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) return;
+
     const directionsService = new window.google.maps.DirectionsService();
-    const destino = {
-      lat: Number(localSeleccionadoRef.current.sucursales[0].latitud),
-      lng: Number(localSeleccionadoRef.current.sucursales[0].longitud),
-    };
+    const destino = { lat: destLat, lng: destLng };
     const gTravelMode =
       modoViajeRef.current === "WALKING"
         ? window.google.maps.TravelMode.WALKING

@@ -1874,6 +1874,31 @@ export const AdminController = {
 
       const nuevoEst = estRes.rows[0];
 
+      // Auto-extraer coordenadas de google_maps_url si no se enviaron explícitamente
+      let latFinal = lat != null && !isNaN(Number(lat)) ? Number(lat) : null;
+      let lngFinal = lng != null && !isNaN(Number(lng)) ? Number(lng) : null;
+      if ((latFinal == null || lngFinal == null) && google_maps_url) {
+        const patterns = [
+          /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
+          /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
+        ];
+        for (const pat of patterns) {
+          const m = String(google_maps_url).match(pat);
+          if (m) {
+            const parsedLat = parseFloat(m[1]);
+            const parsedLng = parseFloat(m[2]);
+            if (parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
+              latFinal = parsedLat;
+              lngFinal = parsedLng;
+              break;
+            }
+          }
+        }
+      }
+
       // 2. Crear sucursal principal
       const sucRes = await query(
         `INSERT INTO sucursales (
@@ -1886,8 +1911,8 @@ export const AdminController = {
           nuevoEst.id_establecimiento,
           "Sede Principal",
           direccion.trim(),
-          lat != null ? Number(lat) : null,
-          lng != null ? Number(lng) : null,
+          latFinal,
+          lngFinal,
           telefono?.trim() || null,
           google_maps_url?.trim() || null,
           horario?.trim() || null,
@@ -2026,6 +2051,32 @@ export const AdminController = {
         ],
       );
 
+      // Auto-extraer coordenadas de google_maps_url si no se enviaron explícitamente
+      let latFinal = lat != null && !isNaN(Number(lat)) ? Number(lat) : null;
+      let lngFinal = lng != null && !isNaN(Number(lng)) ? Number(lng) : null;
+      if ((latFinal == null || lngFinal == null) && google_maps_url) {
+        const patterns = [
+          /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /maps\?.*ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+          /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
+          /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
+        ];
+        for (const pat of patterns) {
+          const m = String(google_maps_url).match(pat);
+          if (m) {
+            const parsedLat = parseFloat(m[1]);
+            const parsedLng = parseFloat(m[2]);
+            if (parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
+              latFinal = parsedLat;
+              lngFinal = parsedLng;
+              break;
+            }
+          }
+        }
+      }
+
       // 2. Actualizar o crear sucursal principal
       let sucPrincipal = await query(
         `SELECT id_sucursal FROM sucursales WHERE id_establecimiento = $1 AND es_principal = 1 LIMIT 1`,
@@ -2049,8 +2100,8 @@ export const AdminController = {
           [
             sucPrincipal.rows[0].id_sucursal,
             direccion?.trim() ?? null,
-            lat != null ? Number(lat) : null,
-            lng != null ? Number(lng) : null,
+            latFinal,
+            lngFinal,
             telefono?.trim() ?? null,
             google_maps_url !== undefined,
             google_maps_url?.trim() || null,
