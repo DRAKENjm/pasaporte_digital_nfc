@@ -16,7 +16,7 @@ const failedAttemptsMap = new Map<string, number>();
 export const AuthController = {
   async register(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email, password, nombres, apellidos, telefono, roleName } = req.body;
+      const { email, password, nombres, apellidos, telefono, roleName, uid_nfc } = req.body;
 
       if (!email || !password || !nombres || !apellidos) {
         throw new ApiError(400, "Completa todos los campos obligatorios");
@@ -39,6 +39,46 @@ export const AuthController = {
         throw new ApiError(409, "El correo electrónico ya está registrado");
       }
 
+      const rolFinal = roleName || "CLIENTE";
+
+      // Para clientes, la tarjeta física NFC / QR es obligatoria
+      if (rolFinal === "CLIENTE") {
+        if (!uid_nfc || !String(uid_nfc).trim()) {
+          throw new ApiError(
+            400,
+            "Para registrarte es obligatorio contar con tu tarjeta física NFC. Adquiérela en un establecimiento afiliado o ingresa su código/QR.",
+          );
+        }
+      }
+
+      // Si se proporcionó una tarjeta NFC física, verificar disponibilidad en almacén
+      let tarjetaAAsignar: any = null;
+      if (uid_nfc && String(uid_nfc).trim()) {
+        const cleanUid = String(uid_nfc).trim().toUpperCase();
+        const tarjetaRes = await query(
+          `SELECT id_tarjeta, uid_nfc, estado, id_cliente
+           FROM tarjetas_nfc
+           WHERE (uid_nfc = $1 OR codigo_interno = $1 OR qr_respaldo = $1)`,
+          [cleanUid],
+        );
+
+        if (!tarjetaRes.rows[0]) {
+          throw new ApiError(
+            400,
+            "La tarjeta NFC o código ingresado no existe en el inventario oficial. Por favor adquiere una tarjeta física autorizada.",
+          );
+        }
+
+        if (tarjetaRes.rows[0].estado !== "DISPONIBLE" && tarjetaRes.rows[0].estado !== "EN_STOCK") {
+          throw new ApiError(
+            400,
+            `Esta tarjeta física ya fue activada o no está disponible (Estado: ${tarjetaRes.rows[0].estado}). Si es tuya, inicia sesión con tu cuenta.`,
+          );
+        }
+
+        tarjetaAAsignar = tarjetaRes.rows[0];
+      }
+
       const hashed = await hashPassword(password);
       const user = await UserModel.createUser(
         email.toLowerCase().trim(),
@@ -49,11 +89,28 @@ export const AuthController = {
         telefono,
       );
 
+      // Vincular tarjeta física si fue provista
+      if (tarjetaAAsignar && user.id_cliente) {
+        await query(
+          `UPDATE tarjetas_nfc
+           SET id_cliente = $1, estado = 'ACTIVA', fecha_asignacion = CURRENT_TIMESTAMP, fecha_activacion = CURRENT_TIMESTAMP
+           WHERE id_tarjeta = $2`,
+          [user.id_cliente, tarjetaAAsignar.id_tarjeta],
+        );
+      }
+
       // Registrar auditoría
       await query(
         `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion, ip, user_agent)
-         VALUES ($1, 'USUARIOS', 'CREAR', 'usuarios', $1, 'Registro de nuevo usuario', $2, $3)`,
-        [user.id_usuario, req.ip || null, req.headers["user-agent"] || null],
+         VALUES ($1, 'USUARIOS', 'CREAR', 'usuarios', $1, $2, $3, $4)`,
+        [
+          user.id_usuario,
+          tarjetaAAsignar
+            ? `Registro de nuevo usuario con tarjeta NFC ${tarjetaAAsignar.uid_nfc}`
+            : "Registro de nuevo usuario con credencial digital",
+          req.ip || null,
+          req.headers["user-agent"] || null,
+        ],
       );
 
       const token = generateToken({

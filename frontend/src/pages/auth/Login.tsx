@@ -37,7 +37,7 @@ export const Login: React.FC = () => {
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("inactivity") === "1") {
-      setErrorMsg("Tu sesión se cerró por inactividad (5 minutos) por seguridad.");
+      setErrorMsg("Tu sesión se cerró por inactividad.");
     }
   }, []);
 

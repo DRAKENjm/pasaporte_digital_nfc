@@ -27,8 +27,11 @@ import {
   UserPlus,
   UserCheck,
   UserX,
+  Wifi,
+  Trash2,
 } from "lucide-react";
 import QRCode from "qrcode";
+import { useNFCReader } from "../../hooks/useNFCReader";
 
 export type EstadoNfc =
   | "DISPONIBLE"
@@ -70,6 +73,8 @@ interface ClienteOption {
   total_sellos?: number;
   puntos_globales?: number;
   estado?: string;
+  id_tarjeta_activa?: string | number;
+  tarjeta_activa_uid?: string;
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -157,8 +162,20 @@ export const AdminTarjetas: React.FC = () => {
   const [savingEstado, setSavingEstado] = useState(false);
 
   // Formulario importar stock
+  const [tipoRegistroStock, setTipoRegistroStock] = useState<"ESCANER" | "MANUAL">("ESCANER");
+  const [tarjetasEscaneadas, setTarjetasEscaneadas] = useState<string[]>([]);
+  const [singleUidInput, setSingleUidInput] = useState("");
   const [uidsInput, setUidsInput] = useState("");
   const [savingStock, setSavingStock] = useState(false);
+
+  // Hook Web NFC
+  const {
+    isScanning: isNfcScanning,
+    isSupported: isNfcSupported,
+    error: nfcReaderError,
+    startScan: startNfcScan,
+    stopScan: stopNfcScan,
+  } = useNFCReader();
 
   const { showToast } = useUI();
 
@@ -360,23 +377,53 @@ export const AdminTarjetas: React.FC = () => {
     showToast("Código copiado al portapapeles", "success");
   };
 
+  const handleAgregarUidEscaneado = (uid: string) => {
+    const clean = uid.trim().toUpperCase();
+    if (!clean) return;
+    if (tarjetasEscaneadas.includes(clean)) {
+      showToast(`El UID ${clean} ya está en la lista de escaneo`, "info");
+      setSingleUidInput("");
+      return;
+    }
+    setTarjetasEscaneadas((prev) => [clean, ...prev]);
+    setSingleUidInput("");
+    showToast(`Tarjeta ${clean} capturada`, "success");
+  };
+
+  const handleEliminarUidEscaneado = (uid: string) => {
+    setTarjetasEscaneadas((prev) => prev.filter((item) => item !== uid));
+  };
+
   const handleRegistrarStock = async (e: React.FormEvent) => {
     e.preventDefault();
-    const list = uidsInput
-      .split(/[\n,;]+/)
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean);
+    stopNfcScan();
+
+    let list: string[] = [];
+    if (tipoRegistroStock === "ESCANER") {
+      list = [...tarjetasEscaneadas];
+      if (singleUidInput.trim()) {
+        const extra = singleUidInput.trim().toUpperCase();
+        if (!list.includes(extra)) list.unshift(extra);
+      }
+    } else {
+      list = uidsInput
+        .split(/[\n,;]+/)
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+    }
 
     if (!list.length) {
-      showToast("Ingrese al menos un UID válido", "info");
+      showToast("Ingrese o escanee al menos un UID de tarjeta", "info");
       return;
     }
 
     setSavingStock(true);
     try {
       await api.post("/admin/tarjetas/stock", { uids: list });
-      showToast(`${list.length} tarjetas registradas en almacén exitosamente`, "success");
+      showToast(`${list.length} tarjeta(s) registrada(s) en almacén exitosamente`, "success");
       setUidsInput("");
+      setTarjetasEscaneadas([]);
+      setSingleUidInput("");
       setModalStockOpen(false);
       await loadTarjetas();
     } catch (err: any) {
@@ -1094,50 +1141,212 @@ export const AdminTarjetas: React.FC = () => {
       </Modal>
 
       {/* ========================================================= */}
-      {/* MODAL 3: IMPORTAR LOTE NFC                                */}
+      {/* MODAL 3: REGISTRAR / IMPORTAR TARJETAS NFC               */}
       {/* ========================================================= */}
       <Modal
         open={modalStockOpen}
-        onClose={() => setModalStockOpen(false)}
-        title="Importar Lote de Tarjetas NFC"
-        subtitle="Registra chips NTAG físicos en el inventario oficial"
+        onClose={() => {
+          stopNfcScan();
+          setModalStockOpen(false);
+        }}
+        title="Registrar Tarjetas NFC en Almacén"
+        subtitle="Agrega tarjetas físicas al inventario oficial para su posterior asignación"
         size="lg"
       >
-        <form onSubmit={handleRegistrarStock} className="space-y-4">
-          <div className="space-y-1.5 text-left">
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
-              Ingresa los UIDs de las tarjetas (uno por línea o separados por coma) *
-            </label>
-            <textarea
-              required
-              rows={6}
-              value={uidsInput}
-              onChange={(e) => setUidsInput(e.target.value)}
-              placeholder={"04:5A:2B:1A:3C:60:80\n04:6B:3C:2D:4E:70:91\n04:7C:4D:3E:5F:81:A2"}
-              className="input-base font-mono text-xs"
-            />
-            <p className="text-[11px] text-[#8E7D7D] mt-1">
-              Las tarjetas se ingresarán con estado <strong>DISPONIBLE</strong>. UIDs duplicados se omiten de forma segura.
-            </p>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-3 border-t border-[#EFE7DE] dark:border-slate-800">
+        <div className="space-y-4">
+          {/* Selector de Modo: Escáner vs Manual */}
+          <div className="flex bg-[#FAF8F5] p-1 rounded-2xl border border-[#EFE7DE] gap-1">
             <button
               type="button"
-              onClick={() => setModalStockOpen(false)}
-              className="px-5 py-2.5 rounded-xl border border-[#D9D0C7] text-[#5A4B4B] font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
+              onClick={() => setTipoRegistroStock("ESCANER")}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                tipoRegistroStock === "ESCANER"
+                  ? "bg-[#7C0A1E] text-white shadow-xs"
+                  : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+              }`}
             >
-              Cancelar
+              <Wifi size={14} className="rotate-90" />
+              <span>Lector NFC / Celular</span>
             </button>
+
             <button
-              type="submit"
-              disabled={savingStock}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] hover:bg-[#600616] text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-60"
+              type="button"
+              onClick={() => {
+                stopNfcScan();
+                setTipoRegistroStock("MANUAL");
+              }}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                tipoRegistroStock === "MANUAL"
+                  ? "bg-[#7C0A1E] text-white shadow-xs"
+                  : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+              }`}
             >
-              {savingStock ? <Spinner size={16} /> : <span>Registrar en Almacén</span>}
+              <FileText size={14} />
+              <span>Pegar Lote de UIDs</span>
             </button>
           </div>
-        </form>
+
+          <form onSubmit={handleRegistrarStock} className="space-y-4">
+            {tipoRegistroStock === "ESCANER" ? (
+              <div className="space-y-4">
+                {/* Botón de Web NFC móvil si es compatible */}
+                {isNfcSupported && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isNfcScanning) {
+                          stopNfcScan();
+                          return;
+                        }
+                        void startNfcScan((result) => {
+                          if (result.serialNumber) {
+                            handleAgregarUidEscaneado(result.serialNumber);
+                          }
+                        });
+                      }}
+                      className={`w-full py-3 px-4 rounded-2xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer ${
+                        isNfcScanning
+                          ? "bg-amber-600 text-white animate-pulse"
+                          : "bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white hover:bg-[#600616]"
+                      }`}
+                    >
+                      <Wifi size={16} className="rotate-90" />
+                      <span>
+                        {isNfcScanning
+                          ? "📱 Escuchando NFC... acerca tarjetas al teléfono (Click para pausar)"
+                          : "📱 Activar Lector NFC del Celular para captura continua"}
+                      </span>
+                    </button>
+                    {nfcReaderError && (
+                      <p className="text-xs text-[#7C0A1E] font-medium mt-1">{nfcReaderError}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Input de captura con lector USB o teclado */}
+                <div className="space-y-1.5 text-left">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+                    Captura por Lector USB o Ingreso Individual:
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Acerca la tarjeta al lector USB o escribe UID y presiona Enter..."
+                      value={singleUidInput}
+                      onChange={(e) => setSingleUidInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (singleUidInput.trim()) {
+                            handleAgregarUidEscaneado(singleUidInput);
+                          }
+                        }
+                      }}
+                      className="flex-1 px-4 py-2.5 rounded-xl border border-[#EFE7DE] text-xs font-mono font-bold text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E] bg-[#FAF8F5]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (singleUidInput.trim()) {
+                          handleAgregarUidEscaneado(singleUidInput);
+                        }
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] cursor-pointer"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de tarjetas capturadas */}
+                <div className="space-y-1.5 text-left">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#736868]">
+                      Tarjetas capturadas para registrar ({tarjetasEscaneadas.length}):
+                    </span>
+                    {tarjetasEscaneadas.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTarjetasEscaneadas([])}
+                        className="text-[11px] text-rose-600 hover:underline cursor-pointer"
+                      >
+                        Limpiar lista
+                      </button>
+                    )}
+                  </div>
+
+                  {tarjetasEscaneadas.length === 0 ? (
+                    <div className="p-6 rounded-2xl bg-[#FAF8F5] border border-dashed border-[#D9D0C7] text-center text-xs text-[#8E7D7D]">
+                      Aún no hay tarjetas en la lista. Acerca una tarjeta física al lector o teléfono para capturarla.
+                    </div>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto p-2 bg-[#FAF8F5] rounded-2xl border border-[#EFE7DE] space-y-1.5 custom-scrollbar">
+                      {tarjetasEscaneadas.map((uid, idx) => (
+                        <div
+                          key={uid + idx}
+                          className="flex items-center justify-between px-3 py-2 bg-white rounded-xl border border-[#EFE7DE] text-xs shadow-2xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-[#7C0A1E]/10 text-[#7C0A1E] font-bold text-[10px] flex items-center justify-center font-mono">
+                              {idx + 1}
+                            </span>
+                            <span className="font-mono font-bold text-[#2D1A1E]">{uid}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleEliminarUidEscaneado(uid)}
+                            className="text-[#8E7D7D] hover:text-rose-600 p-1 rounded-lg transition"
+                            title="Quitar de la lista"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+                  Ingresa los UIDs de las tarjetas (uno por línea o separados por coma) *
+                </label>
+                <textarea
+                  required={tipoRegistroStock === "MANUAL"}
+                  rows={6}
+                  value={uidsInput}
+                  onChange={(e) => setUidsInput(e.target.value)}
+                  placeholder={"04:5A:2B:1A:3C:60:80\n04:6B:3C:2D:4E:70:91\n04:7C:4D:3E:5F:81:A2"}
+                  className="w-full p-3 rounded-2xl border border-[#EFE7DE] font-mono text-xs text-[#2D1A1E] bg-[#FAF8F5] focus:outline-none focus:border-[#7C0A1E]"
+                />
+                <p className="text-[11px] text-[#8E7D7D] mt-1">
+                  Las tarjetas se ingresarán con estado <strong>DISPONIBLE</strong>. UIDs duplicados se omiten de forma segura.
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-[#EFE7DE] dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  stopNfcScan();
+                  setModalStockOpen(false);
+                }}
+                className="px-5 py-2.5 rounded-xl border border-[#D9D0C7] text-[#5A4B4B] font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={savingStock || (tipoRegistroStock === "ESCANER" && tarjetasEscaneadas.length === 0 && !singleUidInput.trim())}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] hover:bg-[#600616] text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {savingStock ? <Spinner size={16} /> : <span>Guardar en Almacén</span>}
+              </button>
+            </div>
+          </form>
+        </div>
       </Modal>
 
       {/* ========================================================= */}
@@ -1206,18 +1415,24 @@ export const AdminTarjetas: React.FC = () => {
 
             {/* Buscador de clientes */}
             <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
-                Selecciona el Cliente a quien asignar esta tarjeta:
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+                  Selecciona el Cliente a quien asignar esta tarjeta:
+                </label>
+                <span className="text-[10px] text-[#8E7D7D] font-medium">
+                  Solo clientes sin tarjeta activa
+                </span>
+              </div>
 
               <div className="relative">
-                <Search className="w-4 h-4 text-[#8E7D7D] absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-[#8E7D7D] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                 <input
                   type="text"
                   placeholder="Buscar por nombre, apellido, código o email..."
                   value={busquedaCliente}
                   onChange={(e) => setBusquedaCliente(e.target.value)}
-                  className="input-base pl-9 text-xs"
+                  style={{ paddingLeft: "2.75rem" }}
+                  className="input-base text-xs w-full"
                 />
               </div>
 
@@ -1226,11 +1441,21 @@ export const AdminTarjetas: React.FC = () => {
                 {loadingClientes ? (
                   <div className="p-6 text-center">
                     <Spinner size={24} />
-                    <p className="text-xs text-[#8E7D7D] mt-2">Cargando clientes...</p>
+                    <p className="text-xs text-[#8E7D7D] mt-2">Cargando clientes disponibles...</p>
                   </div>
                 ) : (() => {
                   const q = busquedaCliente.toLowerCase().trim();
+                  // Filtrar: solo clientes que NO tienen tarjeta activa asignada, o el cliente actual de esta tarjeta
                   const filtrados = clientes.filter((c) => {
+                    const esTitularActual =
+                      (selectedTarjeta.id_usuario && String(c.id) === String(selectedTarjeta.id_usuario)) ||
+                      (selectedTarjeta.email && c.email === selectedTarjeta.email);
+
+                    // Si ya tiene otra tarjeta activa asignada y no es esta, se excluye
+                    if (c.id_tarjeta_activa && !esTitularActual) {
+                      return false;
+                    }
+
                     if (!q) return true;
                     const nombreCompleto = `${c.nombres || ""} ${c.apellidos || ""}`.toLowerCase();
                     const email = (c.email || "").toLowerCase();
@@ -1241,13 +1466,17 @@ export const AdminTarjetas: React.FC = () => {
                   if (filtrados.length === 0) {
                     return (
                       <div className="p-6 text-center text-xs text-[#8E7D7D]">
-                        No se encontraron clientes registrados con ese criterio.
+                        No hay clientes disponibles sin tarjeta que coincidan con la búsqueda.
                       </div>
                     );
                   }
 
                   return filtrados.slice(0, 50).map((cli) => {
                     const isSelected = clienteSeleccionado?.id === cli.id;
+                    const esTitularActual =
+                      (selectedTarjeta.id_usuario && String(cli.id) === String(selectedTarjeta.id_usuario)) ||
+                      (selectedTarjeta.email && cli.email === selectedTarjeta.email);
+
                     return (
                       <div
                         key={cli.id}
@@ -1269,8 +1498,13 @@ export const AdminTarjetas: React.FC = () => {
                             <User className="w-4 h-4" />
                           </div>
                           <div className="text-left">
-                            <p className="text-xs font-bold text-[#2D1A1E] dark:text-white">
-                              {cli.nombres} {cli.apellidos || ""}
+                            <p className="text-xs font-bold text-[#2D1A1E] dark:text-white flex items-center gap-1.5">
+                              <span>{cli.nombres} {cli.apellidos || ""}</span>
+                              {esTitularActual && (
+                                <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
+                                  Titular Actual
+                                </span>
+                              )}
                             </p>
                             <p className="text-[11px] text-[#8E7D7D]">
                               {cli.email} {cli.codigo_cliente ? `• ${cli.codigo_cliente}` : ""}
@@ -1289,7 +1523,7 @@ export const AdminTarjetas: React.FC = () => {
                             name="clienteSelectRadio"
                             checked={isSelected}
                             onChange={() => setClienteSeleccionado(cli)}
-                            className="accent-[#7C0A1E] cursor-pointer"
+                            className="accent-[#7C0A1E] w-4 h-4 cursor-pointer"
                           />
                         </div>
                       </div>

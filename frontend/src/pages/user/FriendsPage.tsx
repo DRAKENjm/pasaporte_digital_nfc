@@ -100,9 +100,10 @@ export const FriendsPage: React.FC = () => {
     try {
       const res = await api.post("/friends/invite");
       const d = res.data?.data || res.data;
-      if (d?.link) {
-        setInviteData(d);
-        const qr = await QRCode.toDataURL(d.link, {
+      if (d?.codigo) {
+        const cleanLink = `${window.location.origin}/auth/register?ref=${d.codigo}`;
+        setInviteData({ codigo: d.codigo, link: cleanLink });
+        const qr = await QRCode.toDataURL(cleanLink, {
           width: 280,
           margin: 2,
           color: { dark: "#7C0A1E", light: "#FAF8F5" },
@@ -198,29 +199,29 @@ export const FriendsPage: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-6 animate-fadeIn pb-16">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#EFE7DE] pb-4">
+      {/* Header Responsivo */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EFE7DE] pb-4">
         <div className="flex items-center gap-3">
           <Link
             to="/user/home"
-            className="w-10 h-10 rounded-xl border border-[#EFE7DE] flex items-center justify-center hover:bg-[#FAF8F5] transition text-[#2D1A1E]"
+            className="w-10 h-10 rounded-xl border border-[#EFE7DE] flex items-center justify-center hover:bg-[#FAF8F5] transition text-[#2D1A1E] shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2 text-[#2D1A1E]">
-              <Users className="w-6 h-6 text-[#7C0A1E]" />
-              Amigos e Invitaciones
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold flex items-center gap-2 text-[#2D1A1E] truncate">
+              <Users className="w-5 h-5 sm:w-6 sm:h-6 text-[#7C0A1E] shrink-0" />
+              <span>Amigos e Invitaciones</span>
             </h1>
-            <p className="text-xs text-[#8E7D7D]">
-              Conecta con amigos y gana recompensas invitando a nuevos viajeros
+            <p className="text-[11px] sm:text-xs text-[#8E7D7D] line-clamp-1 sm:line-clamp-none">
+              Conecta con amigos y gana recompensas invitando viajeros
             </p>
           </div>
         </div>
 
-        {/* Contador */}
-        <div className="text-right">
-          <span className="text-xs font-bold text-[#7C0A1E] bg-[#7C0A1E]/10 border border-[#7C0A1E]/20 px-3 py-1 rounded-full">
+        {/* Contador / Límite Badge */}
+        <div className="flex items-center justify-end sm:self-center">
+          <span className="text-[11px] sm:text-xs font-bold text-[#7C0A1E] bg-[#7C0A1E]/10 border border-[#7C0A1E]/20 px-3 py-1 rounded-full whitespace-nowrap">
             {totalAmigos} / {limiteMaximo} Amigos
           </span>
         </div>

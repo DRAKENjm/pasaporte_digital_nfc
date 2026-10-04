@@ -18,6 +18,8 @@ import {
   Bell,
   Wifi,
   Stamp,
+  User as UserIcon,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 
@@ -26,6 +28,7 @@ export const CommerceLayout: React.FC = () => {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -160,14 +163,91 @@ export const CommerceLayout: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs font-bold text-[#2D1A1E]">{user?.nombres || "Encargado de Local"}</p>
-              <p className="text-[10px] text-[#8E7D7D] font-medium">{user?.email}</p>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-rose-50 border border-[#7C0A1E]/30 text-[#7C0A1E] font-black text-xs flex items-center justify-center">
-              {user?.nombres?.charAt(0) || "L"}
-            </div>
+          {/* User Account Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="flex items-center gap-3 p-1.5 -m-1.5 rounded-2xl hover:bg-slate-50 transition-all cursor-pointer group focus:outline-none"
+              title="Menú de cuenta"
+            >
+              <div className="text-right hidden sm:block">
+                <p className="text-xs font-bold text-[#2D1A1E] group-hover:text-[#7C0A1E] transition-colors">
+                  {user?.nombres || "Encargado de Local"}
+                </p>
+                <p className="text-[10px] text-[#8E7D7D] font-medium truncate max-w-[130px]">{user?.email}</p>
+              </div>
+              <div className="w-9 h-9 rounded-2xl bg-rose-50 border border-[#7C0A1E]/30 text-[#7C0A1E] font-black text-xs flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xs">
+                {user?.nombres?.charAt(0) || "L"}
+              </div>
+              <ChevronDown
+                size={14}
+                className={`text-[#8E7D7D] transition-transform duration-200 hidden sm:block ${
+                  userMenuOpen ? "rotate-180 text-[#7C0A1E]" : "group-hover:text-[#2D1A1E]"
+                }`}
+              />
+            </button>
+
+            {/* Dropdown Menu */}
+            {userMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setUserMenuOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-[#EFE7DE] rounded-2xl shadow-2xl z-50 overflow-hidden animate-fadeIn text-[#2D1A1E]">
+                  <div className="p-4 bg-gradient-to-b from-[#FAF8F5] to-white border-b border-[#EFE7DE]">
+                    <p className="text-xs font-bold text-[#2D1A1E] truncate">
+                      {user?.nombres || "Encargado de Local"}
+                    </p>
+                    <p className="text-[11px] text-[#8E7D7D] truncate">{user?.email}</p>
+                    <span className="inline-block mt-1.5 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#7C0A1E]/10 text-[#7C0A1E]">
+                      {user?.rol || "Comercio"}
+                    </span>
+                  </div>
+
+                  <div className="p-2 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        navigate("/commerce/perfil");
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-[#5A4B4B] hover:text-[#7C0A1E] hover:bg-[#FAF8F5] transition-colors text-left"
+                    >
+                      <UserIcon className="w-4 h-4 text-[#8E7D7D]" />
+                      <span>Mi Perfil de Local</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        navigate("/commerce/configuracion");
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-[#5A4B4B] hover:text-[#7C0A1E] hover:bg-[#FAF8F5] transition-colors text-left"
+                    >
+                      <Settings className="w-4 h-4 text-[#8E7D7D]" />
+                      <span>Configuración</span>
+                    </button>
+
+                    <div className="my-1 border-t border-[#EFE7DE]" />
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        handleLogout();
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800 transition-colors text-left"
+                    >
+                      <LogOut className="w-4 h-4 text-rose-600" />
+                      <span>Cerrar Sesión</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </header>
 

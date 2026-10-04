@@ -2,8 +2,8 @@ import React, { createContext, useState, useEffect, useCallback, useRef } from "
 import { User } from "../types";
 import { authService } from "../services/authService";
 
-// Tiempo de inactividad para cierre de sesión automático (5 minutos)
-const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+// Tiempo de inactividad para cierre de sesión automático (3 minutos)
+const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000;
 
 interface AuthContextType {
   user: User | null;
@@ -18,6 +18,8 @@ interface AuthContextType {
     password: string;
     nombres: string;
     apellidos: string;
+    telefono?: string;
+    uid_nfc?: string;
   }) => Promise<void>;
   logout: (reason?: string) => void;
   refreshProfile: () => Promise<void>;
@@ -208,6 +210,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     password: string;
     nombres: string;
     apellidos: string;
+    telefono?: string;
+    uid_nfc?: string;
   }) => {
     await authService.register(data);
   };

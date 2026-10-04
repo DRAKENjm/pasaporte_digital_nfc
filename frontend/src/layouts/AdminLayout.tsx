@@ -22,6 +22,8 @@ import {
   X,
   Sparkles,
   Stamp,
+  User as UserIcon,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import api from "../services/api";
@@ -33,6 +35,7 @@ export const AdminLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -436,15 +439,92 @@ export const AdminLayout: React.FC = () => {
               )}
             </div>
 
-            {/* User Avatar */}
-            <div className="flex items-center gap-2.5 pl-2 border-l border-[#E8DFD5]">
-              <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#7C0A1E] to-[#9B1B30] text-white font-black text-xs flex items-center justify-center shadow-xs">
-                AG
-              </div>
-              <div className="hidden lg:block text-left">
-                <p className="text-xs font-bold text-[#2D1A1E] leading-tight">Admin General</p>
-                <p className="text-[10px] text-[#8E7D7D] truncate max-w-[130px] font-medium">{user?.email || "admin@pasaporte.pe"}</p>
-              </div>
+            {/* User Avatar Menu Dropdown */}
+            <div className="relative pl-2 border-l border-[#E8DFD5]">
+              <button
+                type="button"
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="flex items-center gap-2.5 p-1.5 -m-1.5 rounded-2xl hover:bg-[#FAF8F5] transition-all cursor-pointer group focus:outline-none"
+                title="Menú de cuenta"
+              >
+                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#7C0A1E] to-[#9B1B30] text-white font-black text-xs flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform border border-[#7C0A1E]/30">
+                  {user?.nombres?.charAt(0) || "AG"}
+                </div>
+                <div className="hidden lg:block text-left">
+                  <p className="text-xs font-bold text-[#2D1A1E] leading-tight group-hover:text-[#7C0A1E] transition-colors">
+                    {user?.nombres ? `${user.nombres} ${user.apellidos || ""}`.trim() : "Admin General"}
+                  </p>
+                  <p className="text-[10px] text-[#8E7D7D] truncate max-w-[130px] font-medium">
+                    {user?.email || "admin@pasaporte.pe"}
+                  </p>
+                </div>
+                <ChevronDown
+                  size={14}
+                  className={`text-[#8E7D7D] transition-transform duration-200 hidden sm:block ${
+                    userMenuOpen ? "rotate-180 text-[#7C0A1E]" : "group-hover:text-[#2D1A1E]"
+                  }`}
+                />
+              </button>
+
+              {/* User Dropdown Popover */}
+              {userMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setUserMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-[#E8DFD5] rounded-2xl shadow-2xl z-50 overflow-hidden animate-fadeIn text-[#2D1A1E]">
+                    {/* Header Info */}
+                    <div className="p-4 bg-gradient-to-b from-[#FAF8F5] to-white border-b border-[#E8DFD5]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#7C0A1E] to-[#9B1B30] text-white font-black text-sm flex items-center justify-center shadow-xs">
+                          {user?.nombres?.charAt(0) || "A"}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-[#2D1A1E] truncate">
+                            {user?.nombres ? `${user.nombres} ${user.apellidos || ""}`.trim() : "Administrador"}
+                          </p>
+                          <p className="text-[11px] text-[#8E7D7D] truncate">
+                            {user?.email || "admin@pasaporte.pe"}
+                          </p>
+                          <span className="inline-block mt-1 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#7C0A1E]/10 text-[#7C0A1E] border border-[#7C0A1E]/20">
+                            {user?.rol || "Super Admin"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Menu Actions */}
+                    <div className="p-2 space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          navigate("/admin/configuracion");
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-[#5A4B4B] hover:text-[#7C0A1E] hover:bg-[#FAF8F5] transition-colors text-left"
+                      >
+                        <UserIcon className="w-4 h-4 text-[#8E7D7D]" />
+                        <span>Mi Perfil y Ajustes</span>
+                      </button>
+
+                      <div className="my-1 border-t border-[#E8DFD5]/60" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800 transition-colors text-left"
+                      >
+                        <LogOut className="w-4 h-4 text-rose-600" />
+                        <span>Cerrar Sesión</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </header>

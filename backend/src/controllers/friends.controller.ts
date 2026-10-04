@@ -216,6 +216,21 @@ export class FriendsController {
   static async generarInvitacion(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
+      const reqOrigin = req.get("origin") || req.get("referer");
+      let cleanOrigin = "http://localhost:5173";
+      if (reqOrigin) {
+        try {
+          const parsed = new URL(reqOrigin);
+          cleanOrigin = parsed.origin;
+        } catch {
+          cleanOrigin = reqOrigin.replace(/\/+$/, "");
+        }
+      } else if (process.env.FRONTEND_URL) {
+        cleanOrigin = process.env.FRONTEND_URL.replace(/\/+$/, "");
+      } else if (process.env.CLIENT_ORIGIN) {
+        cleanOrigin = process.env.CLIENT_ORIGIN.replace(/\/+$/, "");
+      }
+
       // Reutilizar código activo del usuario si existe
       const existing = await query(
         `SELECT codigo, link_completo FROM invitaciones
@@ -225,11 +240,14 @@ export class FriendsController {
         [userId],
       );
       if (existing.rows[0]) {
+        const codigoExistente = existing.rows[0].codigo;
+        const linkActualizado = `${cleanOrigin}/auth/register?ref=${codigoExistente}`;
         return sendResponse(res, 200, {
-          codigo: existing.rows[0].codigo,
-          link: existing.rows[0].link_completo,
+          codigo: codigoExistente,
+          link: linkActualizado,
         });
       }
+
       let codigo = "";
       try {
         const gen = await query(`SELECT public.generar_codigo_invitacion() AS codigo`);
@@ -237,8 +255,8 @@ export class FriendsController {
       } catch {
         codigo = "PD" + Math.random().toString(36).slice(2, 8).toUpperCase();
       }
-      const origin = process.env.FRONTEND_URL || process.env.CLIENT_ORIGIN || "http://localhost:5173";
-      const link = `${origin}/auth/register?ref=${codigo}`;
+      
+      const link = `${cleanOrigin}/auth/register?ref=${codigo}`;
       await query(
         `INSERT INTO invitaciones (id_usuario_invitador, codigo, link_completo, estado)
          VALUES ($1, $2, $3, 1)`,

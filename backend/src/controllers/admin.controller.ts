@@ -183,6 +183,8 @@ export const AdminController = {
       let sql = `
         SELECT u.id_usuario AS id, u.nombres, u.apellidos, u.email, u.telefono, u.foto_perfil AS avatar_url,
                c.id_cliente, c.codigo_cliente,
+               t.id_tarjeta AS id_tarjeta_activa,
+               t.uid_nfc AS tarjeta_activa_uid,
                COALESCE((SELECT COUNT(*) FROM sellos_digitales s JOIN visitas v ON v.id_visita = s.id_visita WHERE v.id_cliente = c.id_cliente), 0)::int AS total_sellos,
                COALESCE((SELECT SUM(cantidad) FROM movimientos_puntos WHERE id_cliente = c.id_cliente), 0)::int AS puntos_globales,
                CASE WHEN u.estado = 1 THEN 'ACTIVO' ELSE 'INACTIVO' END AS estado,
@@ -197,6 +199,13 @@ export const AdminController = {
         FROM usuarios u
         JOIN roles r ON r.id_rol = u.id_rol
         LEFT JOIN clientes c ON c.id_usuario = u.id_usuario
+        LEFT JOIN LATERAL (
+          SELECT id_tarjeta, uid_nfc, estado
+          FROM tarjetas_nfc
+          WHERE id_cliente = c.id_cliente AND estado IN ('ACTIVA', 'ASIGNADA')
+          ORDER BY id_tarjeta DESC
+          LIMIT 1
+        ) t ON true
         WHERE 1=1
       `;
       const params: any[] = [];
@@ -1981,6 +1990,8 @@ export const AdminController = {
         categoria_id && Number(categoria_id) > 0
           ? Number(categoria_id)
           : null;
+      const hasImagen = imagen_url !== undefined;
+      const imgVal = imagen_url?.trim() ? imagen_url.trim() : null;
 
       const result = await query(
         `UPDATE establecimientos
@@ -1992,10 +2003,10 @@ export const AdminController = {
            telefono = COALESCE($5, telefono),
            email = COALESCE($6, email),
            categoria_id = CASE WHEN $7::boolean THEN $8::int ELSE categoria_id END,
-           imagen_portada = COALESCE($9, imagen_portada),
-           logo = COALESCE($9, logo),
-           estado = COALESCE($10, estado),
-           tipo = CASE WHEN $11::boolean THEN $12 ELSE tipo END
+           imagen_portada = CASE WHEN $9::boolean THEN $10 ELSE imagen_portada END,
+           logo = CASE WHEN $9::boolean THEN $10 ELSE logo END,
+           estado = COALESCE($11, estado),
+           tipo = CASE WHEN $12::boolean THEN $13 ELSE tipo END
          WHERE id_establecimiento = $1
          RETURNING *`,
         [
@@ -2007,7 +2018,8 @@ export const AdminController = {
           email !== undefined ? email : null,
           hasCategoria,
           catVal,
-          imagen_url !== undefined ? imagen_url : null,
+          hasImagen,
+          imgVal,
           estado ?? null,
           req.body.tipo !== undefined,
           req.body.tipo === "LUGAR_TURISTICO" ? "LUGAR_TURISTICO" : "LOCAL",

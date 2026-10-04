@@ -707,14 +707,23 @@ export const ExplorarPage: React.FC = () => {
         </div>
 
         {gpsBlocked && (
-          <div className="mt-3 bg-red-50 border border-red-100 rounded-xl p-3 flex items-start gap-2.5 animate-fadeIn">
-            <LocateFixed size={18} className="text-red-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h4 className="text-xs font-bold text-red-800">Ubicación desactivada</h4>
-              <p className="text-[11px] text-red-600 mt-0.5 leading-snug">
-                Para ver los locales cercanos y trazar rutas, habilita el permiso de ubicación en el ícono del candado (arriba a la izquierda en tu navegador) y recarga la página.
-              </p>
+          <div className="mt-3 bg-amber-50 border border-amber-200/70 rounded-2xl p-3 flex items-center justify-between gap-3 animate-fadeIn">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <LocateFixed size={18} className="text-[#7C0A1E] shrink-0" />
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold text-[#2D1A1E]">Ubicación GPS no activada</h4>
+                <p className="text-[11px] text-[#8E7D7D] truncate">
+                  Activa tu GPS para ver locales cercanos y trazar tu ruta.
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => solicitarPermisoUbicacion(false, false)}
+              className="px-3 py-1.5 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold shrink-0 hover:bg-[#600616] cursor-pointer"
+            >
+              Activar GPS
+            </button>
           </div>
         )}
       </div>

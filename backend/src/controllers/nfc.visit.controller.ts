@@ -75,15 +75,21 @@ export const NfcVisitController = {
       }
 
       if (!data) {
-        throw new ApiError(404, "Tarjeta o código QR no registrado en el sistema");
+        throw new ApiError(404, "Tarjeta sin información o no registrada");
       }
 
       if (data.tarjeta_estado !== "ACTIVA") {
-        throw new ApiError(400, `La tarjeta se encuentra en estado: ${data.tarjeta_estado}`);
+        if (data.tarjeta_estado === "DISPONIBLE" || data.tarjeta_estado === "EN_STOCK") {
+          throw new ApiError(
+            400,
+            "Tarjeta física sin vincular. El cliente debe registrarse primero para activar su pasaporte.",
+          );
+        }
+        throw new ApiError(400, `La tarjeta no es válida (Estado: ${data.tarjeta_estado})`);
       }
 
       if (!data.id_cliente || data.usuario_estado !== 1) {
-        throw new ApiError(400, "El cliente asociado a esta credencial no está activo");
+        throw new ApiError(400, "El cliente asociado a esta tarjeta no se encuentra activo");
       }
 
       sendResponse(res, 200, {
@@ -204,21 +210,18 @@ export const NfcVisitController = {
           : "El establecimiento no cuenta con un programa de sellos activo");
       }
 
-      // Validar límite diario de sellos para el cliente en este programa
-      if (programa.max_sellos_dia) {
-        const sellosHoyRes = await client.query(
-          `SELECT COUNT(*)::int AS total_hoy
-           FROM sellos_digitales s
-           JOIN visitas v ON v.id_visita = s.id_visita
-           WHERE v.id_cliente = $1 AND s.id_programa = $2 
-             AND s.estado = 'OTORGADO'
-             AND s.fecha_otorgamiento >= CURRENT_DATE`,
-          [clienteId, programa.id_programa],
-        );
-        if (sellosHoyRes.rows[0].total_hoy >= programa.max_sellos_dia) {
-          throw new ApiError(400, `Ya alcanzaste el límite máximo de ${programa.max_sellos_dia} sellos por día en este local`);
-        }
-      }
+      // Validar si el cliente ya recibió un sello hoy en este establecimiento (Zona horaria de Perú)
+      const sellosHoyRes = await client.query(
+        `SELECT COUNT(*)::int AS total_hoy
+         FROM sellos_digitales s
+         JOIN visitas v ON v.id_visita = s.id_visita
+         JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+         WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2 
+           AND s.estado = 'OTORGADO'
+           AND s.fecha_otorgamiento >= (date_trunc('day', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')`,
+        [clienteId, establecimientoId],
+      );
+      const yaTieneSelloHoy = (sellosHoyRes.rows[0]?.total_hoy || 0) >= 1;
 
       const metodo = (req.body.metodo_validacion === "QR" || req.body.metodo_validacion === "QR_RESPALDO") ? "QR" : "NFC";
 
@@ -227,9 +230,14 @@ export const NfcVisitController = {
         `INSERT INTO visitas (id_cliente, id_tarjeta, id_sucursal, id_usuario_validador, estado, observacion, metodo_validacion)
          VALUES ($1, $2, $3, $4, 'CONFIRMADA', $5, $6)
          RETURNING id_visita, fecha_hora`,
-        [clienteId, id_tarjeta, id_sucursal, validadorId,
+        [
+          clienteId,
+          id_tarjeta,
+          id_sucursal,
+          validadorId,
           monto_compra !== undefined ? `Compra S/ ${Number(monto_compra).toFixed(2)}` : observacion || null,
-          metodo],
+          metodo,
+        ],
       );
       const visitaId = visitaRes.rows[0].id_visita;
 
@@ -243,8 +251,8 @@ export const NfcVisitController = {
       );
       const ordenSello = (totalSellosClienteRes.rows[0].total % programa.meta_sellos) + 1;
 
-      // 1. Puntos Base
-      const puntosBase = Number(programa.puntos_por_sello) || 20;
+      // 1. Puntos Base (solo si no ha recibido sello hoy)
+      const puntosBase = !yaTieneSelloHoy ? (Number(programa.puntos_por_sello) || 0) : 0;
 
       // 2. Bono por Frecuencia (visitas en los últimos 7 días a este establecimiento)
       const visitasRecientesRes = await client.query(
@@ -268,12 +276,11 @@ export const NfcVisitController = {
         tagFrecuencia = " (+10 pts bono racha semanal)";
       }
 
-      // 3. Bono por Consumo / Monto de compra
+      // 3. Bono por Consumo / Monto de compra (+1 punto por cada S/ 5 gastados)
       let bonoConsumo = 0;
       let tagConsumo = "";
       if (monto_compra !== undefined && Number(monto_compra) > 0) {
         const montoNum = Number(monto_compra);
-        // +1 punto por cada S/ 5 gastados
         bonoConsumo = Math.floor(montoNum / 5);
         if (bonoConsumo > 0) {
           tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
@@ -282,27 +289,31 @@ export const NfcVisitController = {
 
       const puntosOtorgados = puntosBase + bonoFrecuencia + bonoConsumo;
 
-      // 2. Crear Sello Digital
-      const selloRes = await client.query(
-        `INSERT INTO sellos_digitales (
-           id_visita, id_programa, numero_sello, cantidad, estado,
-           nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot,
-           meta_sellos_snapshot, puntos_sello_snapshot
-         )
-         VALUES ($1, $2, $3, 1, 'OTORGADO', $4, $5, $6, $7, $8)
-         RETURNING id_sello, numero_sello`,
-        [
-          visitaId,
-          programa.id_programa,
-          ordenSello,
-          programa.nombre_sello,
-          programa.imagen_sello,
-          programa.color_sello,
-          programa.meta_sellos,
-          puntosOtorgados,
-        ],
-      );
-      const selloId = selloRes.rows[0].id_sello;
+      let selloId: number | null = null;
+
+      // 2. Crear Sello Digital solo si no tiene sello de hoy
+      if (!yaTieneSelloHoy) {
+        const selloRes = await client.query(
+          `INSERT INTO sellos_digitales (
+             id_visita, id_programa, numero_sello, cantidad, estado,
+             nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot,
+             meta_sellos_snapshot, puntos_sello_snapshot
+           )
+           VALUES ($1, $2, $3, 1, 'OTORGADO', $4, $5, $6, $7, $8)
+           RETURNING id_sello, numero_sello`,
+          [
+            visitaId,
+            programa.id_programa,
+            ordenSello,
+            programa.nombre_sello,
+            programa.imagen_sello,
+            programa.color_sello,
+            programa.meta_sellos,
+            puntosOtorgados,
+          ],
+        );
+        selloId = selloRes.rows[0].id_sello;
+      }
 
       // 3. Obtener saldo anterior del ledger
       const saldoRes = await client.query(
@@ -314,43 +325,54 @@ export const NfcVisitController = {
       const saldoAnterior = saldoRes.rows[0].saldo;
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
-      const descripcionMovimiento = `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagFrecuencia}${tagConsumo}`;
+      const descripcionMovimiento = yaTieneSelloHoy
+        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagFrecuencia}`
+        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagFrecuencia}${tagConsumo}`;
 
-      // 4. Crear Movimiento Contable de Puntos (Ledger)
-      await client.query(
-        `INSERT INTO movimientos_puntos (
-          id_cliente, id_programa, id_visita, id_sello,
-          tipo_movimiento, cantidad, saldo_anterior, saldo_posterior,
-          descripcion, id_usuario_accion
-        ) VALUES (
-          $1, $2, $3, $4,
-          'GANANCIA_SELLO', $5, $6, $7,
-          $8, $9
-        )`,
-        [
-          clienteId,
-          programa.id_programa,
-          visitaId,
-          selloId,
-          puntosOtorgados,
-          saldoAnterior,
-          saldoPosterior,
-          descripcionMovimiento,
-          validadorId,
-        ],
-      );
+      // 4. Crear Movimiento Contable de Puntos (Ledger) si se otorgaron puntos
+      if (puntosOtorgados > 0) {
+        await client.query(
+          `INSERT INTO movimientos_puntos (
+            id_cliente, id_programa, id_visita, id_sello,
+            tipo_movimiento, cantidad, saldo_anterior, saldo_posterior,
+            descripcion, id_usuario_accion
+          ) VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7, $8,
+            $9, $10
+          )`,
+          [
+            clienteId,
+            programa.id_programa,
+            visitaId,
+            selloId,
+            yaTieneSelloHoy ? "GANANCIA_COMPRA" : "GANANCIA_SELLO",
+            puntosOtorgados,
+            saldoAnterior,
+            saldoPosterior,
+            descripcionMovimiento,
+            validadorId,
+          ],
+        );
+      }
 
       // 5. Crear Notificación para el cliente
+      const notifTitulo = yaTieneSelloHoy ? "¡Consumo registrado!" : "¡Nuevo sello obtenido!";
+      const notifMensaje = yaTieneSelloHoy
+        ? `Se registraron tus compras en ${sucursalRes.rows[0].nombre_comercial} y ganaste +${puntosOtorgados} puntos (el sello diario de hoy ya fue acumulado).`
+        : `Has obtenido el sello #${ordenSello} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.${tagFrecuencia}${tagConsumo}`;
+
       await client.query(
         `INSERT INTO notificaciones (
           id_usuario, tipo_notificacion, titulo, mensaje, canal, estado_envio, referencia_tipo, referencia_id
         ) VALUES (
-          $1, 'SELLO_OBTENIDO', '¡Nuevo sello obtenido!',
-          $2, 'APP', 'ENVIADA', 'VISITA', $3
+          $1, 'SELLO_OBTENIDO', $2,
+          $3, 'APP', 'ENVIADA', 'VISITA', $4
         )`,
         [
           tarjetaRes.rows[0].id_usuario,
-          `Has obtenido el sello #${ordenSello} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.${tagFrecuencia}${tagConsumo}`,
+          notifTitulo,
+          notifMensaje,
           visitaId,
         ],
       );
@@ -362,7 +384,7 @@ export const NfcVisitController = {
         [
           validadorId,
           visitaId,
-          `Confirmación de visita para cliente ${clienteId} en sucursal ${id_sucursal}`,
+          `Confirmación de visita para cliente ${clienteId} en sucursal ${id_sucursal} (Sello: ${!yaTieneSelloHoy}, Puntos: ${puntosOtorgados})`,
         ],
       );
 
@@ -375,12 +397,16 @@ export const NfcVisitController = {
           sucursal: sucursalRes.rows[0].sucursal_nombre,
           establecimiento: sucursalRes.rows[0].nombre_comercial,
         },
-        sello: {
+        sello_otorgado: !yaTieneSelloHoy,
+        sello: !yaTieneSelloHoy ? {
           id_sello: selloId,
           numero_sello: ordenSello,
           meta_sellos: programa.meta_sellos,
           nombre_sello: programa.nombre_sello,
-        },
+        } : null,
+        mensaje_sello: yaTieneSelloHoy
+          ? "Sello diario ya acumulado hoy (1/1). Puntos por consumo acreditados."
+          : `¡Sello #${ordenSello} otorgado con éxito!`,
         puntos: {
           puntos_ganados: puntosOtorgados,
           saldo_actual: saldoPosterior,
@@ -390,7 +416,7 @@ export const NfcVisitController = {
             bono_consumo: bonoConsumo,
           },
         },
-      }, "Visita confirmada y puntos acreditados con éxito.");
+      }, yaTieneSelloHoy ? "Compra confirmada y puntos acreditados." : "Visita confirmada, sello y puntos acreditados.");
     } catch (error) {
       if (client) await client.query("ROLLBACK");
       next(error);

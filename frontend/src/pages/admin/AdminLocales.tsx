@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import api from "../../services/api";
 import { Input } from "../../components/common/Input";
 import { Button } from "../../components/common/Button";
@@ -32,6 +33,13 @@ import {
   Compass,
   RefreshCw,
   Sparkles,
+  History,
+  Award,
+  Calendar,
+  CheckCircle2,
+  Smartphone,
+  QrCode,
+  UserCheck,
 } from "lucide-react";
 
 const ITEMS_PER_PAGE = 10;
@@ -121,7 +129,35 @@ export const AdminLocales = () => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Historial de sellos por local
+  const [modalHistorialSellos, setModalHistorialSellos] = useState(false);
+  const [historialLocalSellos, setHistorialLocalSellos] = useState<any[]>([]);
+  const [metricasLocalSellos, setMetricasLocalSellos] = useState<any>({});
+  const [loadingHistorialLocal, setLoadingHistorialLocal] = useState(false);
+  const [searchHistorialLocal, setSearchHistorialLocal] = useState("");
+  const [localHistorialSeleccionado, setLocalHistorialSeleccionado] = useState<Establecimiento | null>(null);
+
   const { showToast } = useUI();
+
+  const openHistorialSellos = async (local: Establecimiento) => {
+    setLocalHistorialSeleccionado(local);
+    setModalHistorialSellos(true);
+    setLoadingHistorialLocal(true);
+    setSearchHistorialLocal("");
+    try {
+      const idEst = (local as any).id_establecimiento || local.id;
+      const res = await api.get("/admin/sellos/historial", {
+        params: { id_establecimiento: idEst, limit: 100 },
+      });
+      const data = res.data?.data || res.data || {};
+      setHistorialLocalSellos(data.historial || []);
+      setMetricasLocalSellos(data.metricas || {});
+    } catch {
+      showToast("No se pudo cargar el historial de sellos", "error");
+    } finally {
+      setLoadingHistorialLocal(false);
+    }
+  };
 
   const handleCrearUsuarioRapido = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1674,10 +1710,19 @@ export const AdminLocales = () => {
             Administra los comercios afiliados, direcciones, horarios y personal asignado
           </p>
         </div>
-        <Button onClick={openCrear}>
-          <Plus className="w-4 h-4" />
-          Nuevo Lugar / Local
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/admin/sellos"
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#7C0A1E]/10 dark:bg-[#7C0A1E]/20 text-[#7C0A1E] dark:text-[#E8D3A2] border border-[#7C0A1E]/20 font-bold text-xs hover:bg-[#7C0A1E]/15 transition shadow-2xs cursor-pointer"
+          >
+            <History className="w-4 h-4" />
+            <span>Historial Global de Sellos</span>
+          </Link>
+          <Button onClick={openCrear}>
+            <Plus className="w-4 h-4" />
+            Nuevo Lugar / Local
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -1852,6 +1897,14 @@ export const AdminLocales = () => {
                       </td>
                       <td className="p-3.5 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openHistorialSellos(l)}
+                            className="p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition cursor-pointer"
+                            title="Ver historial de sellos otorgados"
+                          >
+                            <History className="w-4 h-4" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => openVer(l)}
@@ -2046,6 +2099,20 @@ export const AdminLocales = () => {
                 </span>
               </div>
             </div>
+
+            {/* Botón Ver Historial de Sellos Otorgados */}
+            <button
+              type="button"
+              onClick={() => {
+                const target = localSeleccionado;
+                setModalVer(false);
+                openHistorialSellos(target);
+              }}
+              className="w-full flex items-center justify-center gap-2.5 p-3 rounded-2xl bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-300/80 dark:border-amber-700 font-bold text-xs transition cursor-pointer shadow-2xs"
+            >
+              <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>Ver Historial de Sellos Otorgados por este Local</span>
+            </button>
 
             {/* Grid de Información de Contacto y Ubicación */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -2310,7 +2377,228 @@ export const AdminLocales = () => {
         </form>
       </Modal>
 
-      {/* Modal Cambiar Contraseña del Encargado del Local */}
+      {/* Modal Historial de Sellos Otorgados por el Local */}
+      <Modal
+        open={modalHistorialSellos}
+        onClose={() => setModalHistorialSellos(false)}
+        title={`Historial de Sellos: ${localHistorialSeleccionado?.razon_social || localHistorialSeleccionado?.nombre || "Local"}`}
+        subtitle="Registro cronológico y trazabilidad de sellos digitales otorgados por este establecimiento"
+        size="xl"
+      >
+        <div className="space-y-4">
+          {/* Métricas rápidas */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 text-center">
+              <span className="text-[10px] font-bold uppercase text-amber-800 dark:text-amber-300 block">
+                Total Otorgados
+              </span>
+              <span className="text-xl font-black text-amber-900 dark:text-amber-200 mt-0.5 block">
+                {historialLocalSellos.length}
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 text-center">
+              <span className="text-[10px] font-bold uppercase text-blue-800 dark:text-blue-300 block">
+                Vía NFC
+              </span>
+              <span className="text-xl font-black text-blue-900 dark:text-blue-200 mt-0.5 block">
+                {historialLocalSellos.filter((h) => h.metodo_validacion === "NFC").length}
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/40 text-center">
+              <span className="text-[10px] font-bold uppercase text-purple-800 dark:text-purple-300 block">
+                Vía QR
+              </span>
+              <span className="text-xl font-black text-purple-900 dark:text-purple-200 mt-0.5 block">
+                {historialLocalSellos.filter((h) => h.metodo_validacion === "QR" || h.metodo_validacion === "QR_RESPALDO").length}
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-center">
+              <span className="text-[10px] font-bold uppercase text-emerald-800 dark:text-emerald-300 block">
+                Auto-sellado GPS
+              </span>
+              <span className="text-xl font-black text-emerald-900 dark:text-emerald-200 mt-0.5 block">
+                {historialLocalSellos.filter((h) => h.metodo_validacion === "AUTOSELLADO").length}
+              </span>
+            </div>
+          </div>
+
+          {/* Buscador */}
+          <div className="relative w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8E7D7D] pointer-events-none z-10" />
+            <input
+              type="text"
+              className="input-base input-with-search text-xs"
+              placeholder="Buscar por cliente, correo o UID de tarjeta..."
+              value={searchHistorialLocal}
+              onChange={(e) => setSearchHistorialLocal(e.target.value)}
+            />
+          </div>
+
+          {/* Lista / Tabla de sellos */}
+          {loadingHistorialLocal ? (
+            <div className="flex justify-center py-10">
+              <Spinner size={32} />
+            </div>
+          ) : (
+            (() => {
+              const q = searchHistorialLocal.toLowerCase().trim();
+              const filtered = historialLocalSellos.filter((h) => {
+                if (!q) return true;
+                return (
+                  (h.cliente_nombres || "").toLowerCase().includes(q) ||
+                  (h.cliente_apellidos || "").toLowerCase().includes(q) ||
+                  (h.cliente_email || "").toLowerCase().includes(q) ||
+                  (h.tarjeta_codigo || "").toLowerCase().includes(q) ||
+                  (h.uid_nfc || "").toLowerCase().includes(q) ||
+                  (h.metodo_validacion || "").toLowerCase().includes(q)
+                );
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="py-10 text-center bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <Award className="w-10 h-10 text-[#8E7D7D] mx-auto opacity-40 mb-2" />
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      No hay sellos registrados para este local
+                    </p>
+                    <p className="text-[11px] text-muted mt-0.5">
+                      {searchHistorialLocal
+                        ? "Prueba con otros términos de búsqueda."
+                        : "Los sellos otorgados a clientes aparecerán aquí automáticamente."}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="table-card-container max-h-[50vh] overflow-y-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#EFE7DE]/70 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-900/40 text-muted font-bold uppercase sticky top-0 bg-white dark:bg-slate-900 z-10">
+                        <th className="p-3">Cliente</th>
+                        <th className="p-3">Sello & Puntos</th>
+                        <th className="p-3">Método</th>
+                        <th className="p-3">Fecha y Hora</th>
+                        <th className="p-3">Validador</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EFE7DE]/60 dark:divide-slate-800/60">
+                      {filtered.map((h: any, idx: number) => {
+                        const isNfc = h.metodo_validacion === "NFC";
+                        const isQr =
+                          h.metodo_validacion === "QR" ||
+                          h.metodo_validacion === "QR_RESPALDO";
+                        const isAuto = h.metodo_validacion === "AUTOSELLADO";
+                        return (
+                          <tr
+                            key={h.id_sello || idx}
+                            className="hover:bg-slate-500/5 transition"
+                          >
+                            <td className="p-3">
+                              <div className="flex items-center gap-2.5">
+                                {h.cliente_foto ? (
+                                  <img
+                                    src={h.cliente_foto}
+                                    alt=""
+                                    className="w-8 h-8 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-[#7C0A1E]/10 text-[#7C0A1E] dark:text-[#E8D3A2] flex items-center justify-center font-bold text-xs shrink-0">
+                                    {(h.cliente_nombres || "C").charAt(0)}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <span className="font-bold text-slate-900 dark:text-white block truncate max-w-[150px]">
+                                    {h.cliente_nombres} {h.cliente_apellidos}
+                                  </span>
+                                  <span className="text-[10px] text-muted block truncate max-w-[150px]">
+                                    {h.cliente_email}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                  {h.nombre_sello || "Sello Digital"}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                  +{h.puntos_otorgados || 20} pts
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isNfc
+                                    ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                                    : isQr
+                                    ? "bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                                    : "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                }`}
+                              >
+                                {isNfc ? (
+                                  <Smartphone className="w-3 h-3" />
+                                ) : isQr ? (
+                                  <QrCode className="w-3 h-3" />
+                                ) : (
+                                  <Compass className="w-3 h-3" />
+                                )}
+                                <span>
+                                  {isNfc
+                                    ? `NFC (${h.uid_nfc || "Tarjeta"})`
+                                    : isQr
+                                    ? "QR Dinámico"
+                                    : "Auto-sellado GPS"}
+                                </span>
+                              </span>
+                            </td>
+                            <td className="p-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                <span>
+                                  {h.fecha_otorgamiento
+                                    ? new Date(
+                                        h.fecha_otorgamiento,
+                                      ).toLocaleString("es-PE", {
+                                        day: "2-digit",
+                                        month: "short",
+                                        year: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : "Reciente"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-slate-500 dark:text-slate-400 truncate max-w-[130px]">
+                              {h.validador_nombres
+                                ? `${h.validador_nombres} ${h.validador_apellidos || ""}`
+                                : isAuto
+                                ? "Sistema GPS"
+                                : "Comercio"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()
+          )}
+
+          <div className="pt-2 flex justify-end">
+            <Button
+              onClick={() => setModalHistorialSellos(false)}
+              variant="secondary"
+              className="text-xs"
+            >
+              Cerrar Historial
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

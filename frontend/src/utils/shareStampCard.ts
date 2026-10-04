@@ -55,29 +55,29 @@ export async function generatePassportCardBlob(data: StampShareData): Promise<Bl
   // 3. Encabezado Oficial
   ctx.textAlign = "center";
   ctx.fillStyle = "#7C0A1E";
-  ctx.font = "bold 38px 'Cinzel', 'Times New Roman', serif";
-  ctx.fillText("REPÚBLICA DEL PASAPORTE DIGITAL", width / 2, 140);
+  ctx.font = "bold 44px 'Cinzel', 'Times New Roman', serif";
+  ctx.fillText("PASAPORTE DIGITAL", width / 2, 135);
 
   ctx.fillStyle = "#C5A059";
   ctx.font = "bold 20px 'Inter', sans-serif";
   ctx.letterSpacing = "6px";
-  ctx.fillText("★ REGISTRO OFICIAL DE VISITAS Y SELLOS ★", width / 2, 180);
+  ctx.fillText("★ REGISTRO OFICIAL DE SELLOS ★", width / 2, 175);
 
-  // Línea separadora
+  // Línea separadora dorada
   ctx.strokeStyle = "#E5DACD";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(140, 210);
-  ctx.lineTo(width - 140, 210);
+  ctx.moveTo(140, 205);
+  ctx.lineTo(width - 140, 205);
   ctx.stroke();
 
-  // 4. Tarjeta del Local / Establecimiento
+  // 4. Tarjeta del Local / Establecimiento (Limpia, sin categoría)
   ctx.fillStyle = "#FFFFFF";
   ctx.shadowColor = "rgba(124, 10, 30, 0.08)";
   ctx.shadowBlur = 24;
   ctx.shadowOffsetY = 8;
   ctx.beginPath();
-  ctx.roundRect(100, 240, width - 200, 160, 24);
+  ctx.roundRect(100, 235, width - 200, 130, 24);
   ctx.fill();
   ctx.shadowColor = "transparent";
 
@@ -87,23 +87,17 @@ export async function generatePassportCardBlob(data: StampShareData): Promise<Bl
 
   ctx.fillStyle = "#2D1A1E";
   ctx.font = "bold 44px 'Inter', sans-serif";
-  ctx.fillText(data.nombreEstablecimiento, width / 2, 310);
-
-  if (data.categoria) {
-    ctx.fillStyle = "#8E7D7D";
-    ctx.font = "600 22px 'Inter', sans-serif";
-    ctx.fillText(`CATEGORÍA: ${data.categoria.toUpperCase()}`, width / 2, 355);
-  }
+  ctx.fillText(data.nombreEstablecimiento, width / 2, 312);
 
   // 5. SELLO NOTARIAL CENTRAL (Estilo sello postal / tinta de pasaporte)
   const centerX = width / 2;
-  const centerY = 620;
-  const radius = 170;
+  const centerY = 590;
+  const radius = 165;
   const inkColor = data.colorSello || "#7C0A1E";
 
   ctx.save();
   ctx.translate(centerX, centerY);
-  ctx.rotate(-0.06); // Leve inclinación realista de estampado manual
+  ctx.rotate(-0.05); // Leve inclinación realista de estampado manual
 
   // Círculo exterior dentado / doble anillo
   ctx.strokeStyle = inkColor;
@@ -128,64 +122,59 @@ export async function generatePassportCardBlob(data: StampShareData): Promise<Bl
   // Texto circular superior e inferior
   ctx.fillStyle = inkColor;
   ctx.font = "bold 22px 'Inter', sans-serif";
-  ctx.fillText("PASAPORTE DIGITAL OFICIAL", 0, -radius + 60);
+  ctx.fillText("PASAPORTE DIGITAL OFICIAL", 0, -radius + 58);
 
   // Centro del sello: Conteo y medalla
-  ctx.font = "bold 76px 'Inter', sans-serif";
+  ctx.font = "bold 78px 'Inter', sans-serif";
   ctx.fillText(`${data.sellosObtenidos}`, 0, 15);
 
   ctx.font = "bold 26px 'Inter', sans-serif";
-  ctx.fillText(`DE ${data.metaSellos} SELLOS`, 0, 55);
+  ctx.fillText(`DE ${data.metaSellos} SELLOS`, 0, 56);
 
   ctx.font = "600 18px 'Inter', sans-serif";
-  ctx.fillText(data.nombreSello || "SELLO VERIFICADO", 0, 95);
+  ctx.fillText(data.nombreSello || "SELLO VERIFICADO", 0, 96);
 
   ctx.restore();
 
-  // 6. Barra de Progreso Visual
+  // 6. Barra de Progreso y Mensaje Claro
   const barX = 140;
-  const barY = 880;
+  const barY = 840;
   const barWidth = width - 280;
-  const barHeight = 24;
+  const barHeight = 22;
 
   ctx.fillStyle = "#EFE7DE";
   ctx.beginPath();
-  ctx.roundRect(barX, barY, barWidth, barHeight, 12);
+  ctx.roundRect(barX, barY, barWidth, barHeight, 11);
   ctx.fill();
 
   const progress = Math.min(1, Math.max(0, data.sellosObtenidos / data.metaSellos));
   ctx.fillStyle = data.sellosObtenidos >= data.metaSellos ? "#059669" : "#7C0A1E";
   ctx.beginPath();
-  ctx.roundRect(barX, barY, barWidth * progress, barHeight, 12);
+  ctx.roundRect(barX, barY, barWidth * progress, barHeight, 11);
   ctx.fill();
 
   ctx.fillStyle = "#2D1A1E";
-  ctx.font = "bold 24px 'Inter', sans-serif";
-  const porcentaje = Math.round(progress * 100);
-  ctx.fillText(`${porcentaje}% Completado (${data.sellosObtenidos} de ${data.metaSellos} sellos requeridos)`, width / 2, barY + 60);
+  ctx.font = "bold 26px 'Inter', sans-serif";
+  ctx.fillText(`He obtenido ${data.sellosObtenidos} de ${data.metaSellos} sellos`, width / 2, barY + 60);
 
-  // 7. Datos de Titular / Usuario
-  const boxY = 980;
+  // 7. Datos del Viajero (Limpio y directo sin labels redundantes)
+  const boxY = 960;
   ctx.fillStyle = "#FFFFFF";
   ctx.beginPath();
-  ctx.roundRect(140, boxY, width - 280, 160, 20);
+  ctx.roundRect(140, boxY, width - 280, 140, 20);
   ctx.fill();
   ctx.strokeStyle = "#EFE7DE";
   ctx.stroke();
 
-  ctx.textAlign = "left";
-  ctx.fillStyle = "#8E7D7D";
-  ctx.font = "bold 18px 'Inter', sans-serif";
-  ctx.fillText("TITULAR DEL PASAPORTE:", 170, boxY + 45);
-  ctx.fillText("CÓDIGO DE VALIDACIÓN:", 170, boxY + 110);
-
+  ctx.textAlign = "center";
   ctx.fillStyle = "#2D1A1E";
-  ctx.font = "bold 24px 'Inter', sans-serif";
-  ctx.fillText(data.nombreUsuario || "Explorador de Pasaporte", 170, boxY + 75);
+  ctx.font = "bold 30px 'Inter', sans-serif";
+  ctx.fillText(data.nombreUsuario || "Explorador de Pasaporte", width / 2, boxY + 58);
 
   ctx.fillStyle = "#7C0A1E";
-  ctx.font = "bold 24px 'Courier New', monospace";
-  ctx.fillText(data.codigoCliente || `PD-${Date.now().toString().slice(-6)}`, 170, boxY + 135);
+  ctx.font = "bold 22px 'Courier New', monospace";
+  const userCode = data.codigoCliente || `PD-${Date.now().toString().slice(-6)}`;
+  ctx.fillText(`Código: ${userCode}`, width / 2, boxY + 100);
 
   // 8. Pie de página
   ctx.textAlign = "center";
@@ -196,11 +185,14 @@ export async function generatePassportCardBlob(data: StampShareData): Promise<Bl
   });
   ctx.fillStyle = "#8E7D7D";
   ctx.font = "500 18px 'Inter', sans-serif";
-  ctx.fillText(`Estampado y Verificado Digitalmente • ${now.toUpperCase()}`, width / 2, 1220);
+  ctx.fillText(`Estampado y Verificado Digitalmente • ${now.toUpperCase()}`, width / 2, 1190);
 
   ctx.fillStyle = "#C5A059";
-  ctx.font = "bold 16px 'Inter', sans-serif";
-  ctx.fillText("www.pasaportedigital.pe", width / 2, 1250);
+  ctx.font = "bold 20px 'Inter', sans-serif";
+  const webDomain = typeof window !== "undefined" && window.location.hostname && !window.location.hostname.includes("localhost")
+    ? window.location.hostname
+    : "www.pasaportedigital.pe";
+  ctx.fillText(webDomain, width / 2, 1225);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -221,7 +213,8 @@ export async function sharePassportCard(data: StampShareData): Promise<{ shared:
   });
   const url = URL.createObjectURL(blob);
 
-  const shareText = `¡Mira mi colección de sellos en ${data.nombreEstablecimiento}! Llevo ${data.sellosObtenidos}/${data.metaSellos} sellos en mi Pasaporte Digital.`;
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const shareText = `¡Mira mi colección de sellos en ${data.nombreEstablecimiento}! Llevo ${data.sellosObtenidos}/${data.metaSellos} sellos en mi Pasaporte Digital.${currentOrigin ? `\n\nConoce más y colecciona tus sellos aquí: ${currentOrigin}` : ""}`;
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {

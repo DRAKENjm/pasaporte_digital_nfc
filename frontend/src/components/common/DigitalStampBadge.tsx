@@ -43,6 +43,7 @@ interface DigitalStampBadgeProps {
   imagen_sello?: string;
   color_sello?: string;
   numero_sello?: number;
+  contador?: number;
   fecha?: string | Date;
   size?: "sm" | "md" | "lg" | "xl" | "xxl";
   rotation?: number;
@@ -55,6 +56,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   imagen_sello = "landmark",
   color_sello = "#7C0A1E",
   numero_sello,
+  contador,
   fecha,
   size = "md",
   rotation = -3,
@@ -236,6 +238,16 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] opacity-70">
         ★
       </span>
+
+      {/* 6. Insignia de Colección Multiplicador (ej. x2, x5, x20) */}
+      {contador && contador > 1 && (
+        <div
+          title={`${contador} sellos acumulados en este local`}
+          className="absolute -top-2 -right-2 z-20 min-w-6 h-6 px-1.5 rounded-full bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white font-black text-[10px] sm:text-xs flex items-center justify-center shadow-lg border-2 border-white ring-2 ring-[#C5A059]/40 animate-fadeIn"
+        >
+          x{contador}
+        </div>
+      )}
     </div>
   );
 };

@@ -30,6 +30,8 @@ export const authService = {
     password: string;
     nombres: string;
     apellidos: string;
+    telefono?: string;
+    uid_nfc?: string;
   }): Promise<AuthPayload> {
     const res = await api.post<BackendApiResponse<AuthPayload>>(
       "/auth/register",

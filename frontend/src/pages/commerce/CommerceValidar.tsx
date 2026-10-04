@@ -143,7 +143,7 @@ export const CommerceValidar: React.FC = () => {
       }
       showToast("¡Cliente identificado con éxito!", "success");
     } catch (err: any) {
-      showToast(err?.response?.data?.message || "Tarjeta no registrada o inactiva", "error");
+      showToast(err?.response?.data?.message || "Tarjeta sin información o no registrada", "error");
     } finally {
       requestPending.current = false;
       setLoading(false);
@@ -172,7 +172,7 @@ export const CommerceValidar: React.FC = () => {
       }
       showToast("¡Cliente identificado por QR de respaldo!", "success");
     } catch (err: any) {
-      showToast(err?.response?.data?.message || "Código QR no válido o inactivo", "error");
+      showToast(err?.response?.data?.message || "Código QR sin información o no registrado", "error");
     } finally {
       requestPending.current = false;
       setLoading(false);
@@ -348,43 +348,60 @@ export const CommerceValidar: React.FC = () => {
               LISTO PARA LEER NFC
             </span>
             <h2 className="text-2xl font-black text-[#2D1A1E] pt-2">
-              {preferences.modoLector === "MANUAL" ? "Ingresa el UID de la tarjeta" : "Acerca la tarjeta NFC"}
+              Acerca la tarjeta NFC
             </h2>
             <p className="text-xs text-[#8E7D7D]">
-              {preferences.modoLector === "USB_NFC"
-                ? "Mantén el campo UID enfocado y acerca la tarjeta al lector configurado como teclado."
-                : preferences.modoLector === "WEB_NFC"
-                  ? "Inicia la lectura NFC o ingresa el UID manualmente."
-                  : "Escribe el UID asignado al cliente para identificarlo."}
+              {isSupported
+                ? "Puedes usar el lector NFC del teléfono o un lector USB conectado."
+                : "Acerca la tarjeta al lector USB conectado o ingresa el UID."}
             </p>
           </div>
 
-          {/* Formulario / Input de UID */}
-          {preferences.modoLector === "WEB_NFC" && (
+          {/* Botón de lectura Web NFC para Móviles / Navegadores compatibles */}
+          {isSupported && (
             <div className="w-full max-w-md space-y-2">
               <button
                 type="button"
-                disabled={loading || loadingSucursales || !selectedSucursal || !isSupported || !window.isSecureContext}
+                disabled={loading || loadingSucursales || !selectedSucursal}
                 onClick={() => {
-                  if (isScanning) { stopScan(); return; }
-                  void startScan(result => {
+                  if (isScanning) {
+                    stopScan();
+                    return;
+                  }
+                  void startScan((result) => {
                     if (!result.serialNumber) {
-                      showToast("La tarjeta no proporcionó un UID. Ingrésalo manualmente.", "error");
+                      showToast("La tarjeta no proporcionó un UID válido. Ingrésalo manualmente.", "error");
                       return;
                     }
                     setUidInput(result.serialNumber);
                     void handleIdentificar(result.serialNumber);
                   });
                 }}
-                className="px-6 py-3 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold disabled:opacity-50"
+                className={`w-full py-3.5 px-4 rounded-2xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
+                  isScanning
+                    ? "bg-amber-600 text-white animate-pulse"
+                    : "bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white hover:bg-[#600616] active:scale-95"
+                } disabled:opacity-50`}
               >
-                {isScanning ? "Cancelar lectura NFC" : "Iniciar lectura NFC"}
+                <Wifi size={16} className="rotate-90" />
+                <span>
+                  {isScanning
+                    ? "📱 Escaneando... acerca la tarjeta al teléfono (Click para cancelar)"
+                    : "📱 Activar Lector NFC del Celular"}
+                </span>
               </button>
-              {(!isSupported || !window.isSecureContext) && <p role="status" className="text-xs text-[#8E7D7D]">Web NFC requiere HTTPS y un navegador compatible. Puedes ingresar el UID manualmente.</p>}
-              {nfcError && <p role="alert" className="text-xs text-[#7C0A1E]">{nfcError}</p>}
+              {nfcError && <p role="alert" className="text-xs text-[#7C0A1E] font-medium">{nfcError}</p>}
             </div>
           )}
-          <form onSubmit={e => { e.preventDefault(); void handleIdentificar(); }} className="w-full max-w-md space-y-3 pt-2">
+
+          {/* Formulario / Input de UID (compatible con lector USB emulador de teclado o ingreso manual) */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleIdentificar();
+            }}
+            className="w-full max-w-md space-y-2 pt-2"
+          >
             <div className="flex gap-2">
               <input
                 type="text"
@@ -392,19 +409,22 @@ export const CommerceValidar: React.FC = () => {
                 aria-label="UID de la tarjeta NFC"
                 maxLength={100}
                 disabled={loading || isScanning}
-                placeholder="UID de Tarjeta (ej. 04:A1:B2:C3:D4:E5:1234)"
+                placeholder="UID de Tarjeta (ej. 04:A1:B2:C3:D4:E5:12)"
                 value={uidInput}
                 onChange={(e) => setUidInput(e.target.value)}
-                className="flex-1 px-4 py-3 rounded-2xl border border-[#EFE7DE] text-xs font-mono font-bold text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
+                className="flex-1 px-4 py-3 rounded-2xl border border-[#EFE7DE] text-xs font-mono font-bold text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E] bg-[#FAF8F5]/50"
               />
               <button
                 type="submit"
                 disabled={loading || isScanning || loadingSucursales || !selectedSucursal}
-                className="px-6 py-3 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] active:scale-95 transition-all shadow-md flex items-center gap-1.5"
+                className="px-6 py-3 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] active:scale-95 transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {loading ? <RotateCw className="w-4 h-4 animate-spin" /> : "IDENTIFICAR"}
               </button>
             </div>
+            <p className="text-[11px] text-[#8E7D7D] text-center">
+              💡 Lectores USB: al escanear la tarjeta el UID se enviará automáticamente.
+            </p>
           </form>
         </div>
       )}
@@ -625,20 +645,36 @@ export const CommerceValidar: React.FC = () => {
             </p>
           </div>
 
-          <div className="w-full max-w-md bg-[#FAF8F5] border border-[#EFE7DE] p-5 rounded-2xl flex items-center justify-around">
-            <div>
-              <span className="text-[10px] font-bold text-[#8E7D7D] block uppercase">Sellos</span>
-              <span className="text-xl font-black text-[#7C0A1E]">+1 Sello</span>
-              {resultadoVisita?.sello?.nombre_sello && (
-                <span className="text-[10px] font-bold text-[#8E7D7D] block">
-                  {resultadoVisita.sello.nombre_sello}
-                </span>
+          <div className="w-full max-w-md bg-[#FAF8F5] border border-[#EFE7DE] p-5 rounded-2xl flex items-center justify-around text-center">
+            <div className="flex-1">
+              <span className="text-[10px] font-bold text-[#8E7D7D] block uppercase">Sellos Digitales</span>
+              {resultadoVisita?.sello_otorgado !== false ? (
+                <>
+                  <span className="text-xl font-black text-[#7C0A1E]">+1 Sello</span>
+                  <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">
+                    {resultadoVisita?.sello?.nombre_sello || "Sello Otorgado"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm font-bold text-[#8E7D7D] block">0 Sellos</span>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full inline-block mt-0.5 border border-amber-200">
+                    Sello de hoy ya obtenido
+                  </span>
+                </>
               )}
             </div>
-            <div className="h-8 w-px bg-[#EFE7DE]" />
-            <div>
+
+            <div className="h-10 w-px bg-[#EFE7DE] mx-2" />
+
+            <div className="flex-1">
               <span className="text-[10px] font-bold text-[#8E7D7D] block uppercase">Puntos Ganados</span>
-              <span className="text-xl font-black text-[#C5A059]">+{resultadoVisita?.puntos?.puntos_ganados ?? 0} pts</span>
+              <span className="text-xl font-black text-[#C5A059]">
+                +{resultadoVisita?.puntos?.puntos_ganados ?? 0} pts
+              </span>
+              <span className="text-[10px] text-[#8E7D7D] block mt-0.5">
+                Saldo: {resultadoVisita?.puntos?.saldo_actual ?? 0} pts
+              </span>
             </div>
           </div>
 
