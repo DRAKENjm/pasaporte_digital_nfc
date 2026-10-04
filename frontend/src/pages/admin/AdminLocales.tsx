@@ -137,6 +137,10 @@ export const AdminLocales = () => {
   const [searchHistorialLocal, setSearchHistorialLocal] = useState("");
   const [localHistorialSeleccionado, setLocalHistorialSeleccionado] = useState<Establecimiento | null>(null);
 
+  // Verificador interactivo de URL de Google Maps
+  const [validandoMaps, setValidandoMaps] = useState(false);
+  const mapsTimeoutRef = React.useRef<any>(null);
+
   const { showToast } = useUI();
 
   const openHistorialSellos = async (local: Establecimiento) => {
@@ -843,24 +847,66 @@ export const AdminLocales = () => {
             />
           )}
           <div className="space-y-1">
-            <Input
-              label="Enlace Google Maps (Recomendado para GPS y Rutas)"
-              placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
-              value={form.google_maps_url}
-              error={errors.google_maps_url}
-              onChange={(e) => {
-                setForm({ ...form, google_maps_url: e.target.value });
-                if (errors.google_maps_url)
-                  setErrors({ ...errors, google_maps_url: "" });
-              }}
-            />
+            <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+              Enlace Google Maps (Recomendado para GPS)
+            </label>
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
+                value={form.google_maps_url}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm({ ...form, google_maps_url: val });
+                  if (errors.google_maps_url) setErrors({ ...errors, google_maps_url: "" });
+                  if (val.trim()) {
+                    setValidandoMaps(true);
+                    if (mapsTimeoutRef.current) clearTimeout(mapsTimeoutRef.current);
+                    mapsTimeoutRef.current = setTimeout(() => {
+                      setValidandoMaps(false);
+                    }, 400);
+                  } else {
+                    setValidandoMaps(false);
+                  }
+                }}
+                className={`input-base pr-12 font-mono text-xs w-full transition-all ${
+                  form.google_maps_url && isValidGoogleMapsUrl(form.google_maps_url)
+                    ? "border-emerald-500 focus:border-emerald-600 bg-emerald-50/20"
+                    : form.google_maps_url && !validandoMaps
+                    ? "border-amber-300 focus:border-amber-500"
+                    : ""
+                }`}
+              />
+              {/* Ícono de Estado en el lado derecho del input (según diseño solicitado) */}
+              <div className="absolute right-3 flex items-center pointer-events-none">
+                {validandoMaps ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-[#7C0A1E]" />
+                ) : form.google_maps_url && isValidGoogleMapsUrl(form.google_maps_url) ? (
+                  <div className="flex items-center justify-center text-emerald-600 animate-fadeIn" title="Enlace de Google Maps Verificado">
+                    <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                ) : form.google_maps_url ? (
+                  <div className="flex items-center justify-center text-amber-500" title="Verifica que sea un enlace válido de Google Maps">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {errors.google_maps_url && (
+              <p className="text-[11px] text-red-600 font-semibold">{errors.google_maps_url}</p>
+            )}
           </div>
         </div>
 
         {/* Panel de Validación de Ubicación / Google Maps con Check Visual */}
         <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-[#EFE7DE] dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
           <div className="space-y-1">
-            {form.google_maps_url && (isValidGoogleMapsUrl(form.google_maps_url) || parseGoogleMapsUrl(form.google_maps_url)) ? (
+            {validandoMaps ? (
+              <div className="flex items-center gap-1.5 text-[#7C0A1E] font-medium text-[11px]">
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                <span>Verificando enlace de Google Maps...</span>
+              </div>
+            ) : form.google_maps_url && (isValidGoogleMapsUrl(form.google_maps_url) || parseGoogleMapsUrl(form.google_maps_url)) ? (
               <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-bold">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>
@@ -874,7 +920,7 @@ export const AdminLocales = () => {
               </div>
             ) : form.google_maps_url ? (
               <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium text-[11px]">
-                <span>⚠️ El enlace ingresado no contiene coordenadas explícitas. Verifica que abra la ubicación correcta.</span>
+                <span>⚠️ Verifica que el enlace abra la ubicación exacta en el mapa antes de guardar.</span>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 text-[#8E7D7D] dark:text-slate-400 text-[11px]">
