@@ -1,11 +1,11 @@
-﻿import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 
 dotenv.config({ override: true });
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
-const bucketName = process.env.SUPABASE_BUCKET || "uploads";
+const defaultBucket = process.env.SUPABASE_BUCKET || "subidas";
 
 export const supabase = (supabaseUrl && supabaseKey)
   ? createClient(supabaseUrl, supabaseKey)
@@ -22,30 +22,43 @@ export const uploadToSupabase = async (
   }
 
   const filePath = `${folder}/${filename}`;
+  const bucketsToTry = [defaultBucket, "subidas", "uploads"].filter(
+    (b, idx, arr) => arr.indexOf(b) === idx
+  );
 
-  const { data, error } = await supabase.storage
-    .from(bucketName)
-    .upload(filePath, fileBuffer, {
-      contentType: mimetype,
-      upsert: true,
-    });
+  let lastError: any = null;
 
-  if (error) {
-    throw new Error(`Error al subir a Supabase Storage: ${error.message}`);
+  for (const targetBucket of bucketsToTry) {
+    const { data, error } = await supabase.storage
+      .from(targetBucket)
+      .upload(filePath, fileBuffer, {
+        contentType: mimetype,
+        upsert: true,
+      });
+
+    if (!error) {
+      const { data: publicData } = supabase.storage
+        .from(targetBucket)
+        .getPublicUrl(filePath);
+
+      return {
+        url: publicData.publicUrl,
+        path: filePath,
+      };
+    }
+
+    lastError = error;
+    // Si el error no es de "Bucket not found", no tiene sentido reintentar con otro bucket
+    if (!error.message?.toLowerCase().includes("not found")) {
+      break;
+    }
   }
 
-  const { data: publicData } = supabase.storage
-    .from(bucketName)
-    .getPublicUrl(filePath);
-
-  return {
-    url: publicData.publicUrl,
-    path: filePath,
-  };
+  throw new Error(`Error al subir a Supabase Storage: ${lastError?.message || "Error desconocido"}`);
 };
 
 export const deleteFromSupabase = async (filePath: string): Promise<boolean> => {
   if (!supabase) return false;
-  const { error } = await supabase.storage.from(bucketName).remove([filePath]);
+  const { error } = await supabase.storage.from(defaultBucket).remove([filePath]);
   return !error;
 };
