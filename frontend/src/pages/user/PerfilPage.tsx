@@ -541,16 +541,16 @@ export const PerfilPage: React.FC = () => {
 
       {/* Bloque social / legal */}
       <div className="bg-white rounded-2xl border border-[#EFE7DE] overflow-hidden shadow-sm mb-5">
-        <button
-          onClick={generarInvitacion}
+        <Link
+          to="/user/amigos?tab=invitar"
           className="w-full flex items-center justify-between p-3.5 hover:bg-[#FAF8F5] transition-colors border-b border-[#EFE7DE] text-left"
         >
           <div className="flex items-center space-x-3 text-[#2D1A1E]">
             <Users size={18} className="text-[#7C0A1E]" />
-            <span className="text-xs font-medium">Invitar amigos</span>
+            <span className="text-xs font-medium">Invitar amigos (Gana +50 pts)</span>
           </div>
           <ChevronRight size={16} className="text-[#8E7D7D]" />
-        </button>
+        </Link>
 
         <button
           onClick={() => setShowIdioma(true)}

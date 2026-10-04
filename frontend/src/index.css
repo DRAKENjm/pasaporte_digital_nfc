@@ -40,12 +40,15 @@
   --app-muted: 148 163 184;
 }
 
-body {
+html,
+body,
+#root {
   margin: 0;
   font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--bg-crema);
   color: var(--text-main);
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
   overscroll-behavior-y: none;
 }
 

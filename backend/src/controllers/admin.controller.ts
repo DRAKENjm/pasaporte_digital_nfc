@@ -2538,6 +2538,132 @@ export const AdminController = {
     }
   },
 
+  /** Historial detallado de sellos digitales otorgados en todo el sistema */
+  async listarHistorialSellos(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id_establecimiento, id_sucursal, metodo, q, desde, hasta, limit = 100, page = 1 } = req.query;
+      const offset = (Math.max(1, Number(page)) - 1) * Number(limit);
+
+      let sql = `
+        SELECT 
+          s.id_sello,
+          s.numero_sello,
+          s.cantidad,
+          s.estado AS sello_estado,
+          s.fecha_otorgamiento,
+          COALESCE(s.nombre_sello_snapshot, ps.nombre_sello, 'Sello Oficial') AS nombre_sello,
+          COALESCE(s.imagen_sello_snapshot, ps.imagen_sello, '☕') AS imagen_sello,
+          COALESCE(s.color_sello_snapshot, ps.color_sello, '#7C0A1E') AS color_sello,
+          COALESCE(s.puntos_sello_snapshot, ps.puntos_por_visita, 20) AS puntos_otorgados,
+          COALESCE(s.meta_sellos_snapshot, ps.meta_sellos, 8) AS meta_sellos,
+          v.id_visita,
+          v.fecha_hora AS fecha_visita,
+          v.metodo_validacion,
+          v.observacion,
+          v.foto_evidencia,
+          v.latitud_registro,
+          v.longitud_registro,
+          e.id_establecimiento,
+          e.nombre_comercial AS establecimiento_nombre,
+          e.logo AS establecimiento_logo,
+          suc.id_sucursal,
+          suc.nombre AS sucursal_nombre,
+          c.id_cliente,
+          c.codigo_cliente,
+          u_cli.id_usuario AS id_usuario_cliente,
+          u_cli.nombres AS cliente_nombres,
+          u_cli.apellidos AS cliente_apellidos,
+          u_cli.email AS cliente_email,
+          u_cli.foto_perfil AS cliente_foto,
+          u_val.nombres AS validador_nombres,
+          u_val.apellidos AS validador_apellidos,
+          tnfc.uid_nfc,
+          tnfc.codigo_interno AS tarjeta_codigo
+        FROM sellos_digitales s
+        JOIN visitas v ON v.id_visita = s.id_visita
+        LEFT JOIN programas_sellos ps ON ps.id_programa = s.id_programa
+        JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+        JOIN establecimientos e ON e.id_establecimiento = suc.id_establecimiento
+        JOIN clientes c ON c.id_cliente = v.id_cliente
+        JOIN usuarios u_cli ON u_cli.id_usuario = c.id_usuario
+        LEFT JOIN usuarios u_val ON u_val.id_usuario = v.id_usuario_validador
+        LEFT JOIN tarjetas_nfc tnfc ON tnfc.id_tarjeta = v.id_tarjeta
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (id_establecimiento) {
+        params.push(id_establecimiento);
+        sql += ` AND e.id_establecimiento = $${params.length}`;
+      }
+
+      if (id_sucursal) {
+        params.push(id_sucursal);
+        sql += ` AND suc.id_sucursal = $${params.length}`;
+      }
+
+      if (metodo && metodo !== "TODOS") {
+        params.push(metodo);
+        sql += ` AND v.metodo_validacion = $${params.length}`;
+      }
+
+      if (desde) {
+        params.push(desde);
+        sql += ` AND s.fecha_otorgamiento >= $${params.length}`;
+      }
+
+      if (hasta) {
+        params.push(`${hasta} 23:59:59`);
+        sql += ` AND s.fecha_otorgamiento <= $${params.length}`;
+      }
+
+      if (q && String(q).trim()) {
+        params.push(`%${String(q).trim()}%`);
+        sql += ` AND (
+          e.nombre_comercial ILIKE $${params.length} OR
+          u_cli.nombres ILIKE $${params.length} OR
+          u_cli.apellidos ILIKE $${params.length} OR
+          u_cli.email ILIKE $${params.length} OR
+          c.codigo_cliente ILIKE $${params.length} OR
+          COALESCE(tnfc.uid_nfc, '') ILIKE $${params.length} OR
+          COALESCE(s.nombre_sello_snapshot, '') ILIKE $${params.length}
+        )`;
+      }
+
+      sql += ` ORDER BY s.fecha_otorgamiento DESC LIMIT ${Number(limit)} OFFSET ${offset}`;
+      const result = await query(sql, params);
+
+      // Métricas globales
+      const metricsRes = await query(`
+        SELECT 
+          COUNT(*)::int AS total_sellos,
+          COUNT(DISTINCT v.id_cliente)::int AS total_clientes_unicos,
+          COUNT(DISTINCT suc.id_establecimiento)::int AS total_locales_con_sellos,
+          COUNT(CASE WHEN s.fecha_otorgamiento >= CURRENT_DATE THEN 1 END)::int AS sellos_hoy,
+          COUNT(CASE WHEN v.metodo_validacion = 'NFC' THEN 1 END)::int AS sellos_nfc,
+          COUNT(CASE WHEN v.metodo_validacion = 'QR' OR v.metodo_validacion = 'QR_RESPALDO' THEN 1 END)::int AS sellos_qr,
+          COUNT(CASE WHEN v.metodo_validacion = 'AUTOSELLADO' THEN 1 END)::int AS sellos_autosellado
+        FROM sellos_digitales s
+        JOIN visitas v ON v.id_visita = s.id_visita
+        JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+      `);
+
+      sendResponse(res, 200, {
+        historial: result.rows,
+        metricas: metricsRes.rows[0] || {},
+      }, "Historial de sellos obtenido con éxito");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+
+
+
   async obtenerReportes(
     _req: AuthenticatedRequest,
     res: Response,

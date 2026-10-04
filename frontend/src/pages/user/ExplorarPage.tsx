@@ -18,6 +18,7 @@ import {
   ChevronUp,
   ChevronDown,
   Info,
+  RotateCcw,
 } from "lucide-react";
 import {
   GoogleMap,
@@ -161,37 +162,78 @@ export const ExplorarPage: React.FC = () => {
     };
   }, []);
 
+  const [refrescando, setRefrescando] = useState(false);
+
   // Cargar locales + categorías desde DB
+  const fetchLocales = useCallback(async () => {
+    try {
+      const [res, catRes] = await Promise.all([
+        api.get("/establishments"),
+        api.get("/establishments/categorias").catch(() => ({ data: { data: [] } })),
+      ]);
+      setLocales(res.data.data || []);
+      const cats = catRes.data?.data || [];
+      const seen = new Set(["todos"]);
+      const fromDb = (cats || [])
+        .filter((c: any) => c && c.nombre && String(c.nombre).toLowerCase() !== "todos")
+        .map((c: any) => ({
+          id: String(c.nombre),
+          label: String(c.nombre),
+          icono: c.icono_url || c.icono || "map-pin",
+        }))
+        .filter((c: any) => {
+          const k = c.id.toLowerCase();
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+      setCategoriasDb([{ id: "Todos", label: "Todos", icono: "compass" }, ...fromDb]);
+    } catch (e) {
+      console.error("Error cargando locales", e);
+    }
+  }, []);
+
   useEffect(() => {
-    const fetchLocales = async () => {
-      try {
-        const [res, catRes] = await Promise.all([
-          api.get("/establishments"),
-          api.get("/establishments/categorias").catch(() => ({ data: { data: [] } })),
-        ]);
-        setLocales(res.data.data || []);
-        const cats = catRes.data?.data || [];
-        const seen = new Set(["todos"]);
-        const fromDb = (cats || [])
-          .filter((c: any) => c && c.nombre && String(c.nombre).toLowerCase() !== "todos")
-          .map((c: any) => ({
-            id: String(c.nombre),
-            label: String(c.nombre),
-            icono: c.icono_url || c.icono || "map-pin",
-          }))
-          .filter((c: any) => {
-            const k = c.id.toLowerCase();
-            if (seen.has(k)) return false;
-            seen.add(k);
-            return true;
-          });
-        setCategoriasDb([{ id: "Todos", label: "Todos", icono: "compass" }, ...fromDb]);
-      } catch (e) {
-        console.error("Error cargando locales", e);
+    fetchLocales();
+  }, [fetchLocales]);
+
+  // Manejador seguro de resize y visibilidad para evitar mapa gris / desfasado
+  useEffect(() => {
+    const handleResizeOrFocus = () => {
+      if (map && window.google?.maps) {
+        window.google.maps.event.trigger(map, "resize");
+        if (userCoords) {
+          map.panTo(userCoords);
+        } else if (mapCenter) {
+          map.panTo(mapCenter);
+        }
       }
     };
-    fetchLocales();
-  }, []);
+
+    window.addEventListener("resize", handleResizeOrFocus);
+    document.addEventListener("visibilitychange", handleResizeOrFocus);
+
+    return () => {
+      window.removeEventListener("resize", handleResizeOrFocus);
+      document.removeEventListener("visibilitychange", handleResizeOrFocus);
+    };
+  }, [map, userCoords, mapCenter]);
+
+  const handleRefreshMap = async () => {
+    setRefrescando(true);
+    try {
+      await fetchLocales();
+      if (map && window.google?.maps) {
+        window.google.maps.event.trigger(map, "resize");
+      }
+      solicitarPermisoUbicacion(true, false);
+      showToast("Mapa y locales actualizados", "success");
+    } catch {
+      showToast("Error al refrescar el mapa", "error");
+    } finally {
+      setRefrescando(false);
+    }
+  };
 
 
   const [searchParams] = useSearchParams();
@@ -560,14 +602,25 @@ export const ExplorarPage: React.FC = () => {
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-bold text-[#2D1A1E]">Explorar locales</h1>
 
-          <button
-            onClick={handleCenterUserLocation}
-            disabled={solicitandoGps}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] text-[#7C0A1E] text-xs font-bold"
-          >
-            <LocateFixed size={14} className={solicitandoGps ? "animate-spin" : ""} />
-            <span>{solicitandoGps ? "Localizando..." : "Mi Ubicación"}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefreshMap}
+              disabled={refrescando}
+              className="p-1.5 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] text-[#2D1A1E] hover:text-[#7C0A1E] transition"
+              title="Refrescar mapa y locales"
+            >
+              <RotateCcw size={14} className={refrescando ? "animate-spin text-[#7C0A1E]" : ""} />
+            </button>
+
+            <button
+              onClick={handleCenterUserLocation}
+              disabled={solicitandoGps}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] text-[#7C0A1E] text-xs font-bold shadow-2xs hover:bg-[#F2ECE4] transition"
+            >
+              <LocateFixed size={14} className={solicitandoGps ? "animate-spin" : ""} />
+              <span>{solicitandoGps ? "Localizando..." : "Mi Ubicación"}</span>
+            </button>
+          </div>
         </div>
 
         <div className="relative flex items-center mb-3">

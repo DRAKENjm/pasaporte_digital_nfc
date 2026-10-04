@@ -242,7 +242,45 @@ export const NfcVisitController = {
         [programa.id_programa, clienteId],
       );
       const ordenSello = (totalSellosClienteRes.rows[0].total % programa.meta_sellos) + 1;
-      const puntosOtorgados = Number(programa.puntos_por_sello);
+
+      // 1. Puntos Base
+      const puntosBase = Number(programa.puntos_por_sello) || 20;
+
+      // 2. Bono por Frecuencia (visitas en los últimos 7 días a este establecimiento)
+      const visitasRecientesRes = await client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM visitas v
+         JOIN sucursales s ON s.id_sucursal = v.id_sucursal
+         WHERE v.id_cliente = $1 
+           AND s.id_establecimiento = $2
+           AND v.estado = 'CONFIRMADA'
+           AND v.fecha_hora >= (CURRENT_TIMESTAMP - INTERVAL '7 days')`,
+        [clienteId, establecimientoId],
+      );
+      const visitasPrevias7d = visitasRecientesRes.rows[0]?.total || 0;
+      let bonoFrecuencia = 0;
+      let tagFrecuencia = "";
+      if (visitasPrevias7d === 1) {
+        bonoFrecuencia = 5; // 2da visita en 7 días
+        tagFrecuencia = " (+5 pts bono cliente frecuente)";
+      } else if (visitasPrevias7d >= 2) {
+        bonoFrecuencia = 10; // 3ra+ visita en 7 días
+        tagFrecuencia = " (+10 pts bono racha semanal)";
+      }
+
+      // 3. Bono por Consumo / Monto de compra
+      let bonoConsumo = 0;
+      let tagConsumo = "";
+      if (monto_compra !== undefined && Number(monto_compra) > 0) {
+        const montoNum = Number(monto_compra);
+        // +1 punto por cada S/ 5 gastados
+        bonoConsumo = Math.floor(montoNum / 5);
+        if (bonoConsumo > 0) {
+          tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
+        }
+      }
+
+      const puntosOtorgados = puntosBase + bonoFrecuencia + bonoConsumo;
 
       // 2. Crear Sello Digital
       const selloRes = await client.query(
@@ -276,6 +314,8 @@ export const NfcVisitController = {
       const saldoAnterior = saldoRes.rows[0].saldo;
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
+      const descripcionMovimiento = `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagFrecuencia}${tagConsumo}`;
+
       // 4. Crear Movimiento Contable de Puntos (Ledger)
       await client.query(
         `INSERT INTO movimientos_puntos (
@@ -295,7 +335,7 @@ export const NfcVisitController = {
           puntosOtorgados,
           saldoAnterior,
           saldoPosterior,
-          `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})`,
+          descripcionMovimiento,
           validadorId,
         ],
       );
@@ -310,7 +350,7 @@ export const NfcVisitController = {
         )`,
         [
           tarjetaRes.rows[0].id_usuario,
-          `Has obtenido el sello #${ordenSello} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.`,
+          `Has obtenido el sello #${ordenSello} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.${tagFrecuencia}${tagConsumo}`,
           visitaId,
         ],
       );
@@ -344,6 +384,11 @@ export const NfcVisitController = {
         puntos: {
           puntos_ganados: puntosOtorgados,
           saldo_actual: saldoPosterior,
+          desglose: {
+            puntos_base: puntosBase,
+            bono_frecuencia: bonoFrecuencia,
+            bono_consumo: bonoConsumo,
+          },
         },
       }, "Visita confirmada y puntos acreditados con éxito.");
     } catch (error) {
@@ -614,7 +659,7 @@ export const NfcVisitController = {
       );
       const visitaId = visitaRes.rows[0].id_visita;
 
-      // 2. Crear Sello Digital
+      // 2. Calcular Puntos y Crear Sello Digital
       const totalSellosRes = await client.query(
         `SELECT COUNT(*)::int AS total
          FROM sellos_digitales
@@ -623,7 +668,33 @@ export const NfcVisitController = {
         [programa.id_programa, clienteId],
       );
       const ordenSello = (totalSellosRes.rows[0].total % programa.meta_sellos) + 1;
-      const puntosOtorgados = Number(programa.puntos_por_sello);
+
+      // Puntos base
+      const puntosBase = Number(programa.puntos_por_sello) || 25;
+
+      // Bono por frecuencia (visitas previas en 7 días a este establecimiento)
+      const visitasRecientesRes = await client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM visitas v
+         JOIN sucursales s ON s.id_sucursal = v.id_sucursal
+         WHERE v.id_cliente = $1 
+           AND s.id_establecimiento = $2
+           AND v.estado = 'CONFIRMADA'
+           AND v.fecha_hora >= (CURRENT_TIMESTAMP - INTERVAL '7 days')`,
+        [clienteId, suc.id_establecimiento],
+      );
+      const visitasPrevias7d = visitasRecientesRes.rows[0]?.total || 0;
+      let bonoFrecuencia = 0;
+      let tagFrecuencia = "";
+      if (visitasPrevias7d === 1) {
+        bonoFrecuencia = 5;
+        tagFrecuencia = " (+5 pts bono visitante frecuente)";
+      } else if (visitasPrevias7d >= 2) {
+        bonoFrecuencia = 10;
+        tagFrecuencia = " (+10 pts bono racha semanal)";
+      }
+
+      const puntosOtorgados = puntosBase + bonoFrecuencia;
 
       const selloRes = await client.query(
         `INSERT INTO sellos_digitales (
@@ -654,6 +725,8 @@ export const NfcVisitController = {
       const saldoAnterior = saldoRes.rows[0].saldo;
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
+      const descripAutosello = `Auto-sellado en ${suc.nombre_comercial} (${suc.sucursal_nombre})${tagFrecuencia}`;
+
       await client.query(
         `INSERT INTO movimientos_puntos (
           id_cliente, id_programa, id_visita, id_sello,
@@ -672,7 +745,7 @@ export const NfcVisitController = {
           puntosOtorgados,
           saldoAnterior,
           saldoPosterior,
-          `Auto-sellado en ${suc.nombre_comercial} (${suc.sucursal_nombre})`,
+          descripAutosello,
           idUsuario,
         ],
       );
@@ -687,7 +760,7 @@ export const NfcVisitController = {
         )`,
         [
           idUsuario,
-          `¡Felicidades! Has sellado tu pasaporte en ${suc.nombre_comercial} y ganado +${puntosOtorgados} puntos.`,
+          `¡Felicidades! Has sellado tu pasaporte en ${suc.nombre_comercial} y ganado +${puntosOtorgados} puntos.${tagFrecuencia}`,
           visitaId,
         ],
       );

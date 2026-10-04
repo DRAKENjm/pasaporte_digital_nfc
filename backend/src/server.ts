@@ -41,6 +41,25 @@ app.get("/health", async (req: Request, res: Response) => {
 // Rutas Principales de la API
 app.use("/api", routes);
 
+// Servir frontend compilado si existe (producción o despliegue unificado)
+const frontendDistPath = path.resolve(process.cwd(), "../frontend/dist");
+const localDistPath = path.resolve(process.cwd(), "frontend/dist");
+const distPath = require("fs").existsSync(frontendDistPath)
+  ? frontendDistPath
+  : require("fs").existsSync(localDistPath)
+  ? localDistPath
+  : null;
+
+if (distPath) {
+  app.use(express.static(distPath));
+  app.get("*", (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/uploads") || req.path === "/health") {
+      return next();
+    }
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
+
 // Manejador centralizado de errores
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error("[Error Pipeline]", err);

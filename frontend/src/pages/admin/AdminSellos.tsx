@@ -58,11 +58,21 @@ const TOURISM_EXPERIENCE_ICONS = [
 ];
 
 export const AdminSellos: React.FC = () => {
+  const [tab, setTab] = useState<"disenos" | "historial">("disenos");
+
   const [sellos, setSellos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [pagina, setPagina] = useState(1);
+
+  // Historial de sellos otorgados
+  const [historialSellos, setHistorialSellos] = useState<any[]>([]);
+  const [metricasHistorial, setMetricasHistorial] = useState<any>({});
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+  const [searchHistorial, setSearchHistorial] = useState("");
+  const [filtroMetodo, setFiltroMetodo] = useState("TODOS");
+  const [paginaHistorial, setPaginaHistorial] = useState(1);
 
   // Modales
   const [modalVer, setModalVer] = useState(false);
@@ -86,6 +96,7 @@ export const AdminSellos: React.FC = () => {
 
   const { showToast } = useUI();
   const ITEMS_PER_PAGE = 8;
+  const HISTORIAL_PER_PAGE = 12;
 
   const loadSellos = async () => {
     setLoading(true);
@@ -100,9 +111,55 @@ export const AdminSellos: React.FC = () => {
     }
   };
 
+  const loadHistorialSellos = async () => {
+    setLoadingHistorial(true);
+    try {
+      const res = await api.get("/admin/sellos/historial");
+      const data = res.data?.data || res.data || {};
+      setHistorialSellos(data.historial || []);
+      setMetricasHistorial(data.metricas || {});
+    } catch {
+      showToast("No se pudo cargar el historial de sellos otorgados", "error");
+    } finally {
+      setLoadingHistorial(false);
+    }
+  };
+
   useEffect(() => {
     loadSellos();
+    loadHistorialSellos();
   }, []);
+
+  const historialFiltrado = useMemo(() => {
+    let result = historialSellos;
+    if (filtroMetodo !== "TODOS") {
+      result = result.filter((h) => {
+        if (filtroMetodo === "QR") return h.metodo_validacion === "QR" || h.metodo_validacion === "QR_RESPALDO";
+        return h.metodo_validacion === filtroMetodo;
+      });
+    }
+    if (searchHistorial.trim()) {
+      const q = searchHistorial.toLowerCase();
+      result = result.filter(
+        (h) =>
+          h.establecimiento_nombre?.toLowerCase().includes(q) ||
+          h.sucursal_nombre?.toLowerCase().includes(q) ||
+          h.cliente_nombres?.toLowerCase().includes(q) ||
+          h.cliente_apellidos?.toLowerCase().includes(q) ||
+          h.cliente_email?.toLowerCase().includes(q) ||
+          h.codigo_cliente?.toLowerCase().includes(q) ||
+          h.nombre_sello?.toLowerCase().includes(q) ||
+          h.uid_nfc?.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [historialSellos, filtroMetodo, searchHistorial]);
+
+  const totalPaginasHistorial = Math.max(1, Math.ceil(historialFiltrado.length / HISTORIAL_PER_PAGE));
+  const historialPaginado = historialFiltrado.slice(
+    (paginaHistorial - 1) * HISTORIAL_PER_PAGE,
+    paginaHistorial * HISTORIAL_PER_PAGE
+  );
 
   const sellosFiltrados = useMemo(() => {
     let result = sellos;
@@ -311,288 +368,532 @@ export const AdminSellos: React.FC = () => {
             </div>
             <div>
               <h1 className="text-xl font-black text-[#2D1A1E]">
-                Diseño y Moderación de Sellos Digitales
+                Gestión y Seguimiento de Sellos Digitales
               </h1>
               <p className="text-xs text-[#8E7D7D] mt-0.5">
-                Supervisa, audita y gestiona las insignias de pasaporte de cada establecimiento
+                Supervisa el catálogo de diseños y audita el historial global de sellos brindados en tiempo real
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-[#8E7D7D] bg-white border border-[#E8DFD5] px-3.5 py-1.5 rounded-xl shadow-2xs">
-            {sellos.length} {sellos.length === 1 ? "sello registrado" : "sellos registrados"}
-          </span>
-        </div>
-      </div>
-
-      {/* Métricas rápidas */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Activos</p>
-            <p className="text-xl font-black text-[#2D1A1E] mt-0.5">
-              {sellos.filter((s) => s.estado === "ACTIVO").length}
-            </p>
-          </div>
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Estampados a Clientes</p>
-            <p className="text-xl font-black text-[#7C0A1E] mt-0.5">
-              {totalSellosOtorgados}
-            </p>
-          </div>
-          <div className="w-9 h-9 rounded-xl bg-rose-50 text-[#7C0A1E] flex items-center justify-center font-bold">
-            <Stamp className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Inactivos / Moderados</p>
-            <p className="text-xl font-black text-amber-700 mt-0.5">
-              {sellos.filter((s) => s.estado === "INACTIVO" || s.estado === "MODERADO").length}
-            </p>
-          </div>
-          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
-            <ShieldAlert className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Barra de Filtros */}
-      <div className="flex flex-col sm:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8E7D7D] pointer-events-none z-10" />
-          <input
-            type="text"
-            className="input-base input-with-search"
-            placeholder="Buscar por local, razón social o nombre de sello..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <div className="w-full sm:w-auto shrink-0">
-          <select
-            className="input-base w-full sm:w-48 text-xs font-semibold"
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
+        {/* Tab Switcher */}
+        <div className="flex bg-[#FAF8F5] p-1 rounded-2xl border border-[#E8DFD5] shadow-2xs">
+          <button
+            onClick={() => setTab("disenos")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+              tab === "disenos"
+                ? "bg-[#7C0A1E] text-white shadow-xs"
+                : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+            }`}
           >
-            <option value="TODOS">Todos los estados</option>
-            <option value="ACTIVO">Activo</option>
-            <option value="INACTIVO">Inactivo</option>
-            <option value="MODERADO">Moderado</option>
-          </select>
+            <Palette className="w-4 h-4" />
+            <span>Diseños ({sellos.length})</span>
+          </button>
+          <button
+            onClick={() => {
+              setTab("historial");
+              loadHistorialSellos();
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+              tab === "historial"
+                ? "bg-[#7C0A1E] text-white shadow-xs"
+                : "text-[#8E7D7D] hover:text-[#2D1A1E]"
+            }`}
+          >
+            <Stamp className="w-4 h-4" />
+            <span>Historial Otorgados ({metricasHistorial.total_sellos ?? historialSellos.length})</span>
+          </button>
         </div>
       </div>
 
-      {/* Listado de Tarjetas de Sellos */}
-      {loading ? (
-        <div className="py-24 flex justify-center">
-          <Spinner size={36} />
-        </div>
-      ) : sellosFiltrados.length === 0 ? (
-        <EmptyState
-          icon={Stamp}
-          title="No se encontraron sellos digitales"
-          description="Intenta cambiando los términos de búsqueda o filtros aplicados."
-        />
-      ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {sellosPaginados.map((item) => (
-              <div
-                key={item.id_programa}
-                className="bg-white rounded-3xl border border-[#EFE7DE] shadow-xs p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200"
+      {tab === "disenos" ? (
+        <>
+          {/* Métricas rápidas Diseños */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Activos</p>
+                <p className="text-xl font-black text-[#2D1A1E] mt-0.5">
+                  {sellos.filter((s) => s.estado === "ACTIVO").length}
+                </p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Estampados a Clientes</p>
+                <p className="text-xl font-black text-[#7C0A1E] mt-0.5">
+                  {totalSellosOtorgados}
+                </p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-rose-50 text-[#7C0A1E] flex items-center justify-center font-bold">
+                <Stamp className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Inactivos / Moderados</p>
+                <p className="text-xl font-black text-amber-700 mt-0.5">
+                  {sellos.filter((s) => s.estado === "INACTIVO" || s.estado === "MODERADO").length}
+                </p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* Barra de Filtros Diseños */}
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8E7D7D] pointer-events-none z-10" />
+              <input
+                type="text"
+                className="input-base input-with-search"
+                placeholder="Buscar por local, razón social o nombre de sello..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="w-full sm:w-auto shrink-0">
+              <select
+                className="input-base w-full sm:w-48 text-xs font-semibold"
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value)}
               >
-                <div>
-                  {/* Top Bar del Local */}
-                  <div className="flex items-center justify-between gap-2 border-b border-[#EFE7DE] pb-3 mb-4">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      {item.establecimiento_logo ? (
-                        <img
-                          src={resolveImageUrl(item.establecimiento_logo)}
-                          alt={item.establecimiento_nombre}
-                          className="w-8 h-8 rounded-xl object-cover border border-[#EFE7DE] bg-white shrink-0 shadow-2xs"
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] font-bold text-xs shrink-0">
-                          <Building2 className="w-4 h-4" />
+                <option value="TODOS">Todos los estados</option>
+                <option value="ACTIVO">Activo</option>
+                <option value="INACTIVO">Inactivo</option>
+                <option value="MODERADO">Moderado</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Listado de Tarjetas de Sellos */}
+          {loading ? (
+            <div className="py-24 flex justify-center">
+              <Spinner size={36} />
+            </div>
+          ) : sellosFiltrados.length === 0 ? (
+            <EmptyState
+              icon={Stamp}
+              title="No se encontraron sellos digitales"
+              description="Intenta cambiando los términos de búsqueda o filtros aplicados."
+            />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {sellosPaginados.map((item) => (
+                  <div
+                    key={item.id_programa}
+                    className="bg-white rounded-3xl border border-[#EFE7DE] shadow-xs p-5 flex flex-col justify-between hover:shadow-md transition-all duration-200"
+                  >
+                    <div>
+                      {/* Top Bar del Local */}
+                      <div className="flex items-center justify-between gap-2 border-b border-[#EFE7DE] pb-3 mb-4">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {item.establecimiento_logo ? (
+                            <img
+                              src={resolveImageUrl(item.establecimiento_logo)}
+                              alt={item.establecimiento_nombre}
+                              className="w-8 h-8 rounded-xl object-cover border border-[#EFE7DE] bg-white shrink-0 shadow-2xs"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] font-bold text-xs shrink-0">
+                              <Building2 className="w-4 h-4" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <span className="text-xs font-black text-[#2D1A1E] truncate block">
+                              {item.establecimiento_nombre}
+                            </span>
+                            {item.razon_social && (
+                              <span className="text-[10px] text-[#8E7D7D] truncate block">
+                                {item.razon_social}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      )}
-                      <div className="min-w-0">
-                        <span className="text-xs font-black text-[#2D1A1E] truncate block">
-                          {item.establecimiento_nombre}
+
+                        <span
+                          className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
+                            item.estado === "ACTIVO"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-amber-50 text-amber-700 border border-amber-200"
+                          }`}
+                        >
+                          {item.estado}
                         </span>
-                        {item.razon_social && (
-                          <span className="text-[10px] text-[#8E7D7D] truncate block">
-                            {item.razon_social}
+                      </div>
+
+                      {/* Sello Badge Visual Centrado */}
+                      <div className="py-4 flex flex-col items-center justify-center bg-[#FAF8F5]/60 rounded-2xl border border-[#EFE7DE]/60 mb-3">
+                        <DigitalStampBadge
+                          nombre_sello={item.nombre_sello}
+                          establecimiento_nombre={item.establecimiento_nombre}
+                          imagen_sello={item.imagen_sello}
+                          color_sello={item.color_sello}
+                          numero_sello={1}
+                          size="md"
+                          rotation={-3}
+                        />
+                      </div>
+
+                      {/* Metadatos del Sello */}
+                      <div className="space-y-1 text-xs">
+                        <p className="font-bold text-[#2D1A1E] truncate">
+                          {item.nombre_sello || "Sello Sin Título"}
+                        </p>
+                        <p className="text-[11px] text-[#8E7D7D] truncate">
+                          {item.descripcion || "Sin descripción asignada"}
+                        </p>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-[#EFE7DE] grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                          <span className="text-[#8E7D7D] block">Color de Tinta:</span>
+                          <span className="font-mono font-bold flex items-center gap-1.5 mt-0.5">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                              style={{ backgroundColor: item.color_sello || "#7C0A1E" }}
+                            />
+                            {item.color_sello || "#7C0A1E"}
                           </span>
-                        )}
+                        </div>
+                        <div>
+                          <span className="text-[#8E7D7D] block">Emitidos:</span>
+                          <span className="font-bold text-[#7C0A1E]">
+                            {item.total_sellos_otorgados ?? 0} sellos
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-2.5 pt-2 border-t border-[#EFE7DE] flex items-center justify-between text-[11px]">
+                        <span className="text-[#8E7D7D] font-medium">Puntos por visita:</span>
+                        <span className="font-black text-[#7C0A1E] bg-[#7C0A1E]/10 px-2.5 py-0.5 rounded-lg">
+                          +{item.puntos_por_visita || 20} pts
+                        </span>
                       </div>
                     </div>
 
-                    <span
-                      className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
-                        item.estado === "ACTIVO"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : "bg-amber-50 text-amber-700 border border-amber-200"
-                      }`}
-                    >
-                      {item.estado}
-                    </span>
-                  </div>
+                    {/* Acciones de Auditoría y Moderación */}
+                    <div className="mt-4 pt-3 border-t border-[#EFE7DE] flex items-center gap-1.5">
+                      <button
+                        onClick={() => openVer(item)}
+                        className="flex-1 py-2 px-2 rounded-xl bg-[#FAF8F5] hover:bg-[#F0ECE6] border border-[#E8DFD5] text-xs font-bold text-[#2D1A1E] flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                        title="Visualizar sello en pasaporte digital"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#7C0A1E]" />
+                        <span>Ver</span>
+                      </button>
 
-                  {/* Sello Badge Visual Centrado */}
-                  <div className="py-4 flex flex-col items-center justify-center bg-[#FAF8F5]/60 rounded-2xl border border-[#EFE7DE]/60 mb-3">
-                    <DigitalStampBadge
-                      nombre_sello={item.nombre_sello}
-                      establecimiento_nombre={item.establecimiento_nombre}
-                      imagen_sello={item.imagen_sello}
-                      color_sello={item.color_sello}
-                      numero_sello={1}
-                      size="md"
-                      rotation={-3}
-                    />
-                  </div>
+                      {isLugarTuristico(item) && (
+                        <button
+                          onClick={() => openEditar(item)}
+                          className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                          title="Editar sello del lugar turístico (auto-sellado)"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                      )}
 
-                  {/* Metadatos del Sello */}
-                  <div className="space-y-1 text-xs">
-                    <p className="font-bold text-[#2D1A1E] truncate">
-                      {item.nombre_sello || "Sello Sin Título"}
-                    </p>
-                    <p className="text-[11px] text-[#8E7D7D] truncate">
-                      {item.descripcion || "Sin descripción asignada"}
-                    </p>
-                  </div>
+                      <button
+                        onClick={() => openRestablecer(item)}
+                        className="py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                        title="Restablecer diseño al básico institucional por defecto"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Restablecer</span>
+                      </button>
 
-                  <div className="mt-3 pt-2.5 border-t border-[#EFE7DE] grid grid-cols-2 gap-2 text-[10px]">
-                    <div>
-                      <span className="text-[#8E7D7D] block">Color de Tinta:</span>
-                      <span className="font-mono font-bold flex items-center gap-1.5 mt-0.5">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
-                          style={{ backgroundColor: item.color_sello || "#7C0A1E" }}
-                        />
-                        {item.color_sello || "#7C0A1E"}
-                      </span>
+                      {isSelloUnico(item) ? (
+                        <button
+                          onClick={() =>
+                            showToast(
+                              `"${item.nombre_sello}" es el sello principal único de ${item.establecimiento_nombre}. Todo local debe conservar al menos 1 sello activo. Puedes usar "Restablecer" para volver a la plantilla básica.`,
+                              "info",
+                            )
+                          }
+                          className="py-2 px-2.5 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1 cursor-not-allowed opacity-75 shadow-2xs"
+                          title="Sello principal único (no se puede eliminar porque el local no puede quedar con 0 sellos)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 opacity-40" />
+                          <span>Eliminar</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => openEliminar(item)}
+                          className="py-2 px-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                          title="Eliminar sello secundario / duplicado de este local"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Eliminar</span>
+                        </button>
+                      )}
                     </div>
-                    <div>
-                      <span className="text-[#8E7D7D] block">Emitidos:</span>
-                      <span className="font-bold text-[#7C0A1E]">
-                        {item.total_sellos_otorgados ?? 0} sellos
-                      </span>
-                    </div>
                   </div>
-
-                  <div className="mt-2.5 pt-2 border-t border-[#EFE7DE] flex items-center justify-between text-[11px]">
-                    <span className="text-[#8E7D7D] font-medium">Puntos por visita:</span>
-                    <span className="font-black text-[#7C0A1E] bg-[#7C0A1E]/10 px-2.5 py-0.5 rounded-lg">
-                      +{item.puntos_por_visita || 20} pts
-                    </span>
-                  </div>
-                </div>
-
-                {/* Acciones de Auditoría y Moderación */}
-                <div className="mt-4 pt-3 border-t border-[#EFE7DE] flex items-center gap-1.5">
-                  <button
-                    onClick={() => openVer(item)}
-                    className="flex-1 py-2 px-2 rounded-xl bg-[#FAF8F5] hover:bg-[#F0ECE6] border border-[#E8DFD5] text-xs font-bold text-[#2D1A1E] flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
-                    title="Visualizar sello en pasaporte digital"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-[#7C0A1E]" />
-                    <span>Ver</span>
-                  </button>
-
-                  {isLugarTuristico(item) && (
-                    <button
-                      onClick={() => openEditar(item)}
-                      className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
-                      title="Editar sello del lugar turístico (auto-sellado)"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                      <span>Editar</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => openRestablecer(item)}
-                    className="py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
-                    title="Restablecer diseño al básico institucional por defecto"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Restablecer</span>
-                  </button>
-
-                  {isSelloUnico(item) ? (
-                    <button
-                      onClick={() =>
-                        showToast(
-                          `"${item.nombre_sello}" es el sello principal único de ${item.establecimiento_nombre}. Todo local debe conservar al menos 1 sello activo. Puedes usar "Restablecer" para volver a la plantilla básica.`,
-                          "info",
-                        )
-                      }
-                      className="py-2 px-2.5 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1 cursor-not-allowed opacity-75 shadow-2xs"
-                      title="Sello principal único (no se puede eliminar porque el local no puede quedar con 0 sellos)"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 opacity-40" />
-                      <span>Eliminar</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => openEliminar(item)}
-                      className="py-2 px-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
-                      title="Eliminar sello secundario / duplicado de este local"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Eliminar</span>
-                    </button>
-                  )}
-                </div>
+                ))}
               </div>
-            ))}
+
+              {/* Paginación */}
+              {totalPaginas > 1 && (
+                <div className="flex items-center justify-between border-t border-[#EFE7DE] pt-4 px-2">
+                  <span className="text-xs text-[#8E7D7D]">
+                    Página {paginaActual} de {totalPaginas} ({sellosFiltrados.length} sellos totales)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={paginaActual <= 1}
+                      onClick={() => setPagina(paginaActual - 1)}
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Anterior
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={paginaActual >= totalPaginas}
+                      onClick={() => setPagina(paginaActual + 1)}
+                    >
+                      Siguiente
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        /* ===== TAB HISTORIAL GLOBAL DE SELLOS OTORGADOS ===== */
+        <div className="space-y-4 animate-fadeIn">
+          {/* Métricas del Historial */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs">
+              <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Total Otorgados</p>
+              <p className="text-xl font-black text-[#7C0A1E] mt-0.5">
+                {metricasHistorial.total_sellos ?? historialSellos.length}
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs">
+              <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Sellos Hoy</p>
+              <p className="text-xl font-black text-emerald-700 mt-0.5">
+                {metricasHistorial.sellos_hoy ?? 0}
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs">
+              <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Por Tarjeta NFC</p>
+              <p className="text-xl font-black text-blue-700 mt-0.5">
+                {metricasHistorial.sellos_nfc ?? 0}
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-[#EFE7DE] shadow-2xs">
+              <p className="text-[10px] font-bold uppercase text-[#8E7D7D] tracking-wider">Auto-sellado GPS</p>
+              <p className="text-xl font-black text-purple-700 mt-0.5">
+                {metricasHistorial.sellos_autosellado ?? 0}
+              </p>
+            </div>
           </div>
 
-          {/* Paginación */}
-          {totalPaginas > 1 && (
-            <div className="flex items-center justify-between border-t border-[#EFE7DE] pt-4 px-2">
-              <span className="text-xs text-[#8E7D7D]">
-                Página {paginaActual} de {totalPaginas} ({sellosFiltrados.length} sellos totales)
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={paginaActual <= 1}
-                  onClick={() => setPagina(paginaActual - 1)}
-                >
-                  <ChevronLeft className="w-4 h-4 mr-1" />
-                  Anterior
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={paginaActual >= totalPaginas}
-                  onClick={() => setPagina(paginaActual + 1)}
-                >
-                  Siguiente
-                  <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
+          {/* Filtros de Historial */}
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8E7D7D] pointer-events-none z-10" />
+              <input
+                type="text"
+                className="input-base input-with-search"
+                placeholder="Buscar por cliente, código, establecimiento o sello..."
+                value={searchHistorial}
+                onChange={(e) => setSearchHistorial(e.target.value)}
+              />
+            </div>
+
+            <div className="w-full sm:w-auto shrink-0 flex items-center gap-2">
+              <select
+                className="input-base text-xs font-semibold"
+                value={filtroMetodo}
+                onChange={(e) => setFiltroMetodo(e.target.value)}
+              >
+                <option value="TODOS">Todos los métodos</option>
+                <option value="NFC">Tarjeta NFC</option>
+                <option value="QR">Código QR</option>
+                <option value="AUTOSELLADO">Auto-sellado GPS</option>
+              </select>
+
+              <button
+                onClick={loadHistorialSellos}
+                className="p-2.5 rounded-xl border border-[#E8DFD5] bg-white hover:bg-[#FAF8F5] text-[#2D1A1E] transition shadow-2xs"
+                title="Refrescar historial"
+              >
+                <RotateCcw className={`w-4 h-4 ${loadingHistorial ? "animate-spin text-[#7C0A1E]" : ""}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Tabla de Historial */}
+          {loadingHistorial ? (
+            <div className="py-24 flex justify-center">
+              <Spinner size={36} />
+            </div>
+          ) : historialFiltrado.length === 0 ? (
+            <EmptyState
+              icon={Stamp}
+              title="No hay registros de sellos otorgados"
+              description="Los sellos brindados por comercios y auto-sellados aparecerán aquí."
+            />
+          ) : (
+            <div className="bg-white rounded-3xl border border-[#EFE7DE] shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#FAF8F5] border-b border-[#EFE7DE] text-[10px] uppercase font-bold text-[#8E7D7D] tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">Fecha y Hora</th>
+                      <th className="px-4 py-3">Cliente</th>
+                      <th className="px-4 py-3">Establecimiento</th>
+                      <th className="px-4 py-3">Sello Otorgado</th>
+                      <th className="px-4 py-3">Puntos</th>
+                      <th className="px-4 py-3">Método</th>
+                      <th className="px-4 py-3">Validador</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EFE7DE]">
+                    {historialPaginado.map((h) => {
+                      const fecha = new Date(h.fecha_otorgamiento || h.fecha_visita).toLocaleString("es-PE", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      });
+                      const metodo = h.metodo_validacion;
+
+                      return (
+                        <tr key={h.id_sello} className="hover:bg-[#FAF8F5]/60 transition-colors">
+                          <td className="px-4 py-3.5 whitespace-nowrap font-mono text-[11px] text-[#6E5D53]">
+                            {fecha}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              {h.cliente_foto ? (
+                                <img
+                                  src={resolveImageUrl(h.cliente_foto)}
+                                  alt=""
+                                  className="w-7 h-7 rounded-full object-cover border border-[#EFE7DE]"
+                                  onError={(e) => ((e.target as HTMLElement).style.display = "none")}
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-rose-50 text-[#7C0A1E] font-bold text-[10px] flex items-center justify-center border border-[#7C0A1E]/20">
+                                  {h.cliente_nombres ? h.cliente_nombres.charAt(0) : "C"}
+                                </div>
+                              )}
+                              <div>
+                                <p className="font-bold text-[#2D1A1E]">
+                                  {h.cliente_nombres} {h.cliente_apellidos}
+                                </p>
+                                <p className="text-[10px] text-[#8E7D7D] font-mono">
+                                  {h.codigo_cliente || h.cliente_email}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <div>
+                              <p className="font-bold text-[#2D1A1E]">{h.establecimiento_nombre}</p>
+                              <p className="text-[10px] text-[#8E7D7D]">{h.sucursal_nombre}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white font-bold"
+                                style={{ backgroundColor: h.color_sello || "#7C0A1E" }}
+                              >
+                                #{h.numero_sello}
+                              </span>
+                              <span className="font-medium text-[#2D1A1E]">{h.nombre_sello}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                              +{h.puntos_otorgados || 20} pts
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            {metodo === "NFC" ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                💳 Tarjeta NFC
+                              </span>
+                            ) : metodo === "AUTOSELLADO" ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                                📍 Auto-sellado GPS
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                📱 Código QR
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-[11px] text-[#6E5D53]">
+                            {h.validador_nombres ? (
+                              <span>{h.validador_nombres} {h.validador_apellidos}</span>
+                            ) : metodo === "AUTOSELLADO" ? (
+                              <span className="italic text-purple-700">Verificado por GPS</span>
+                            ) : (
+                              <span className="text-[#8E7D7D]">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
+
+              {/* Paginación Historial */}
+              {totalPaginasHistorial > 1 && (
+                <div className="flex items-center justify-between border-t border-[#EFE7DE] p-3 px-4">
+                  <span className="text-xs text-[#8E7D7D]">
+                    Página {paginaHistorial} de {totalPaginasHistorial} ({historialFiltrado.length} registros)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={paginaHistorial <= 1}
+                      onClick={() => setPaginaHistorial(paginaHistorial - 1)}
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Anterior
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={paginaHistorial >= totalPaginasHistorial}
+                      onClick={() => setPaginaHistorial(paginaHistorial + 1)}
+                    >
+                      Siguiente
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
+
 
       {/* Modal Ver en Pasaporte */}
       <Modal

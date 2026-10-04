@@ -1,6 +1,6 @@
 import React from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Home, Compass, Award, Clock, User, Store, Stamp } from "lucide-react";
+import { Home, Compass, Award, Clock, User, Store, Stamp, Users } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 
 export const ClientLayout: React.FC = () => {
@@ -22,6 +22,7 @@ export const ClientLayout: React.FC = () => {
     { to: "/user/locales", icon: Store, label: "Locales" },
     { to: "/user/mis-sellos", icon: Stamp, label: "Mis Sellos" },
     { to: "/user/pasaporte", icon: Award, label: "Tarjeta NFC" },
+    { to: "/user/amigos", icon: Users, label: "Amigos" },
     { to: "/user/actividad", icon: Clock, label: "Actividad" },
     { to: "/user/perfil", icon: User, label: "Perfil" },
   ];

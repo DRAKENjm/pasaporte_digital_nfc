@@ -11,8 +11,14 @@ import {
   Clock,
   Sparkles,
   ArrowLeft,
+  Share2,
+  Copy,
+  Gift,
+  QrCode as QrIcon,
+  MessageCircle,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import QRCode from "qrcode";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
 import { Spinner } from "../../components/common/Spinner";
@@ -44,7 +50,10 @@ interface Solicitud {
 
 export const FriendsPage: React.FC = () => {
   const { showToast } = useUI();
-  const [tab, setTab] = useState<"amigos" | "solicitudes" | "agregar">("amigos");
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") === "invitar" ? "invitar" : "amigos";
+
+  const [tab, setTab] = useState<"amigos" | "solicitudes" | "agregar" | "invitar">(initialTab);
   
   const [amigos, setAmigos] = useState<Amigo[]>([]);
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([]);
@@ -58,6 +67,12 @@ export const FriendsPage: React.FC = () => {
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<any[]>([]);
   const [buscandoUsuarios, setBuscandoUsuarios] = useState(false);
 
+  // Invitar amigos / Referidos
+  const [inviteData, setInviteData] = useState<{ codigo: string; link: string } | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [loadingInvite, setLoadingInvite] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+
   const fetchAmigos = async () => {
     try {
       const res = await api.get("/friends");
@@ -65,7 +80,7 @@ export const FriendsPage: React.FC = () => {
       setAmigos(data?.amigos || []);
       setTotalAmigos(data?.total || 0);
       setLimiteMaximo(data?.limite_maximo || 50);
-    } catch (err: any) {
+    } catch {
       /* opcional */
     }
   };
@@ -75,8 +90,29 @@ export const FriendsPage: React.FC = () => {
       const res = await api.get("/friends/solicitudes");
       const list = res.data?.data ?? res.data ?? [];
       setSolicitudes(Array.isArray(list) ? list : []);
-    } catch (err: any) {
+    } catch {
       /* opcional */
+    }
+  };
+
+  const fetchInvitacion = async () => {
+    setLoadingInvite(true);
+    try {
+      const res = await api.post("/friends/invite");
+      const d = res.data?.data || res.data;
+      if (d?.link) {
+        setInviteData(d);
+        const qr = await QRCode.toDataURL(d.link, {
+          width: 280,
+          margin: 2,
+          color: { dark: "#7C0A1E", light: "#FAF8F5" },
+        });
+        setQrDataUrl(qr);
+      }
+    } catch {
+      showToast("No se pudo generar el código de invitación", "error");
+    } finally {
+      setLoadingInvite(false);
     }
   };
 
@@ -88,6 +124,7 @@ export const FriendsPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    fetchInvitacion();
   }, []);
 
   const handleResponderSolicitud = async (solicitudId: string, accion: "ACEPTAR" | "RECHAZAR") => {
@@ -117,12 +154,10 @@ export const FriendsPage: React.FC = () => {
 
     setBuscandoUsuarios(true);
     try {
-      // Búsqueda de usuarios cliente para agregar
       const res = await api.get(`/social/usuarios?q=${encodeURIComponent(busquedaQuery.trim())}`);
       const list = res.data?.data ?? res.data ?? [];
       setUsuariosEncontrados(Array.isArray(list) ? list : []);
     } catch {
-      // Fallback
       setUsuariosEncontrados([]);
     } finally {
       setBuscandoUsuarios(false);
@@ -143,61 +178,92 @@ export const FriendsPage: React.FC = () => {
     }
   };
 
+  const handleCopiarLink = async () => {
+    if (!inviteData?.link) return;
+    try {
+      await navigator.clipboard.writeText(inviteData.link);
+      setCopiado(true);
+      showToast("¡Enlace de invitación copiado!", "success");
+      setTimeout(() => setCopiado(false), 2500);
+    } catch {
+      showToast("Error al copiar enlace", "error");
+    }
+  };
+
+  const handleCompartirWhatsApp = () => {
+    if (!inviteData) return;
+    const msg = `¡Hola! Únete a Pasaporte Digital para coleccionar sellos oficiales, ganar puntos y canjear recompensas en tus locales favoritos. Regístrate aquí con mi invitación: ${inviteData.link}`;
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
   return (
-    <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-6">
+    <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-6 animate-fadeIn pb-16">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[rgb(var(--app-border))] pb-4">
+      <div className="flex items-center justify-between border-b border-[#EFE7DE] pb-4">
         <div className="flex items-center gap-3">
           <Link
-            to="/user/feed"
-            className="w-10 h-10 rounded-xl border border-[rgb(var(--app-border))] flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            to="/user/home"
+            className="w-10 h-10 rounded-xl border border-[#EFE7DE] flex items-center justify-center hover:bg-[#FAF8F5] transition text-[#2D1A1E]"
           >
-            <ArrowLeft className="w-5 h-5 text-muted" />
+            <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <Users className="w-6 h-6 text-sky-600" />
-              Círculo de Amigos
+            <h1 className="text-xl font-bold flex items-center gap-2 text-[#2D1A1E]">
+              <Users className="w-6 h-6 text-[#7C0A1E]" />
+              Amigos e Invitaciones
             </h1>
-            <p className="text-xs text-muted">
-              Conexiones exclusivas de viajeros en Pasaporte Digital
+            <p className="text-xs text-[#8E7D7D]">
+              Conecta con amigos y gana recompensas invitando a nuevos viajeros
             </p>
           </div>
         </div>
 
-        {/* Contador con Límite */}
+        {/* Contador */}
         <div className="text-right">
-          <span className="text-xs font-bold text-sky-600 bg-sky-500/10 border border-sky-500/20 px-3 py-1 rounded-full">
+          <span className="text-xs font-bold text-[#7C0A1E] bg-[#7C0A1E]/10 border border-[#7C0A1E]/20 px-3 py-1 rounded-full">
             {totalAmigos} / {limiteMaximo} Amigos
           </span>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-[rgb(var(--app-border))] gap-2">
+      <div className="flex border-b border-[#EFE7DE] gap-1 sm:gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           type="button"
           onClick={() => setTab("amigos")}
-          className={`pb-3 px-4 text-xs font-bold border-b-2 transition ${
+          className={`pb-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition whitespace-nowrap ${
             tab === "amigos"
-              ? "border-sky-600 text-sky-600"
-              : "border-transparent text-muted hover:text-[rgb(var(--app-text))]"
+              ? "border-[#7C0A1E] text-[#7C0A1E]"
+              : "border-transparent text-[#8E7D7D] hover:text-[#2D1A1E]"
           }`}
         >
           Mis Amigos ({totalAmigos})
         </button>
         <button
           type="button"
+          onClick={() => setTab("invitar")}
+          className={`pb-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+            tab === "invitar"
+              ? "border-[#7C0A1E] text-[#7C0A1E]"
+              : "border-transparent text-[#8E7D7D] hover:text-[#2D1A1E]"
+          }`}
+        >
+          <Gift className="w-3.5 h-3.5" />
+          <span>Invitar Amigos</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black">+50 pts</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setTab("solicitudes")}
-          className={`pb-3 px-4 text-xs font-bold border-b-2 transition relative ${
+          className={`pb-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition whitespace-nowrap relative ${
             tab === "solicitudes"
-              ? "border-sky-600 text-sky-600"
-              : "border-transparent text-muted hover:text-[rgb(var(--app-text))]"
+              ? "border-[#7C0A1E] text-[#7C0A1E]"
+              : "border-transparent text-[#8E7D7D] hover:text-[#2D1A1E]"
           }`}
         >
           Solicitudes
           {solicitudes.length > 0 && (
-            <span className="ml-1.5 px-1.5 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-black">
+            <span className="ml-1.5 px-1.5 py-0.5 bg-rose-600 text-white rounded-full text-[10px] font-black">
               {solicitudes.length}
             </span>
           )}
@@ -205,13 +271,13 @@ export const FriendsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => setTab("agregar")}
-          className={`pb-3 px-4 text-xs font-bold border-b-2 transition ${
+          className={`pb-3 px-3 sm:px-4 text-xs font-bold border-b-2 transition whitespace-nowrap ${
             tab === "agregar"
-              ? "border-sky-600 text-sky-600"
-              : "border-transparent text-muted hover:text-[rgb(var(--app-text))]"
+              ? "border-[#7C0A1E] text-[#7C0A1E]"
+              : "border-transparent text-[#8E7D7D] hover:text-[#2D1A1E]"
           }`}
         >
-          + Agregar Amigo
+          + Buscar Amigo
         </button>
       </div>
 
@@ -221,59 +287,67 @@ export const FriendsPage: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* TAB 1: LISTA DE AMIGOS */}
+          {/* TAB 1: LISTADO DE AMIGOS */}
           {tab === "amigos" && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {amigos.length === 0 ? (
-                <div className="p-8 text-center border border-[rgb(var(--app-border))] rounded-2xl bg-[rgb(var(--app-surface))]">
-                  <Users className="w-10 h-10 text-muted mx-auto mb-2 opacity-40" />
-                  <p className="text-sm font-semibold">Aún no tienes amigos agregados</p>
-                  <p className="text-xs text-muted mt-1">
-                    Conecta con otros viajeros para ver sus sellos y publicaciones exclusivas.
+                <div className="text-center py-12 border border-dashed border-[#EFE7DE] rounded-2xl p-6 bg-white">
+                  <Users className="w-12 h-12 text-[#8E7D7D] mx-auto mb-2 opacity-50" />
+                  <p className="font-bold text-sm text-[#2D1A1E]">Aún no tienes amigos en tu pasaporte</p>
+                  <p className="text-xs text-[#8E7D7D] mt-1 max-w-sm mx-auto">
+                    Invita a tus amigos o búscalos en la plataforma para ver sus aventuras y sellos.
                   </p>
                   <button
-                    type="button"
-                    onClick={() => setTab("agregar")}
-                    className="mt-4 px-4 py-2 bg-sky-600 text-white rounded-xl text-xs font-bold"
+                    onClick={() => setTab("invitar")}
+                    className="mt-4 px-4 py-2 bg-[#7C0A1E] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#650818] transition inline-flex items-center gap-1.5"
                   >
-                    Buscar y agregar amigos
+                    <Gift className="w-3.5 h-3.5" />
+                    Invitar a mis amigos
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-[rgb(var(--app-border))] border border-[rgb(var(--app-border))] rounded-2xl bg-[rgb(var(--app-surface))] overflow-hidden">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {amigos.map((a) => (
-                    <div key={a.amistad_id} className="p-3.5 flex items-center justify-between hover:bg-slate-500/5 transition">
+                    <div
+                      key={a.amistad_id}
+                      className="p-3.5 rounded-2xl border border-[#EFE7DE] bg-white flex items-center justify-between shadow-2xs hover:shadow-sm transition"
+                    >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-sky-600 text-white font-bold flex items-center justify-center text-xs">
-                          {a.avatar_url ? (
-                            <img src={a.avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
-                          ) : (
-                            initials({ nombres: a.nombres, apellidos: a.apellidos })
-                          )}
-                        </div>
+                        {a.avatar_url ? (
+                          <img
+                            src={a.avatar_url}
+                            alt=""
+                            className="w-11 h-11 rounded-full object-cover border border-[#EFE7DE]"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-full bg-rose-50 text-[#7C0A1E] font-bold flex items-center justify-center text-xs border border-[#7C0A1E]/20">
+                            {initials({ nombres: a.nombres, apellidos: a.apellidos })}
+                          </div>
+                        )}
                         <div>
-                          <p className="font-bold text-sm leading-tight">
+                          <p className="font-bold text-xs text-[#2D1A1E]">
                             {a.nombres} {a.apellidos}
                           </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {a.username && <span className="text-xs text-muted">@{a.username}</span>}
-                            {a.nivel && (
-                              <span
-                                className="text-[10px] font-bold px-1.5 py-0.2 rounded"
-                                style={{ backgroundColor: `${a.nivel_color || '#CE8946'}20`, color: a.nivel_color || '#CE8946' }}
-                              >
-                                {a.nivel}
-                              </span>
-                            )}
-                          </div>
+                          <p className="text-[11px] text-[#8E7D7D]">@{a.username || "viajero"}</p>
+                          {a.nivel && (
+                            <span
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded-md mt-0.5 inline-block"
+                              style={{
+                                color: a.nivel_color || "#7C0A1E",
+                                backgroundColor: `${a.nivel_color || "#7C0A1E"}15`,
+                              }}
+                            >
+                              {a.nivel}
+                            </span>
+                          )}
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => handleEliminarAmigo(a.amigo_id)}
-                        className="p-2 text-muted hover:text-rose-500 transition"
-                        title="Eliminar amigo"
+                        className="p-2 text-[#8E7D7D] hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                        title="Eliminar de mi lista"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -284,27 +358,145 @@ export const FriendsPage: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 2: SOLICITUDES PENDIENTES */}
+          {/* TAB 2: INVITAR AMIGOS (REFERIDOS Y PRUEBAS) */}
+          {tab === "invitar" && (
+            <div className="space-y-5 animate-fadeIn">
+              {/* Banner Recompensa */}
+              <div className="bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white p-5 rounded-3xl shadow-sm space-y-2 relative overflow-hidden">
+                <div className="relative z-10">
+                  <span className="inline-flex items-center gap-1 bg-[#C5A059] text-[#2D1A1E] font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                    ★ Programa de Invitaciones
+                  </span>
+                  <h3 className="text-lg font-black mt-1">¡Invita amigos y gana +50 Puntos!</h3>
+                  <p className="text-xs text-rose-100 leading-relaxed max-w-md">
+                    Comparte tu enlace o código único. Cada amigo que se registre con tu invitación recibirá un bono de bienvenida y tú ganarás puntos para canjear recompensas exclusivas.
+                  </p>
+                </div>
+                <Sparkles className="absolute right-4 bottom-4 w-20 h-20 text-white/10 pointer-events-none" />
+              </div>
+
+              {/* Tarjeta de Código y QR */}
+              <div className="bg-white rounded-3xl border border-[#EFE7DE] p-5 shadow-xs space-y-5">
+                <div className="flex flex-col sm:flex-row items-center gap-5">
+                  {/* QR Code */}
+                  <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#EFE7DE] flex flex-col items-center shrink-0">
+                    {loadingInvite ? (
+                      <div className="w-[140px] h-[140px] flex items-center justify-center">
+                        <Spinner size={24} />
+                      </div>
+                    ) : qrDataUrl ? (
+                      <img src={qrDataUrl} alt="QR Invitación" className="w-[140px] h-[140px] rounded-xl object-contain" />
+                    ) : (
+                      <div className="w-[140px] h-[140px] flex items-center justify-center text-xs text-[#8E7D7D]">
+                        <QrIcon className="w-8 h-8 opacity-40" />
+                      </div>
+                    )}
+                    <span className="text-[10px] font-bold text-[#8E7D7D] mt-1.5 flex items-center gap-1">
+                      <QrIcon className="w-3 h-3" /> Escanea para registrarte
+                    </span>
+                  </div>
+
+                  {/* Código e Info */}
+                  <div className="flex-1 space-y-3 w-full text-center sm:text-left">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#8E7D7D] tracking-wider block">
+                        Tu Código de Invitación
+                      </span>
+                      <p className="text-2xl font-mono font-black text-[#7C0A1E] mt-0.5">
+                        {inviteData?.codigo || "CARGANDO..."}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#8E7D7D] tracking-wider block">
+                        Enlace de Registro Directo
+                      </span>
+                      <div className="mt-1 flex items-center gap-2 bg-[#FAF8F5] border border-[#EFE7DE] rounded-xl p-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={inviteData?.link || ""}
+                          className="bg-transparent text-xs text-[#2D1A1E] font-mono flex-1 outline-hidden truncate"
+                        />
+                        <button
+                          onClick={handleCopiarLink}
+                          className="px-3 py-1.5 bg-[#7C0A1E] hover:bg-[#650818] text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 transition"
+                        >
+                          {copiado ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiado ? "Copiado" : "Copiar"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botón WhatsApp */}
+                <button
+                  onClick={handleCompartirWhatsApp}
+                  disabled={!inviteData}
+                  className="w-full py-3 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition active:scale-[0.99]"
+                >
+                  <MessageCircle className="w-4 h-4 fill-white" />
+                  <span>Compartir Invitación por WhatsApp</span>
+                </button>
+              </div>
+
+              {/* Pasos */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-white p-3.5 rounded-2xl border border-[#EFE7DE] text-center">
+                  <div className="w-7 h-7 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] text-[#7C0A1E] font-black text-xs flex items-center justify-center mx-auto mb-2">
+                    1
+                  </div>
+                  <h4 className="text-xs font-bold text-[#2D1A1E]">Envía tu enlace</h4>
+                  <p className="text-[11px] text-[#8E7D7D] mt-0.5">Comparte tu link por WhatsApp o redes sociales.</p>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-2xl border border-[#EFE7DE] text-center">
+                  <div className="w-7 h-7 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] text-[#7C0A1E] font-black text-xs flex items-center justify-center mx-auto mb-2">
+                    2
+                  </div>
+                  <h4 className="text-xs font-bold text-[#2D1A1E]">Tu amigo se registra</h4>
+                  <p className="text-[11px] text-[#8E7D7D] mt-0.5">Crea su cuenta y activa su primer pasaporte.</p>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-2xl border border-[#EFE7DE] text-center">
+                  <div className="w-7 h-7 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] text-[#7C0A1E] font-black text-xs flex items-center justify-center mx-auto mb-2">
+                    3
+                  </div>
+                  <h4 className="text-xs font-bold text-[#2D1A1E]">¡Ambos ganan!</h4>
+                  <p className="text-[11px] text-[#8E7D7D] mt-0.5">Reciben puntos inmediatos para canjes y premios.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: SOLICITUDES PENDIENTES */}
           {tab === "solicitudes" && (
             <div className="space-y-3">
               {solicitudes.length === 0 ? (
-                <div className="p-8 text-center border border-[rgb(var(--app-border))] rounded-2xl bg-[rgb(var(--app-surface))]">
-                  <Clock className="w-10 h-10 text-muted mx-auto mb-2 opacity-40" />
-                  <p className="text-sm font-semibold">No tienes solicitudes pendientes</p>
+                <div className="text-center py-12 border border-dashed border-[#EFE7DE] rounded-2xl p-6 bg-white">
+                  <Clock className="w-10 h-10 text-[#8E7D7D] mx-auto mb-2 opacity-50" />
+                  <p className="font-bold text-sm text-[#2D1A1E]">No tienes solicitudes pendientes</p>
+                  <p className="text-xs text-[#8E7D7D] mt-1">
+                    Cuando otros viajeros te envíen solicitudes de amistad, aparecerán aquí.
+                  </p>
                 </div>
               ) : (
-                <div className="divide-y divide-[rgb(var(--app-border))] border border-[rgb(var(--app-border))] rounded-2xl bg-[rgb(var(--app-surface))] overflow-hidden">
+                <div className="space-y-2">
                   {solicitudes.map((s) => (
-                    <div key={s.solicitud_id} className="p-3.5 flex items-center justify-between">
+                    <div
+                      key={s.solicitud_id}
+                      className="p-3.5 rounded-2xl border border-[#EFE7DE] bg-white flex items-center justify-between shadow-2xs"
+                    >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-violet-600 text-white font-bold flex items-center justify-center text-xs">
+                        <div className="w-10 h-10 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] text-[#7C0A1E] font-bold flex items-center justify-center text-xs">
                           {initials({ nombres: s.nombres, apellidos: s.apellidos })}
                         </div>
                         <div>
-                          <p className="font-bold text-sm">
+                          <p className="font-bold text-xs text-[#2D1A1E]">
                             {s.nombres} {s.apellidos}
                           </p>
-                          <p className="text-xs text-muted">@{s.username || "viajero"}</p>
+                          <p className="text-[11px] text-[#8E7D7D]">@{s.username || "viajero"}</p>
                         </div>
                       </div>
 
@@ -312,14 +504,14 @@ export const FriendsPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleResponderSolicitud(s.solicitud_id, "ACEPTAR")}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition"
                         >
                           <Check className="w-3.5 h-3.5" /> Aceptar
                         </button>
                         <button
                           type="button"
                           onClick={() => handleResponderSolicitud(s.solicitud_id, "RECHAZAR")}
-                          className="px-3 py-1.5 border border-[rgb(var(--app-border))] hover:bg-rose-500/10 hover:text-rose-600 rounded-lg text-xs font-semibold"
+                          className="px-3 py-1.5 border border-[#EFE7DE] hover:bg-rose-50 hover:text-rose-600 rounded-xl text-xs font-semibold transition text-[#8E7D7D]"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -331,7 +523,7 @@ export const FriendsPage: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 3: AGREGAR AMIGO */}
+          {/* TAB 4: AGREGAR AMIGO (BÚSQUEDA) */}
           {tab === "agregar" && (
             <div className="space-y-4">
               <form onSubmit={handleBuscarUsuarios} className="flex gap-2">
@@ -339,40 +531,44 @@ export const FriendsPage: React.FC = () => {
                   type="text"
                   value={busquedaQuery}
                   onChange={(e) => setBusquedaQuery(e.target.value)}
-                  placeholder="Buscar por usuario o nombre..."
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-[rgb(var(--app-border))] bg-transparent text-sm"
+                  placeholder="Buscar por código, usuario o nombre..."
+                  className="input-base flex-1"
                 />
                 <button
                   type="submit"
                   disabled={buscandoUsuarios}
-                  className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5"
+                  className="px-5 py-2.5 bg-[#7C0A1E] hover:bg-[#650818] text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition"
                 >
                   <Search className="w-4 h-4" /> Buscar
                 </button>
               </form>
 
-              {usuariosEncontrados.length > 0 && (
-                <div className="divide-y divide-[rgb(var(--app-border))] border border-[rgb(var(--app-border))] rounded-2xl bg-[rgb(var(--app-surface))] overflow-hidden">
+              {usuariosEncontrados.length > 0 ? (
+                <div className="divide-y divide-[#EFE7DE] border border-[#EFE7DE] rounded-2xl bg-white overflow-hidden shadow-2xs">
                   {usuariosEncontrados.map((u) => (
-                    <div key={u.id} className="p-3.5 flex items-center justify-between">
+                    <div key={u.id_usuario || u.id} className="p-3.5 flex items-center justify-between">
                       <div>
-                        <p className="font-bold text-sm">
+                        <p className="font-bold text-xs text-[#2D1A1E]">
                           {u.nombres} {u.apellidos}
                         </p>
-                        <p className="text-xs text-muted">@{u.username || "usuario"}</p>
+                        <p className="text-[11px] text-[#8E7D7D]">@{u.username || "usuario"}</p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleEnviarSolicitud(u.id)}
+                        onClick={() => handleEnviarSolicitud(u.id_usuario || u.id)}
                         disabled={enviando}
-                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                        className="px-3 py-1.5 bg-[#7C0A1E] hover:bg-[#650818] disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
                       >
                         <UserPlus className="w-3.5 h-3.5" /> Enviar Solicitud
                       </button>
                     </div>
                   ))}
                 </div>
-              )}
+              ) : busquedaQuery && !buscandoUsuarios ? (
+                <div className="text-center py-8 text-xs text-[#8E7D7D]">
+                  No se encontraron viajeros con ese término. Puedes probar compartiendo tu enlace en la pestaña "Invitar Amigos".
+                </div>
+              ) : null}
             </div>
           )}
         </>

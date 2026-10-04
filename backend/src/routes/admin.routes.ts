@@ -60,6 +60,7 @@ router.get("/niveles", AdminController.listarNiveles);
 router.get("/roles", AdminController.listarRoles);
 
 // ===== DISEÑO Y MODERACIÓN DE SELLOS DIGITALES =====
+router.get("/sellos/historial", AdminController.listarHistorialSellos);
 router.get("/sellos", AdminController.listarSellos);
 router.post("/sellos", AdminController.crearSello);
 router.post("/sellos/:id/restablecer", AdminController.restablecerSello);

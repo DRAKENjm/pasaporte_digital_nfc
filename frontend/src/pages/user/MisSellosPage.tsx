@@ -32,6 +32,9 @@ import {
 import api from "../../services/api";
 import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
 import { CategoryIcon } from "../../components/common/CategoryIcon";
+import { StampShareModal } from "../../components/common/StampShareModal";
+import { StampShareData } from "../../utils/shareStampCard";
+import { useAuth } from "../../hooks/useAuth";
 
 interface SelloDetalle {
   id_sello: number;
@@ -64,6 +67,7 @@ interface EstablecimientoSellos {
 }
 
 export const MisSellosPage: React.FC = () => {
+  const { user } = useAuth();
   const [localesSellos, setLocalesSellos] = useState<EstablecimientoSellos[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState("Todas");
@@ -90,6 +94,10 @@ export const MisSellosPage: React.FC = () => {
     sello: SelloDetalle;
     local?: EstablecimientoSellos;
   } | null>(null);
+
+  // Modal para compartir tarjeta visual (captura/canvas)
+  const [shareData, setShareData] = useState<StampShareData | null>(null);
+  const [openShareModal, setOpenShareModal] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,21 +213,18 @@ export const MisSellosPage: React.FC = () => {
     [localesSellos]
   );
 
-  const compartirLocal = async (item: EstablecimientoSellos) => {
-    const texto =
-      item.sellos_obtenidos > 0
-        ? `Tengo ${item.sellos_obtenidos}/${item.meta_sellos} sellos en ${item.nombre_comercial}. ¡Mi Pasaporte Digital!`
-        : `¡Conoce ${item.nombre_comercial} en el Pasaporte Digital de Sellos!`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: "Pasaporte Digital", text: texto });
-      } catch {
-        /* cancel */
-      }
-    } else {
-      await navigator.clipboard.writeText(texto);
-      alert("Enlace copiado al portapapeles");
-    }
+  const compartirLocal = (item: EstablecimientoSellos) => {
+    setShareData({
+      nombreEstablecimiento: item.nombre_comercial,
+      categoria: item.categoria_nombre,
+      sellosObtenidos: item.sellos_obtenidos || 0,
+      metaSellos: item.meta_sellos || 8,
+      colorSello: item.color_sello || "#7C0A1E",
+      nombreSello: item.nombre_sello || `Sello ${item.nombre_comercial}`,
+      nombreUsuario: user ? `${user.nombres} ${user.apellidos || ""}`.trim() : "Explorador de Pasaporte",
+      codigoCliente: (user as any)?.codigo_cliente || undefined,
+    });
+    setOpenShareModal(true);
   };
 
   const localActual = paginaActualLibro > 0 ? conSellos[paginaActualLibro - 1] : null;
@@ -1009,6 +1014,13 @@ export const MisSellosPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal para Compartir como Tarjeta Gráfica en WhatsApp / Redes */}
+      <StampShareModal
+        open={openShareModal}
+        onClose={() => setOpenShareModal(false)}
+        data={shareData}
+      />
     </div>
   );
 };
