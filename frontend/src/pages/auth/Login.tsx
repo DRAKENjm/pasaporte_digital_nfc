@@ -32,6 +32,13 @@ export const Login: React.FC = () => {
   const { showToast } = useUI();
   const navigate = useNavigate();
 
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("inactivity") === "1") {
+      setErrorMsg("Tu sesión se cerró por inactividad (5 minutos) por seguridad.");
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -42,7 +49,7 @@ export const Login: React.FC = () => {
 
     setLoading(true);
     try {
-      const loggedUser: any = await login(identifier.trim(), password);
+      const loggedUser: any = await login(identifier.trim(), password, rememberMe);
       if (rememberMe) {
         localStorage.setItem("remembered_identifier", identifier.trim());
         localStorage.setItem("remembered_password", password);
@@ -63,7 +70,7 @@ export const Login: React.FC = () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const loggedUser: any = await loginWithGoogle(credentialResponse.credential);
+      const loggedUser: any = await loginWithGoogle(credentialResponse.credential, rememberMe);
       navigate(homePathForRole(loggedUser?.role || "CLIENTE"));
     } catch (err: any) {
       setErrorMsg(err.response?.data?.message || "No se pudo iniciar sesión con Google");

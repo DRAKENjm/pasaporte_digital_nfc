@@ -1,6 +1,9 @@
-import React, { createContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useState, useEffect, useCallback, useRef } from "react";
 import { User } from "../types";
 import { authService } from "../services/authService";
+
+// Tiempo de inactividad para cierre de sesión automático (5 minutos)
+const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface AuthContextType {
   user: User | null;
@@ -8,15 +11,15 @@ interface AuthContextType {
   isAuthenticated: boolean;
   role: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
-  loginWithGoogle: (token: string) => Promise<User>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<User>;
+  loginWithGoogle: (token: string, rememberMe?: boolean) => Promise<User>;
   register: (data: {
     email: string;
     password: string;
     nombres: string;
     apellidos: string;
   }) => Promise<void>;
-  logout: () => void;
+  logout: (reason?: string) => void;
   refreshProfile: () => Promise<void>;
 }
 
@@ -24,23 +27,95 @@ export const AuthContext = createContext<AuthContextType | undefined>(
   undefined,
 );
 
+const getStoredToken = (): string | null => {
+  return sessionStorage.getItem("token") || localStorage.getItem("token");
+};
+
+const getStoredUser = (): User | null => {
+  try {
+    const raw = sessionStorage.getItem("user") || localStorage.getItem("user");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token"),
-  );
+  const [user, setUser] = useState<User | null>(() => getStoredUser());
+  const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [loading, setLoading] = useState(true);
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const logout = useCallback(() => {
+  const clearSessionData = useCallback(() => {
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("user");
+    sessionStorage.removeItem("pasaporte_uid_nfc");
+    sessionStorage.removeItem("comercio_establecimiento_id");
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("pasaporte_uid_nfc");
     localStorage.removeItem("comercio_establecimiento_id");
+  }, []);
+
+  const logout = useCallback((reason?: string) => {
+    clearSessionData();
     setToken(null);
     setUser(null);
-  }, []);
+    if (reason === "inactivity") {
+      // Notificar opcionalmente por query param o alert
+      if (!window.location.pathname.includes("/auth/login")) {
+        window.location.href = "/auth/login?inactivity=1";
+      }
+    }
+  }, [clearSessionData]);
+
+  // Manejo de inactividad de 5 minutos
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+    }
+    // Solo activar temporizador si está autenticado
+    if (token) {
+      inactivityTimerRef.current = setTimeout(() => {
+        logout("inactivity");
+      }, INACTIVITY_TIMEOUT_MS);
+    }
+  }, [token, logout]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const activityEvents = [
+      "mousedown",
+      "mousemove",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+
+    const handleUserActivity = () => {
+      resetInactivityTimer();
+    };
+
+    activityEvents.forEach((evt) => {
+      window.addEventListener(evt, handleUserActivity, { passive: true });
+    });
+
+    // Iniciar temporizador inicial
+    resetInactivityTimer();
+
+    return () => {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+      }
+      activityEvents.forEach((evt) => {
+        window.removeEventListener(evt, handleUserActivity);
+      });
+    };
+  }, [token, resetInactivityTimer]);
 
   const refreshProfile = useCallback(async () => {
     try {
@@ -62,7 +137,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           ).toUpperCase(),
         };
         setUser(normalized);
-        localStorage.setItem("user", JSON.stringify(normalized));
+        sessionStorage.setItem("user", JSON.stringify(normalized));
+        if (localStorage.getItem("token")) {
+          localStorage.setItem("user", JSON.stringify(normalized));
+        }
       }
     } catch {
       // No forzar logout si falla una sincronización secundaria de perfil
@@ -71,15 +149,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     const init = async () => {
-      const savedToken = localStorage.getItem("token");
+      const savedToken = getStoredToken();
       if (savedToken) {
         try {
           const profile = await authService.getProfile();
-          setToken(savedToken);
-          setUser({
+          const normalized = {
             ...profile,
-            role: (profile as any).rol_nombre || profile.rol || profile.role,
-          });
+            role: (
+              (profile as any).rol_nombre ||
+              profile.rol ||
+              profile.role ||
+              "CLIENTE"
+            ).toUpperCase(),
+            rol: (
+              (profile as any).rol_nombre ||
+              profile.rol ||
+              profile.role ||
+              "CLIENTE"
+            ).toUpperCase(),
+          };
+          setToken(savedToken);
+          setUser(normalized);
+          sessionStorage.setItem("token", savedToken);
+          sessionStorage.setItem("user", JSON.stringify(normalized));
         } catch {
           logout();
         }
@@ -89,15 +181,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     init();
   }, [logout]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, rememberMe = false) => {
     const res = await authService.login(email, password);
     const normalizedUser = {
       ...res.user,
       role: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
       rol: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
     };
-    localStorage.setItem("token", res.token);
-    localStorage.setItem("user", JSON.stringify(normalizedUser));
+
+    // Almacenar en sessionStorage (aislado por pestaña y se limpia al cerrar pestaña)
+    sessionStorage.setItem("token", res.token);
+    sessionStorage.setItem("user", JSON.stringify(normalizedUser));
+
+    // Si el usuario marcó "Recordarme", guardar también en localStorage
+    if (rememberMe) {
+      localStorage.setItem("token", res.token);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+    } else {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+    }
+
     setToken(res.token);
     setUser(normalizedUser);
     return normalizedUser;
@@ -112,15 +216,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     await authService.register(data);
   };
 
-  const loginWithGoogle = async (credential: string) => {
+  const loginWithGoogle = async (credential: string, rememberMe = false) => {
     const res = await authService.loginWithGoogle(credential);
     const normalizedUser = {
       ...res.user,
       role: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
       rol: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
     };
-    localStorage.setItem("token", res.token);
-    localStorage.setItem("user", JSON.stringify(normalizedUser));
+
+    sessionStorage.setItem("token", res.token);
+    sessionStorage.setItem("user", JSON.stringify(normalizedUser));
+
+    if (rememberMe) {
+      localStorage.setItem("token", res.token);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+    } else {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+    }
+
     setToken(res.token);
     setUser(normalizedUser);
     return normalizedUser;

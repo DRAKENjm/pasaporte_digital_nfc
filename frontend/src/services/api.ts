@@ -9,7 +9,8 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token =
+    sessionStorage.getItem("token") || localStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -29,8 +30,14 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
+      sessionStorage.removeItem("pasaporte_uid_nfc");
+      sessionStorage.removeItem("comercio_establecimiento_id");
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      localStorage.removeItem("pasaporte_uid_nfc");
+      localStorage.removeItem("comercio_establecimiento_id");
       if (!window.location.pathname.includes("/auth/login")) {
         window.location.href = "/auth/login";
       }
