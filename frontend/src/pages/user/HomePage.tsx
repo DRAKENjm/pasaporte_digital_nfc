@@ -369,6 +369,8 @@ export const HomePage: React.FC = () => {
             <img
               src={
                 currentLocal.imagen_portada ||
+                currentLocal.logo ||
+                currentLocal.imagen_url ||
                 "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800&auto=format&fit=crop&q=80"
               }
               alt={currentLocal.nombre_comercial}

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { AdminController } from "../controllers/admin.controller";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
+import { AuthenticatedRequest } from "../types";
 
 const router = Router();
 
@@ -101,25 +102,18 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { sendResponse, ApiError } from "../utils";
+import { uploadToSupabase } from "../services/storage.service";
 
 const uploadDir = path.join(process.cwd(), "uploads", "locales");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const diskStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
-    const uniqueName = `local-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, uniqueName);
-  },
-});
+// Almacenamiento en memoria para enviar directamente a Supabase Storage
+const memoryStorage = multer.memoryStorage();
 
-const diskUpload = multer({
-  storage: diskStorage,
+const uploadMiddleware = multer({
+  storage: memoryStorage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (_req, file, cb) => {
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
@@ -135,21 +129,42 @@ router.post(
   "/upload",
   authMiddleware,
   requireRoles("ADMIN", "ADMIN_GENERAL"),
-  diskUpload.single("file"),
-  (req, res, next) => {
+  uploadMiddleware.single("file"),
+  async (req: AuthenticatedRequest, res, next) => {
     try {
       if (!req.file) {
         throw new ApiError(400, "No se ha subido ningún archivo");
       }
-      const host = req.get("host");
-      const protocol = req.protocol;
-      const url = `${protocol}://${host}/uploads/locales/${req.file.filename}`;
+
+      const ext = path.extname(req.file.originalname).toLowerCase() || ".jpg";
+      const uniqueName = `local-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+
+      let finalUrl = "";
+
+      // 1. Intentar subir directamente a Supabase Storage
+      try {
+        const supabaseRes = await uploadToSupabase(
+          req.file.buffer,
+          uniqueName,
+          req.file.mimetype,
+          "fotos",
+        );
+        finalUrl = supabaseRes.url;
+      } catch (storageError: any) {
+        console.warn("Fallo subida a Supabase en /admin/upload, guardando respaldo local:", storageError.message);
+        const localPath = path.join(uploadDir, uniqueName);
+        await fs.promises.writeFile(localPath, req.file.buffer);
+        const host = req.get("host");
+        const protocol = req.protocol;
+        finalUrl = `${protocol}://${host}/uploads/locales/${uniqueName}`;
+      }
+
       sendResponse(
         res,
         200,
         {
-          url,
-          filename: req.file.filename,
+          url: finalUrl,
+          filename: uniqueName,
           size: req.file.size,
           mimetype: req.file.mimetype,
         },

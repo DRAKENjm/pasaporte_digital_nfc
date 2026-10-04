@@ -784,7 +784,7 @@ export const ExplorarPage: React.FC = () => {
                   mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
                 >
                   <CircularMarker
-                    logo={loc.logo}
+                    logo={loc.logo || loc.imagen_portada || loc.imagen_url}
                     nombre={loc.nombre_comercial}
                     activo={activo}
                     onClick={() => handleSelectLocal(loc)}
@@ -799,6 +799,7 @@ export const ExplorarPage: React.FC = () => {
         <div className="absolute top-3 left-0 right-0 z-20 px-4 flex gap-2 overflow-x-auto pb-2 scrollbar-none pointer-events-auto">
           {localesFiltrados.map((loc) => {
             const esActivo = localSeleccionado?.id_establecimiento === loc.id_establecimiento;
+            const locImg = loc.logo || loc.imagen_portada || loc.imagen_url;
             return (
               <button
                 key={loc.id_establecimiento}
@@ -809,8 +810,8 @@ export const ExplorarPage: React.FC = () => {
                     : "bg-white text-[#2D1A1E] border-[#EFE7DE]"
                 }`}
               >
-                {loc.logo && (
-                  <img src={loc.logo} alt="" className="w-4 h-4 rounded-full object-cover" />
+                {locImg && (
+                  <img src={locImg} alt="" className="w-4 h-4 rounded-full object-cover" />
                 )}
                 <span>{loc.nombre_comercial}</span>
               </button>
@@ -836,6 +837,8 @@ export const ExplorarPage: React.FC = () => {
                   <img
                     src={
                       localSeleccionado.logo ||
+                      localSeleccionado.imagen_portada ||
+                      localSeleccionado.imagen_url ||
                       "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=100"
                     }
                     alt={localSeleccionado.nombre_comercial}
@@ -937,6 +940,8 @@ export const ExplorarPage: React.FC = () => {
                     <img
                       src={
                         localSeleccionado.logo ||
+                        localSeleccionado.imagen_portada ||
+                        localSeleccionado.imagen_url ||
                         "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=150"
                       }
                       alt={localSeleccionado.nombre_comercial}

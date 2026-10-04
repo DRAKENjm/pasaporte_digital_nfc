@@ -173,10 +173,10 @@ export const AdminLocales = () => {
 
     setUploading(true);
     try {
-      const { data } = await api.post("/admin/upload", formData, {
+      const res = await api.post("/media/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      const url = data?.data?.url || data?.url;
+      const url = res.data?.data?.url || res.data?.url;
       if (url) {
         setForm((prev) => ({ ...prev, imagen_url: url }));
         showToast("Imagen subida con éxito", "success");

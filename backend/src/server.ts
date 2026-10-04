@@ -13,6 +13,9 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Configuración para proxies inversos (Render, Cloudflare, etc.)
+app.set("trust proxy", 1);
+
 // Middlewares globales
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "*", credentials: true }));
 app.use(express.json({ limit: "8mb" }));
