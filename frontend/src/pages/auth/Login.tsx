@@ -22,7 +22,9 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState(() => {
     return localStorage.getItem("remembered_password") || "";
   });
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => {
+    return Boolean(localStorage.getItem("remembered_identifier"));
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -49,7 +51,7 @@ export const Login: React.FC = () => {
 
     setLoading(true);
     try {
-      const loggedUser: any = await login(identifier.trim(), password, rememberMe);
+      const loggedUser: any = await login(identifier.trim(), password);
       if (rememberMe) {
         localStorage.setItem("remembered_identifier", identifier.trim());
         localStorage.setItem("remembered_password", password);
@@ -70,7 +72,7 @@ export const Login: React.FC = () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const loggedUser: any = await loginWithGoogle(credentialResponse.credential, rememberMe);
+      const loggedUser: any = await loginWithGoogle(credentialResponse.credential);
       navigate(homePathForRole(loggedUser?.role || "CLIENTE"));
     } catch (err: any) {
       setErrorMsg(err.response?.data?.message || "No se pudo iniciar sesión con Google");

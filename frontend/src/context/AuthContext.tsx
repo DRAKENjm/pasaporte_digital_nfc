@@ -11,8 +11,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   role: string | null;
   loading: boolean;
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<User>;
-  loginWithGoogle: (token: string, rememberMe?: boolean) => Promise<User>;
+  login: (email: string, password: string) => Promise<User>;
+  loginWithGoogle: (token: string) => Promise<User>;
   register: (data: {
     email: string;
     password: string;
@@ -28,12 +28,12 @@ export const AuthContext = createContext<AuthContextType | undefined>(
 );
 
 const getStoredToken = (): string | null => {
-  return sessionStorage.getItem("token") || localStorage.getItem("token");
+  return sessionStorage.getItem("token");
 };
 
 const getStoredUser = (): User | null => {
   try {
-    const raw = sessionStorage.getItem("user") || localStorage.getItem("user");
+    const raw = sessionStorage.getItem("user");
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -53,6 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     sessionStorage.removeItem("user");
     sessionStorage.removeItem("pasaporte_uid_nfc");
     sessionStorage.removeItem("comercio_establecimiento_id");
+    // Limpiar también cualquier token previo que haya quedado en localStorage
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("pasaporte_uid_nfc");
@@ -181,7 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     init();
   }, [logout]);
 
-  const login = async (email: string, password: string, rememberMe = false) => {
+  const login = async (email: string, password: string) => {
     const res = await authService.login(email, password);
     const normalizedUser = {
       ...res.user,
@@ -189,18 +190,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       rol: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
     };
 
-    // Almacenar en sessionStorage (aislado por pestaña y se limpia al cerrar pestaña)
+    // Almacenar exclusivamente en sessionStorage (aislado por pestaña y se destruye al cerrar la pestaña)
     sessionStorage.setItem("token", res.token);
     sessionStorage.setItem("user", JSON.stringify(normalizedUser));
 
-    // Si el usuario marcó "Recordarme", guardar también en localStorage
-    if (rememberMe) {
-      localStorage.setItem("token", res.token);
-      localStorage.setItem("user", JSON.stringify(normalizedUser));
-    } else {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-    }
+    // Asegurar que no quede token activo persistente en localStorage
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
 
     setToken(res.token);
     setUser(normalizedUser);
@@ -216,7 +212,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     await authService.register(data);
   };
 
-  const loginWithGoogle = async (credential: string, rememberMe = false) => {
+  const loginWithGoogle = async (credential: string) => {
     const res = await authService.loginWithGoogle(credential);
     const normalizedUser = {
       ...res.user,
@@ -227,13 +223,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     sessionStorage.setItem("token", res.token);
     sessionStorage.setItem("user", JSON.stringify(normalizedUser));
 
-    if (rememberMe) {
-      localStorage.setItem("token", res.token);
-      localStorage.setItem("user", JSON.stringify(normalizedUser));
-    } else {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-    }
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
 
     setToken(res.token);
     setUser(normalizedUser);
