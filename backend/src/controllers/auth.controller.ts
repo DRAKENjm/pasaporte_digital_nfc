@@ -16,7 +16,8 @@ const failedAttemptsMap = new Map<string, number>();
 export const AuthController = {
   async register(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email, password, nombres, apellidos, telefono, roleName, uid_nfc } = req.body;
+      const { email, password, nombres, apellidos, telefono, roleName, uid_nfc, codigo_invitacion, ref } = req.body;
+      const refCode = (codigo_invitacion || ref || "").toString().trim().toUpperCase();
 
       if (!email || !password || !nombres || !apellidos) {
         throw new ApiError(400, "Completa todos los campos obligatorios");
@@ -85,7 +86,7 @@ export const AuthController = {
         hashed,
         nombres.trim(),
         apellidos.trim(),
-        roleName || "CLIENTE",
+        rolFinal,
         telefono,
       );
 
@@ -97,6 +98,71 @@ export const AuthController = {
            WHERE id_tarjeta = $2`,
           [user.id_cliente, tarjetaAAsignar.id_tarjeta],
         );
+      }
+
+      // Procesar código de referido / invitación y otorgar puntos
+      if (refCode && user.id_cliente) {
+        try {
+          const invRes = await query(
+            `SELECT i.id_invitacion, i.id_usuario_invitador, c.id_cliente AS id_cliente_invitador
+             FROM invitaciones i
+             LEFT JOIN clientes c ON c.id_usuario = i.id_usuario_invitador
+             WHERE UPPER(i.codigo) = $1 AND i.estado = 1
+               AND (i.fecha_expiracion IS NULL OR i.fecha_expiracion > CURRENT_TIMESTAMP)
+             LIMIT 1`,
+            [refCode],
+          );
+          if (invRes.rows[0]) {
+            const inv = invRes.rows[0];
+            const PUNTOS_BONO = 50;
+
+            // 1. Bono al nuevo usuario
+            await query(
+              `INSERT INTO movimientos_puntos (id_cliente, tipo_movimiento, cantidad, saldo_resultante, concepto, metadata)
+               VALUES (
+                 $1, 'BONO', $2,
+                 (COALESCE((SELECT saldo_puntos FROM clientes WHERE id_cliente = $1), 0) + $2),
+                 'Bono de bienvenida por invitación',
+                 $3::jsonb
+               )`,
+              [user.id_cliente, PUNTOS_BONO, JSON.stringify({ codigo_invitacion: refCode })],
+            );
+            await query(
+              `UPDATE clientes SET saldo_puntos = COALESCE(saldo_puntos, 0) + $1 WHERE id_cliente = $2`,
+              [PUNTOS_BONO, user.id_cliente],
+            );
+
+            // 2. Bono al invitador (si tiene perfil de cliente)
+            if (inv.id_cliente_invitador) {
+              await query(
+                `INSERT INTO movimientos_puntos (id_cliente, tipo_movimiento, cantidad, saldo_resultante, concepto, metadata)
+                 VALUES (
+                   $1, 'BONO', $2,
+                   (COALESCE((SELECT saldo_puntos FROM clientes WHERE id_cliente = $1), 0) + $2),
+                   'Recompensa por amigo invitado',
+                   $3::jsonb
+                 )`,
+                [inv.id_cliente_invitador, PUNTOS_BONO, JSON.stringify({ amigo_id_usuario: user.id_usuario })],
+              );
+              await query(
+                `UPDATE clientes SET saldo_puntos = COALESCE(saldo_puntos, 0) + $1 WHERE id_cliente = $2`,
+                [PUNTOS_BONO, inv.id_cliente_invitador],
+              );
+            }
+
+            // 3. Crear amistad mutua automática
+            if (inv.id_usuario_invitador && inv.id_usuario_invitador !== user.id_usuario) {
+              await query(
+                `INSERT INTO amistades (usuario_solicitante_id, usuario_receptor_id, estado)
+                 VALUES ($1, $2, 'ACEPTADA')
+                 ON CONFLICT DO NOTHING`,
+                [inv.id_usuario_invitador, user.id_usuario],
+              );
+            }
+          }
+        } catch (e) {
+          console.error("Error al procesar bono de invitación:", e);
+        }
       }
 
       // Registrar auditoría

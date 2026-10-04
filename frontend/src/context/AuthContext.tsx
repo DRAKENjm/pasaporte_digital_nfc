@@ -20,6 +20,7 @@ interface AuthContextType {
     apellidos: string;
     telefono?: string;
     uid_nfc?: string;
+    codigo_invitacion?: string;
   }) => Promise<void>;
   logout: (reason?: string) => void;
   refreshProfile: () => Promise<void>;

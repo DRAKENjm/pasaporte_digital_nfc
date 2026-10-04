@@ -1,7 +1,7 @@
 import { LegalLink } from "../../components/common/LegalLink";
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, UserPlus, ShieldCheck, CreditCard, Wifi, CheckCircle2, QrCode } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowRight, UserPlus, ShieldCheck, CreditCard, Wifi, CheckCircle2, QrCode, Sparkles, Gift } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { useUI } from "../../hooks/useUI";
 import { useNFCReader } from "../../hooks/useNFCReader";
@@ -9,6 +9,9 @@ import { Input } from "../../components/common/Input";
 import { Button } from "../../components/common/Button";
 
 export const Register: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const refCode = (searchParams.get("ref") || "").trim().toUpperCase();
+
   const [form, setForm] = useState({
     nombres: "",
     apellidos: "",
@@ -17,6 +20,7 @@ export const Register: React.FC = () => {
   });
   const [tieneTarjetaFisica, setTieneTarjetaFisica] = useState(false);
   const [uidNfc, setUidNfc] = useState("");
+  const [codigoInvitacion, setCodigoInvitacion] = useState(refCode);
   const [loading, setLoading] = useState(false);
 
   const { register } = useAuth();
@@ -65,10 +69,13 @@ export const Register: React.FC = () => {
         email: form.email.trim(),
         password: form.password,
         uid_nfc: uidNfc.trim(),
+        codigo_invitacion: codigoInvitacion.trim() || undefined,
       });
 
       showToast(
-        "¡Pasaporte y Tarjeta NFC vinculados con éxito! Inicia sesión para continuar.",
+        codigoInvitacion.trim()
+          ? "¡Pasaporte creado y +50 puntos de bienvenida acreditados! Inicia sesión."
+          : "¡Pasaporte y Tarjeta NFC vinculados con éxito! Inicia sesión para continuar.",
         "success",
       );
       navigate("/auth/login");
@@ -89,6 +96,22 @@ export const Register: React.FC = () => {
           Vincula tu tarjeta física oficial y comienza a coleccionar sellos
         </p>
       </div>
+
+      {refCode && (
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-rose-50 border border-[#C5A059]/40 flex items-center gap-3 animate-fadeIn">
+          <div className="w-8 h-8 rounded-xl bg-[#C5A059]/20 text-[#7C0A1E] flex items-center justify-center font-black shrink-0">
+            <Gift className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-[#7C0A1E]">
+              ¡Invitación activa! Código: <span className="font-mono">{refCode}</span>
+            </p>
+            <p className="text-[11px] text-[#8E7D7D]">
+              Al registrar tu tarjeta física recibirás <strong>+50 Puntos de bienvenida</strong> de regalo.
+            </p>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -193,7 +193,7 @@ export const FriendsPage: React.FC = () => {
 
   const handleCompartirWhatsApp = () => {
     if (!inviteData) return;
-    const msg = `¡Hola! Únete a Pasaporte Digital para coleccionar sellos oficiales, ganar puntos y canjear recompensas en tus locales favoritos. Regístrate aquí con mi invitación: ${inviteData.link}`;
+    const msg = `¡Hola! Adquiere tu tarjeta de Pasaporte Digital y regístrate con mi código de invitación *${inviteData.codigo}* para recibir +50 Puntos de bienvenida. Conoce los detalles y regístrate aquí: ${inviteData.link}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
 

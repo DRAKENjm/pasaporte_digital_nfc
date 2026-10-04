@@ -32,6 +32,7 @@ export const authService = {
     apellidos: string;
     telefono?: string;
     uid_nfc?: string;
+    codigo_invitacion?: string;
   }): Promise<AuthPayload> {
     const res = await api.post<BackendApiResponse<AuthPayload>>(
       "/auth/register",
