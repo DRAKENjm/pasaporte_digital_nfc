@@ -68,14 +68,14 @@ export const Register: React.FC = () => {
         apellidos: form.apellidos.trim(),
         email: form.email.trim(),
         password: form.password,
-        uid_nfc: uidNfc.trim(),
+        uid_nfc: tieneTarjetaFisica && uidNfc.trim() ? uidNfc.trim() : undefined,
         codigo_invitacion: codigoInvitacion.trim() || undefined,
       });
 
       showToast(
         codigoInvitacion.trim()
-          ? "¡Pasaporte creado y +50 puntos de bienvenida acreditados! Inicia sesión."
-          : "¡Pasaporte y Tarjeta NFC vinculados con éxito! Inicia sesión para continuar.",
+          ? "¡Cuenta creada y +50 puntos de bienvenida acreditados! Inicia sesión."
+          : "¡Cuenta creada exitosamente! Inicia sesión para comenzar.",
         "success",
       );
       navigate("/auth/login");
@@ -90,10 +90,10 @@ export const Register: React.FC = () => {
     <div className="bg-white border border-[#EFE7DE] p-6 sm:p-8 rounded-3xl shadow-sm space-y-6">
       <div className="text-center space-y-1">
         <h2 className="text-xl font-black tracking-tight text-slate-900">
-          Registro de Pasaporte Digital
+          Registro en Pasaporte Digital
         </h2>
         <p className="text-xs text-slate-500 font-medium">
-          Vincula tu tarjeta física oficial y comienza a coleccionar sellos
+          Crea tu cuenta, acumula puntos y colecciona sellos en tus locales favoritos
         </p>
       </div>
 
@@ -104,10 +104,10 @@ export const Register: React.FC = () => {
           </div>
           <div>
             <p className="text-xs font-bold text-[#7C0A1E]">
-              ¡Invitación activa! Código: <span className="font-mono">{refCode}</span>
+              ¡Invitación activa de un amigo! <span className="font-mono font-black">{refCode}</span>
             </p>
             <p className="text-[11px] text-[#8E7D7D]">
-              Al registrar tu tarjeta física recibirás <strong>+50 Puntos de bienvenida</strong> de regalo.
+              Al registrarte recibirás <strong>+50 Puntos de bienvenida</strong> de regalo.
             </p>
           </div>
         </div>
@@ -150,74 +150,101 @@ export const Register: React.FC = () => {
           value={form.password}
           onChange={handleChange}
           required
-          minLength={8}
+          minLength={6}
           maxLength={72}
           autoComplete="new-password"
           isPassword
-          placeholder="Mínimo 8 caracteres"
+          placeholder="Mínimo 6 caracteres"
         />
 
-        {/* Sección Obligatoria: Tarjeta NFC Física */}
-        <div className="p-4 rounded-2xl bg-[#FAF8F5] border-2 border-[#7C0A1E]/30 space-y-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#7C0A1E]/10 flex items-center justify-center text-[#7C0A1E] shrink-0">
-              <CreditCard className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-bold text-[#2D1A1E]">Tarjeta Física NFC Oficial</p>
-                <span className="text-[10px] bg-[#7C0A1E] text-white px-2 py-0.5 rounded-full font-bold">
-                  Obligatorio
-                </span>
-              </div>
-              <p className="text-[11px] text-[#8E7D7D]">Acerca tu tarjeta física o ingresa su código / UID</p>
-            </div>
-          </div>
-
-          <div className="space-y-2.5 pt-1">
-            {isNfcSupported && (
-              <button
-                type="button"
-                onClick={handleStartScanNfc}
-                className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-xs ${
-                  isScanning
-                    ? "bg-amber-600 text-white animate-pulse"
-                    : "bg-[#7C0A1E] text-white hover:bg-[#600616]"
-                }`}
-              >
-                <Wifi size={14} className="rotate-90" />
-                <span>
-                  {isScanning
-                    ? "📱 Acerca la tarjeta a la parte trasera del teléfono (Click para cancelar)"
-                    : "📱 Acercar tarjeta física al teléfono (NFC)"}
-                </span>
-              </button>
-            )}
-            {nfcError && <p className="text-xs text-[#7C0A1E] font-medium">{nfcError}</p>}
-
-            <div className="space-y-1 text-left">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] flex items-center justify-between">
-                <span>UID o Código impreso en tu tarjeta *</span>
-                {uidNfc && (
-                  <span className="text-emerald-700 text-[10px] font-bold flex items-center gap-1">
-                    <CheckCircle2 size={12} /> Detectado
-                  </span>
-                )}
-              </label>
+        {/* Campo Código de Invitación si no vino por URL */}
+        {!refCode && (
+          <div className="space-y-1 text-left">
+            <label className="text-xs font-bold text-[#736868]">
+              ¿Tienes un código de invitación de un amigo? (Opcional)
+            </label>
+            <div className="relative">
               <input
                 type="text"
-                required
-                placeholder="Ej: 04:A1:B2:C3:D4 o NFC-1002"
-                value={uidNfc}
-                onChange={(e) => setUidNfc(e.target.value)}
-                className="input-base font-mono text-xs w-full bg-white border border-[#EFE7DE] focus:border-[#7C0A1E]"
+                placeholder="Ej. AMIGO-123456"
+                value={codigoInvitacion}
+                onChange={(e) => setCodigoInvitacion(e.target.value.toUpperCase())}
+                className="input-base font-mono text-xs w-full bg-[#FAF8F5] border border-[#EFE7DE] focus:border-[#7C0A1E] uppercase"
               />
             </div>
-
-            <p className="text-[11px] text-[#8E7D7D] bg-white/80 p-2.5 rounded-xl border border-[#EFE7DE] leading-relaxed">
-              💡 <strong>¿Aún no tienes tarjeta física?</strong> Adquiérela en cualquiera de los locales afiliados para activar tu Pasaporte Digital y empezar a registrar sellos.
+            <p className="text-[10px] text-[#8E7D7D]">
+              Ingresa el código para recibir +50 puntos de bienvenida.
             </p>
           </div>
+        )}
+
+        {/* Sección Opcional: Tarjeta NFC Física */}
+        <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#7C0A1E]/10 flex items-center justify-center text-[#7C0A1E] shrink-0">
+                <CreditCard className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[#2D1A1E]">¿Ya tienes una tarjeta física NFC?</p>
+                <p className="text-[11px] text-[#8E7D7D]">Puedes vincularla ahora o solicitarla después en un local</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setTieneTarjetaFisica(!tieneTarjetaFisica)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                tieneTarjetaFisica
+                  ? "bg-[#7C0A1E] text-white"
+                  : "bg-white border border-[#D9D0C7] text-[#5A4B4B] hover:bg-slate-50"
+              }`}
+            >
+              {tieneTarjetaFisica ? "Vincular chip" : "Opcional"}
+            </button>
+          </div>
+
+          {tieneTarjetaFisica && (
+            <div className="space-y-2.5 pt-2 border-t border-[#EFE7DE] animate-fadeIn">
+              {isNfcSupported && (
+                <button
+                  type="button"
+                  onClick={handleStartScanNfc}
+                  className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-xs ${
+                    isScanning
+                      ? "bg-amber-600 text-white animate-pulse"
+                      : "bg-[#7C0A1E] text-white hover:bg-[#600616]"
+                  }`}
+                >
+                  <Wifi size={14} className="rotate-90" />
+                  <span>
+                    {isScanning
+                      ? "📱 Acerca la tarjeta a la parte trasera del teléfono"
+                      : "📱 Acercar tarjeta al lector NFC del teléfono"}
+                  </span>
+                </button>
+              )}
+              {nfcError && <p className="text-xs text-[#7C0A1E] font-medium">{nfcError}</p>}
+
+              <div className="space-y-1 text-left">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#736868] flex items-center justify-between">
+                  <span>UID o Código de la tarjeta</span>
+                  {uidNfc && (
+                    <span className="text-emerald-700 text-[10px] font-bold flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Detectado
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: 04:A1:B2:C3:D4 o NFC-1002"
+                  value={uidNfc}
+                  onChange={(e) => setUidNfc(e.target.value)}
+                  className="input-base font-mono text-xs w-full bg-white border border-[#EFE7DE] focus:border-[#7C0A1E]"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <p className="text-[11px] text-slate-500 leading-tight">
@@ -227,14 +254,14 @@ export const Register: React.FC = () => {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 bg-[#7C0A1E] hover:bg-[#600616] disabled:opacity-50 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+          className="w-full py-3.5 bg-[#7C0A1E] hover:bg-[#600616] disabled:opacity-50 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
         >
           {loading ? (
-            "Validando y creando pasaporte..."
+            "Creando cuenta..."
           ) : (
             <>
               <UserPlus className="w-4 h-4" />
-              Validar Tarjeta y Crear Cuenta
+              Crear Cuenta
             </>
           )}
         </button>

@@ -487,18 +487,38 @@ export const PerfilPage: React.FC = () => {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-[#7C0A1E] text-white flex items-center justify-center shadow-sm">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${
+              !profile?.tarjeta_activa?.uid_nfc
+                ? "bg-amber-100 text-amber-700"
+                : profile?.tarjeta_activa?.estado === "BLOQUEADA"
+                ? "bg-rose-100 text-rose-700"
+                : "bg-[#7C0A1E] text-white"
+            }`}>
               <Wifi size={20} className="rotate-90" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
                 <span className="text-xs font-bold text-[#2D1A1E]">Mi Tarjeta NFC</span>
-                <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  Activa
-                </span>
+                {!profile?.tarjeta_activa?.uid_nfc ? (
+                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    Sin vincular
+                  </span>
+                ) : profile?.tarjeta_activa?.estado === "BLOQUEADA" ? (
+                  <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    Bloqueada
+                  </span>
+                ) : (
+                  <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    Activa
+                  </span>
+                )}
               </div>
-              <p className="text-[11px] text-[#8E7D7D] font-mono mt-0.5">{tarjetaUid}</p>
-              <p className="text-[10px] text-[#C5A059] mt-0.5">Personalizar imagen y QR →</p>
+              <p className="text-[11px] text-[#8E7D7D] font-mono mt-0.5">
+                {profile?.tarjeta_activa?.codigo_interno || profile?.tarjeta_activa?.uid_nfc || "Sin tarjeta física"}
+              </p>
+              <p className="text-[10px] text-[#C5A059] mt-0.5">
+                {!profile?.tarjeta_activa?.uid_nfc ? "Solicitar en un local →" : "Ver pasaporte y QR →"}
+              </p>
             </div>
           </div>
           <ChevronRight size={18} className="text-[#8E7D7D]" />

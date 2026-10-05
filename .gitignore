@@ -50,6 +50,7 @@ CLAUDE.md
 .claude/
 scratch_img/
 web_pasaporte/
+cambios_en_frontend_src/
 test_*.js
 
 # Archivos temporales del SO

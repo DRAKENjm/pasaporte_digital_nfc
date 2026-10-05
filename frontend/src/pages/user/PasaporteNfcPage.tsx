@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Wifi, Award, Info, CheckCircle2, QrCode, Upload, Eye, X, Copy, Check } from "lucide-react";
+import { ArrowLeft, Wifi, Award, Info, CheckCircle2, QrCode, Upload, Eye, X, Copy, Check, CreditCard, Store, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import api from "../../services/api";
@@ -145,98 +145,178 @@ export const PasaporteNfcPage: React.FC = () => {
 
       {vista === "tarjeta" ? (
         <>
-          {/* Tarjeta Digital */}
-          <div
-            onClick={() => setMostrarModalQr(true)}
-            className="relative w-full max-w-sm mx-auto aspect-[1.586/1] rounded-2xl overflow-hidden shadow-xl cursor-pointer group transition-transform active:scale-[0.99]"
-            style={{ border: `3px solid ${marco}`, boxShadow: `0 8px 24px ${marco}40` }}
-            title="Toca para ampliar el QR de Respaldo"
-          >
-            {imagenFondo ? (
-              <img src={imagenFondo} alt="" className="absolute inset-0 w-full h-full object-cover" />
-            ) : (
-              <div className="absolute inset-0 bg-gradient-to-br from-[#7C0A1E] via-[#9B1B30] to-[#580614]" />
-            )}
-            <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
-            <div className="relative h-full flex flex-col justify-between p-4 text-white">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-[10px] uppercase tracking-widest opacity-80">Pasaporte Digital</p>
-                  <p className="text-sm font-bold mt-0.5">{nombre}</p>
-                  <span
-                    className="inline-block mt-1 text-[9px] font-bold px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: marco, color: "#fff" }}
-                  >
-                    {nivelNombre}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-xs px-2 py-1 rounded-lg">
-                  <Wifi size={16} className="rotate-90 opacity-90" />
-                  <span className="text-[10px] font-mono font-bold tracking-wider">NFC</span>
+          {/* CASO 1: SIN TARJETA ASIGNADA TODAVÍA */}
+          {!tarjetaInfo || !tarjetaInfo.uid_nfc ? (
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EFE7DE] shadow-sm text-center space-y-5 animate-fadeIn max-w-sm mx-auto w-full">
+              <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full border-2 border-dashed border-[#C5A059] animate-pulse opacity-60" />
+                <div className="w-20 h-20 rounded-2xl bg-amber-50 border border-[#C5A059]/30 text-[#7C0A1E] flex items-center justify-center shadow-inner">
+                  <CreditCard size={36} className="text-[#C5A059]" />
                 </div>
               </div>
 
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-[9px] opacity-70">Código / Respaldo</p>
-                  <p className="font-mono text-sm tracking-wider font-bold">{codigo}</p>
-                </div>
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#7C0A1E] bg-[#7C0A1E]/10 px-3 py-1 rounded-full">
+                  Sin Tarjeta Vinculada
+                </span>
+                <h2 className="text-lg font-bold text-[#2D1A1E]">
+                  Aún no cuentas con una tarjeta física NFC
+                </h2>
+                <p className="text-xs text-[#8E7D7D] leading-relaxed">
+                  Acércate a cualquiera de nuestros locales afiliados para solicitar tu tarjeta física oficial de socio. El personal la vinculará a tu cuenta en segundos para que comiences a coleccionar sellos.
+                </p>
+              </div>
 
-                {/* Minicuadro QR interactivo */}
-                <div className="w-14 h-14 bg-white rounded-lg p-1 flex items-center justify-center shadow-md">
-                  {qrDataUrl ? (
-                    <img src={qrDataUrl} alt="QR de respaldo" className="w-full h-full object-contain" />
-                  ) : (
-                    <QrCode size={30} className="text-[#7C0A1E]" />
-                  )}
-                </div>
+              <div className="pt-2 space-y-2.5">
+                <button
+                  type="button"
+                  onClick={() => navigate("/user/locales")}
+                  className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold shadow-md hover:bg-[#600616] transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Store size={16} />
+                  <span>Ver Locales Afiliados</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/user/home")}
+                  className="w-full py-2.5 rounded-xl border border-[#EFE7DE] text-xs font-semibold text-[#8E7D7D] hover:text-[#2D1A1E]"
+                >
+                  Volver al Inicio
+                </button>
               </div>
             </div>
-          </div>
+          ) : tarjetaInfo.estado === "BLOQUEADA" || tarjetaInfo.estado === "PERDIDA" ? (
+            /* CASO 2: TARJETA BLOQUEADA O EXTRAVIADA */
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-rose-200 shadow-sm text-center space-y-5 animate-fadeIn max-w-sm mx-auto w-full">
+              <div className="w-20 h-20 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+                <ShieldAlert size={38} />
+              </div>
 
-          {/* Botón directo para Ver QR de Respaldo */}
-          <div className="mt-3 flex justify-center">
-            <button
-              onClick={() => setMostrarModalQr(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#EFE7DE] shadow-xs text-xs font-bold text-[#7C0A1E] hover:bg-[#FAF8F5]"
-            >
-              <QrCode size={16} className="text-[#C5A059]" />
-              <span>Ver QR de Respaldo en pantalla completa</span>
-            </button>
-          </div>
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-rose-700 bg-rose-100 px-3 py-1 rounded-full">
+                  Tarjeta Inhabilitada ({tarjetaInfo.estado})
+                </span>
+                <h2 className="text-lg font-bold text-[#2D1A1E]">
+                  Tu tarjeta física NFC está inhabilitada
+                </h2>
+                <p className="text-xs text-[#8E7D7D] leading-relaxed">
+                  Esta credencial se encuentra suspendida temporalmente por seguridad.
+                  {tarjetaInfo.motivo_bloqueo && (
+                    <span className="block mt-1.5 font-medium text-rose-800 bg-rose-50 p-2 rounded-xl border border-rose-100">
+                      Motivo: {tarjetaInfo.motivo_bloqueo}
+                    </span>
+                  )}
+                </p>
+              </div>
 
-          <p className="text-center text-xs text-[#8E7D7D] my-3 px-2">
-            ¿Olvidaste tu tarjeta NFC física? Muestra este QR al comercio para que te otorguen tus sellos y puntos.
-          </p>
+              <div className="pt-2 space-y-2.5">
+                <button
+                  type="button"
+                  onClick={() => navigate("/user/locales")}
+                  className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold shadow-md hover:bg-[#600616] transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Store size={16} />
+                  <span>Solicitar Reemplazo en un Local</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* CASO 3: TARJETA ASIGNADA Y ACTIVA */
+            <>
+              {/* Tarjeta Digital */}
+              <div
+                onClick={() => setMostrarModalQr(true)}
+                className="relative w-full max-w-sm mx-auto aspect-[1.586/1] rounded-2xl overflow-hidden shadow-xl cursor-pointer group transition-transform active:scale-[0.99]"
+                style={{ border: `3px solid ${marco}`, boxShadow: `0 8px 24px ${marco}40` }}
+                title="Toca para ampliar el QR de Respaldo"
+              >
+                {imagenFondo ? (
+                  <img src={imagenFondo} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#7C0A1E] via-[#9B1B30] to-[#580614]" />
+                )}
+                <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
+                <div className="relative h-full flex flex-col justify-between p-4 text-white">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest opacity-80">Pasaporte Digital</p>
+                      <p className="text-sm font-bold mt-0.5">{nombre}</p>
+                      <span
+                        className="inline-block mt-1 text-[9px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: marco, color: "#fff" }}
+                      >
+                        {nivelNombre}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-xs px-2 py-1 rounded-lg">
+                      <Wifi size={16} className="rotate-90 opacity-90" />
+                      <span className="text-[10px] font-mono font-bold tracking-wider">NFC</span>
+                    </div>
+                  </div>
 
-          <div className="space-y-2.5 max-w-sm mx-auto w-full">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleImagen(f);
-              }}
-            />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={guardando}
-              className="w-full py-3 rounded-2xl border border-dashed border-[#C5A059] bg-white text-[#7C0A1E] text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-50/40 transition-colors"
-            >
-              <Upload size={16} />
-              {guardando ? "Guardando..." : imagenFondo ? "Cambiar foto de fondo" : "Personalizar fondo de tarjeta"}
-            </button>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-[9px] opacity-70">Código / Respaldo</p>
+                      <p className="font-mono text-sm tracking-wider font-bold">{codigo}</p>
+                    </div>
 
-            <button
-              onClick={() => setVista("escanear")}
-              className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#600616] transition-colors"
-            >
-              <Wifi size={16} className="rotate-90" />
-              Probar lectura de chip NFC
-            </button>
-          </div>
+                    {/* Minicuadro QR interactivo */}
+                    <div className="w-14 h-14 bg-white rounded-lg p-1 flex items-center justify-center shadow-md">
+                      {qrDataUrl ? (
+                        <img src={qrDataUrl} alt="QR de respaldo" className="w-full h-full object-contain" />
+                      ) : (
+                        <QrCode size={30} className="text-[#7C0A1E]" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botón directo para Ver QR de Respaldo */}
+              <div className="mt-3 flex justify-center">
+                <button
+                  onClick={() => setMostrarModalQr(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#EFE7DE] shadow-xs text-xs font-bold text-[#7C0A1E] hover:bg-[#FAF8F5]"
+                >
+                  <QrCode size={16} className="text-[#C5A059]" />
+                  <span>Ver QR de Respaldo en pantalla completa</span>
+                </button>
+              </div>
+
+              <p className="text-center text-xs text-[#8E7D7D] my-3 px-2">
+                ¿Olvidaste tu tarjeta NFC física? Muestra este QR al comercio para que te otorguen tus sellos y puntos.
+              </p>
+
+              <div className="space-y-2.5 max-w-sm mx-auto w-full">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleImagen(f);
+                  }}
+                />
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={guardando}
+                  className="w-full py-3 rounded-2xl border border-dashed border-[#C5A059] bg-white text-[#7C0A1E] text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-50/40 transition-colors"
+                >
+                  <Upload size={16} />
+                  {guardando ? "Guardando..." : imagenFondo ? "Cambiar foto de fondo" : "Personalizar fondo de tarjeta"}
+                </button>
+
+                <button
+                  onClick={() => setVista("escanear")}
+                  className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#600616] transition-colors"
+                >
+                  <Wifi size={16} className="rotate-90" />
+                  Probar lectura de chip NFC
+                </button>
+              </div>
+            </>
+          )}
         </>
       ) : (
         <div className="flex flex-col items-center flex-1 justify-center">

@@ -45,11 +45,12 @@ export const UserModel = {
                   'uid_nfc', t.uid_nfc,
                   'codigo_interno', t.codigo_interno,
                   'qr_respaldo', COALESCE(t.qr_respaldo, t.codigo_interno),
-                  'estado', t.estado
+                  'estado', t.estado,
+                  'motivo_bloqueo', t.motivo_bloqueo
                 )
                 FROM tarjetas_nfc t
-                WHERE t.id_cliente = c.id_cliente AND t.estado = 'ACTIVA'
-                ORDER BY t.fecha_activacion DESC
+                WHERE t.id_cliente = c.id_cliente
+                ORDER BY (CASE WHEN t.estado = 'ACTIVA' THEN 1 ELSE 2 END), t.fecha_creacion DESC
                 LIMIT 1
               ) AS tarjeta_activa
        FROM usuarios u

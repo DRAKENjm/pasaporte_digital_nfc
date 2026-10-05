@@ -43,16 +43,6 @@ export const AuthController = {
 
       const rolFinal = roleName || "CLIENTE";
 
-      // Para clientes, la tarjeta física NFC / QR es obligatoria
-      if (rolFinal === "CLIENTE") {
-        if (!uid_nfc || !String(uid_nfc).trim()) {
-          throw new ApiError(
-            400,
-            "Para registrarte es obligatorio contar con tu tarjeta física NFC. Adquiérela en un establecimiento afiliado o ingresa su código/QR.",
-          );
-        }
-      }
-
       // Si se proporcionó una tarjeta NFC física, verificar disponibilidad en almacén
       let tarjetaAAsignar: any = null;
       if (uid_nfc && String(uid_nfc).trim()) {
