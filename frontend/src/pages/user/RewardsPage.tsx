@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useUI } from "../../hooks/useUI";
+import { useLanguage } from "../../context/LanguageContext";
 import { Spinner } from "../../components/common/Spinner";
 import { EmptyState } from "../../components/common/EmptyState";
 
@@ -14,6 +15,7 @@ export const RewardsPage: React.FC = () => {
   const [puntosActuales, setPuntosActuales] = useState<number>(0);
   const { user, refreshProfile } = useAuth();
   const { showToast } = useUI();
+  const { t } = useLanguage();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,8 +74,8 @@ export const RewardsPage: React.FC = () => {
             <ArrowLeft size={18} />
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-[#2D1A1E]">Recompensas</h1>
-            <p className="text-xs text-[#8E7D7D]">Canjea tus puntos por premios</p>
+            <h1 className="text-xl font-bold text-[#2D1A1E]">{t("rewards") || "Recompensas"}</h1>
+            <p className="text-xs text-[#8E7D7D]">{t("redeemPoints") || "Canjea tus puntos por premios"}</p>
           </div>
         </div>
 
@@ -87,7 +89,7 @@ export const RewardsPage: React.FC = () => {
       {recompensas.length === 0 ? (
         <div className="bg-white rounded-3xl p-8 border border-[#EFE7DE] text-center my-auto">
           <Gift className="w-12 h-12 text-[#C5A059] mx-auto mb-3" />
-          <h3 className="font-bold text-sm text-[#2D1A1E]">Sin recompensas disponibles</h3>
+          <h3 className="font-bold text-sm text-[#2D1A1E]">{t("noRewards") || "Sin recompensas disponibles"}</h3>
           <p className="text-xs text-[#8E7D7D] mt-1">
             Visita nuestros locales asociados para acumular sellos y desbloquear premios exclusivos.
           </p>

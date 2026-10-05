@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Info,
   RotateCcw,
+  ExternalLink,
 } from "lucide-react";
 import {
   GoogleMap,
@@ -344,14 +345,14 @@ export const ExplorarPage: React.FC = () => {
                     if (destDist <= 0.05) {
                       showToast("🎉 ¡Has llegado a tu destino!", "success");
                     } else if (lastRouteOriginRef.current) {
-                      // Si el usuario se desplazó más de 40 metros desde el último cálculo
+                      // Actualización fluida al caminar o desplazarse (cada 10 metros)
                       const distMovida = getDistanceKm(
                         lastRouteOriginRef.current.lat,
                         lastRouteOriginRef.current.lng,
                         newCoords.lat,
                         newCoords.lng
                       );
-                      if (distMovida >= 0.04) {
+                      if (distMovida >= 0.01) {
                         lastRouteOriginRef.current = newCoords;
                         calcularRutaSilenciosaRef.current(newCoords);
                       }
@@ -360,7 +361,7 @@ export const ExplorarPage: React.FC = () => {
                 }
               },
               () => {},
-              { enableHighAccuracy: true, maximumAge: 3000 }
+              { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
             );
           }
         },
@@ -1010,11 +1011,26 @@ export const ExplorarPage: React.FC = () => {
 
                   <button
                     type="button"
+                    onClick={() => {
+                      const suc = localSeleccionado.sucursales?.[0];
+                      const destLat = suc?.latitud || "";
+                      const destLng = suc?.longitud || "";
+                      const url = suc?.google_maps_url || localSeleccionado.google_maps_url || `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=${modoViaje.toLowerCase()}`;
+                      window.open(url, "_blank");
+                    }}
+                    className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors"
+                    title="Navegar en Google Maps app"
+                  >
+                    <ExternalLink size={14} />
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={cancelarRuta}
                     className="px-3 py-1.5 rounded-xl bg-red-50 text-red-700 font-bold text-xs border border-red-200 hover:bg-red-100 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
                   >
                     <X size={14} />
-                    <span>Cancelar</span>
+                    <span>{t("cancelRoute") || "Cancelar"}</span>
                   </button>
 
                   <button
@@ -1169,26 +1185,62 @@ export const ExplorarPage: React.FC = () => {
                   </button>
 
                   {directions ? (
-                    <button
-                      onClick={cancelarRuta}
-                      className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-red-200 active:scale-[0.98] transition-all cursor-pointer hover:bg-red-100"
-                    >
-                      <X size={16} />
-                      {t("cancelRoute") || "Cancelar ruta"}
-                    </button>
+                    <div className="flex-1 flex gap-2">
+                      <button
+                        onClick={cancelarRuta}
+                        className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 border border-red-200 active:scale-[0.98] transition-all cursor-pointer hover:bg-red-100"
+                      >
+                        <X size={16} />
+                        {t("cancelRoute") || "Cancelar ruta"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const suc = localSeleccionado.sucursales?.[0];
+                          const destLat = suc?.latitud || "";
+                          const destLng = suc?.longitud || "";
+                          const url = suc?.google_maps_url || localSeleccionado.google_maps_url || `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=${modoViaje.toLowerCase()}`;
+                          window.open(url, "_blank");
+                        }}
+                        className="py-2.5 px-3 rounded-2xl bg-blue-50 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-blue-200 hover:bg-blue-100 active:scale-[0.98] transition-all cursor-pointer"
+                        title="Abrir en Google Maps"
+                      >
+                        <ExternalLink size={15} />
+                        <span>Google Maps</span>
+                      </button>
+                    </div>
                   ) : (
-                    <button
-                      onClick={() => calcularRuta()}
-                      disabled={cargandoRuta}
-                      className="flex-1 py-2.5 rounded-2xl bg-[#7C0A1E] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer hover:bg-[#630718] shadow-xs"
-                    >
-                      <Navigation size={16} />
-                      {cargandoRuta
-                        ? t("calculating") || "Calculando..."
-                        : modoViaje === "WALKING"
-                        ? t("startRouteFoot") || "A pie"
-                        : t("startRouteCar") || "Auto"}
-                    </button>
+                    <div className="flex-1 flex gap-2">
+                      <button
+                        onClick={() => calcularRuta()}
+                        disabled={cargandoRuta}
+                        className="flex-1 py-2.5 rounded-2xl bg-[#7C0A1E] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer hover:bg-[#630718] shadow-xs"
+                      >
+                        <Navigation size={16} />
+                        {cargandoRuta
+                          ? t("calculating") || "Calculando..."
+                          : modoViaje === "WALKING"
+                          ? t("startRouteFoot") || "A pie"
+                          : t("startRouteCar") || "Auto"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const suc = localSeleccionado.sucursales?.[0];
+                          const destLat = suc?.latitud || "";
+                          const destLng = suc?.longitud || "";
+                          const url = suc?.google_maps_url || localSeleccionado.google_maps_url || `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=${modoViaje.toLowerCase()}`;
+                          window.open(url, "_blank");
+                        }}
+                        className="py-2.5 px-3 rounded-2xl bg-[#FAF8F5] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 border border-[#EFE7DE] hover:bg-[#EFE7DE] active:scale-[0.98] transition-all cursor-pointer"
+                        title="Abrir en Google Maps"
+                      >
+                        <ExternalLink size={15} className="text-[#7C0A1E]" />
+                        <span>Maps</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

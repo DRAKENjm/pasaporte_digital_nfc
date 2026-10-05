@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
+import { useLanguage } from "../../context/LanguageContext";
 
 function frameColorForLevel(nivel?: string) {
   const n = (nivel || "").toLowerCase();
@@ -16,6 +17,7 @@ function frameColorForLevel(nivel?: string) {
 export const PasaporteNfcPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [escaneando, setEscaneando] = useState(false);
   const [exito, setExito] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
@@ -135,7 +137,7 @@ export const PasaporteNfcPage: React.FC = () => {
           <ArrowLeft size={18} />
         </button>
         <h1 className="text-base font-bold text-[#2D1A1E]">
-          {vista === "tarjeta" ? "Mi Tarjeta NFC y QR" : "Validar NFC"}
+          {vista === "tarjeta" ? (t("myCard") || "Mi Tarjeta NFC") : "Validar NFC"}
         </h1>
         <div className="flex items-center space-x-1 bg-[#7C0A1E] text-white px-2.5 py-1 rounded-full text-[11px] font-bold">
           <Wifi size={13} className="rotate-90" />

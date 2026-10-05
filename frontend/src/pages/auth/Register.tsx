@@ -56,8 +56,8 @@ export const Register: React.FC = () => {
     e.preventDefault();
     stopScan();
 
-    if (!uidNfc.trim()) {
-      showToast("Debes escanear o ingresar el código de tu tarjeta física NFC para registrarte", "error");
+    if (tieneTarjetaFisica && !uidNfc.trim()) {
+      showToast("Ingresa o escanea el código de tu tarjeta física NFC, o desactiva la opción si te registrarás sin ella.", "error");
       return;
     }
 

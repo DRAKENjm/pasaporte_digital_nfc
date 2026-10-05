@@ -18,6 +18,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
+import { useLanguage } from "../../context/LanguageContext";
 import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
 
 interface DashboardData {
@@ -47,6 +48,7 @@ function getCachedHomeData() {
 
 export const HomePage: React.FC = () => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   // Hidratación inmediata desde caché: CERO segundos en blanco
@@ -267,7 +269,7 @@ export const HomePage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <span className="block text-[10px] uppercase font-bold text-[#8E7D7D] tracking-wider mb-0.5">Nivel de Socio</span>
+                <span className="block text-[10px] uppercase font-bold text-[#8E7D7D] tracking-wider mb-0.5">{t("memberLevel") || "Nivel de Socio"}</span>
                 <span className="block text-lg font-black text-[#2D1A1E] leading-none">{nivelActual}</span>
               </div>
             </div>
@@ -304,8 +306,8 @@ export const HomePage: React.FC = () => {
           <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
             <CreditCard size={22} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">Mi Tarjeta</span>
-          <span className="text-[9px] text-[#8E7D7D] mt-0.5">Ver pasaporte</span>
+          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("myCard") || "Mi Tarjeta"}</span>
+          <span className="text-[9px] text-[#8E7D7D] mt-0.5">{t("viewPassport") || "Ver pasaporte"}</span>
         </Link>
 
         {/* Locales -> Ahora con icono Store y ruta dedicada /user/locales */}
@@ -316,7 +318,7 @@ export const HomePage: React.FC = () => {
           <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
             <Store size={22} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">Locales</span>
+          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("venues") || "Locales"}</span>
           <span className="text-[9px] text-[#8E7D7D] mt-0.5">Establecimientos</span>
         </Link>
 
@@ -327,8 +329,8 @@ export const HomePage: React.FC = () => {
           <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
             <Stamp size={22} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">Mis Sellos</span>
-          <span className="text-[9px] text-[#8E7D7D] mt-0.5">Tu colección</span>
+          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("myStamps") || "Mis Sellos"}</span>
+          <span className="text-[9px] text-[#8E7D7D] mt-0.5">Colección</span>
         </Link>
 
         <Link
@@ -338,8 +340,8 @@ export const HomePage: React.FC = () => {
           <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
             <Gift size={22} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">Premios</span>
-          <span className="text-[9px] text-[#8E7D7D] mt-0.5">Canjear beneficios</span>
+          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("rewards") || "Premios"}</span>
+          <span className="text-[9px] text-[#8E7D7D] mt-0.5">{t("redeemNow") || "Canjear"}</span>
         </Link>
       </div>
 
@@ -347,13 +349,13 @@ export const HomePage: React.FC = () => {
       <div className="w-full">
         <div className="flex items-center justify-between mb-3 px-0.5">
           <h2 className="text-base sm:text-lg font-bold text-[#2D1A1E]">
-            Descubre nuevas experiencias
+            {t("discover") || "Descubre nuevas experiencias"}
           </h2>
           <Link
             to="/user/locales"
             className="text-xs font-semibold text-[#7C0A1E] hover:underline flex items-center gap-0.5"
           >
-            Ver todos <ChevronRight size={14} />
+            {t("seeAll") || "Ver todos"} <ChevronRight size={14} />
           </Link>
         </div>
 
@@ -453,12 +455,12 @@ export const HomePage: React.FC = () => {
       {/* 5. "Tus últimos sellos" (Solo muestra sellos REALES recibidos) */}
       <div className="w-full bg-white/70 backdrop-blur-xs rounded-[2rem] p-4 sm:p-5 border border-[#EFE7DE] shadow-[0_4px_20px_rgba(45,26,30,0.03)]">
         <div className="flex items-center justify-between mb-3.5 px-0.5">
-          <h3 className="text-base font-bold text-[#2D1A1E]">Tus últimos sellos</h3>
+          <h3 className="text-base font-bold text-[#2D1A1E]">{t("latestStamps") || "Tus últimos sellos"}</h3>
           <Link
             to="/user/mis-sellos"
             className="text-xs font-semibold text-[#7C0A1E] hover:underline flex items-center gap-0.5"
           >
-            Ver todos <ChevronRight size={14} />
+            {t("seeAll") || "Ver todos"} <ChevronRight size={14} />
           </Link>
         </div>
 

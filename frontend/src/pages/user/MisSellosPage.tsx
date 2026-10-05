@@ -35,6 +35,7 @@ import { CategoryIcon } from "../../components/common/CategoryIcon";
 import { StampShareModal } from "../../components/common/StampShareModal";
 import { StampShareData } from "../../utils/shareStampCard";
 import { useAuth } from "../../hooks/useAuth";
+import { useLanguage } from "../../context/LanguageContext";
 
 interface SelloDetalle {
   id_sello: number;
@@ -68,6 +69,7 @@ interface EstablecimientoSellos {
 
 export const MisSellosPage: React.FC = () => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [localesSellos, setLocalesSellos] = useState<EstablecimientoSellos[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState("Todas");
@@ -251,7 +253,7 @@ export const MisSellosPage: React.FC = () => {
               <ArrowLeft size={18} />
             </Link>
             <div>
-              <h1 className="text-lg font-bold text-[#2D1A1E] leading-tight">Mis Sellos</h1>
+              <h1 className="text-lg font-bold text-[#2D1A1E] leading-tight">{t("myStamps") || "Mis Sellos"}</h1>
               <p className="text-[11px] text-[#6E5D53]">
                 {totalSellos === 1 ? "1 sello registrado" : `${totalSellos} sellos registrados`} ·{" "}
                 {localesConSellosCount} de {localesSellos.length} visitados

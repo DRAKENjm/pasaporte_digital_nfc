@@ -2,8 +2,10 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
 import { Star, ArrowUpRight, ArrowDownLeft, Bell } from "lucide-react";
 import api from "../../services/api";
+import { useLanguage } from "../../context/LanguageContext";
 
 export const ActividadPage: React.FC = () => {
+  const { t } = useLanguage();
   // Orden: Visitas y Sellos primero, luego Puntos, luego Avisos
   const [tab, setTab] = useState<"visitas" | "movimientos" | "notificaciones">("visitas");
   const [data, setData] = useState<any | null>(null);
@@ -54,7 +56,7 @@ export const ActividadPage: React.FC = () => {
   return (
     <div className="w-full min-h-screen bg-[#FAF8F5] p-5 pb-8 flex flex-col">
       <div className="flex items-center justify-between mb-4 pt-2">
-        <h1 className="text-xl font-bold text-[#2D1A1E]">Tu Actividad</h1>
+        <h1 className="text-xl font-bold text-[#2D1A1E]">{t("yourActivity") || "Tu Actividad"}</h1>
         <div className="flex items-center space-x-1.5 bg-[#FAF8F5] border border-[#EFE7DE] px-3 py-1.5 rounded-full text-xs font-bold text-[#7C0A1E]">
           <Star size={14} fill="#C5A059" className="text-[#C5A059]" />
           <span>{data?.resumen?.puntos_actuales ?? 0} pts</span>
@@ -69,7 +71,7 @@ export const ActividadPage: React.FC = () => {
             tab === "visitas" ? "bg-[#7C0A1E] text-white shadow-sm" : "text-[#8E7D7D]"
           }`}
         >
-          Visitas y Sellos
+          {t("visitsAndStamps") || "Visitas y Sellos"}
         </button>
         <button
           onClick={() => setTab("movimientos")}
@@ -77,7 +79,7 @@ export const ActividadPage: React.FC = () => {
             tab === "movimientos" ? "bg-[#7C0A1E] text-white shadow-sm" : "text-[#8E7D7D]"
           }`}
         >
-          Puntos
+          {t("points") || "Puntos"}
         </button>
         <button
           onClick={() => setTab("notificaciones")}
@@ -85,7 +87,7 @@ export const ActividadPage: React.FC = () => {
             tab === "notificaciones" ? "bg-[#7C0A1E] text-white shadow-sm" : "text-[#8E7D7D]"
           }`}
         >
-          Avisos {unread > 0 && `(${unread})`}
+          {t("notices") || "Avisos"} {unread > 0 && `(${unread})`}
           {unread > 0 && tab !== "notificaciones" && (
             <span className="absolute top-1 right-2 w-2 h-2 bg-[#C5A059] rounded-full animate-pulse" />
           )}
