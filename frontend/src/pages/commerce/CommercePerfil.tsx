@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Store, MapPin, Award, Upload, Camera, Save, Phone, Mail, FileText, CheckCircle2, Clock, Globe } from "lucide-react";
+import { Store, MapPin, Award, Upload, Camera, Save, Phone, Mail, FileText, CheckCircle2, Clock, Globe, Sparkles, DollarSign } from "lucide-react";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useUI } from "../../hooks/useUI";
@@ -26,6 +26,7 @@ interface SucursalAsignada {
   programa_nombre: string | null;
   meta_sellos: number | null;
   puntos_por_visita: number | string | null;
+  monto_por_punto?: number | string | null;
 }
 
 export const CommercePerfil: React.FC = () => {
@@ -45,6 +46,9 @@ export const CommercePerfil: React.FC = () => {
   const [telefono, setTelefono] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [horario, setHorario] = useState<string>("");
+  const [direccion, setDireccion] = useState<string>("");
+  const [googleMapsUrl, setGoogleMapsUrl] = useState<string>("");
+  const [montoPorPunto, setMontoPorPunto] = useState<string>("10");
   const [descripcion, setDescripcion] = useState<string>("");
 
   useEffect(() => {
@@ -60,9 +64,12 @@ export const CommercePerfil: React.FC = () => {
           const first = list[0];
           setLogo(first.logo || "");
           setImagenPortada(first.imagen_portada || "");
-          setTelefono(first.telefono_establecimiento || "");
+          setTelefono(first.telefono_establecimiento || first.telefono || "");
           setEmail(first.email || "");
           setHorario(first.horario || "");
+          setDireccion(first.direccion || "");
+          setGoogleMapsUrl(first.google_maps_url || "");
+          setMontoPorPunto(String(first.monto_por_punto || 10));
           setDescripcion(first.descripcion || "");
         }
       })
@@ -128,11 +135,14 @@ export const CommercePerfil: React.FC = () => {
         telefono: telefono.trim(),
         email: email.trim(),
         horario: horario.trim(),
+        direccion: direccion.trim(),
+        google_maps_url: googleMapsUrl.trim(),
+        monto_por_punto: Number(montoPorPunto) > 0 ? Number(montoPorPunto) : 10,
         descripcion: descripcion.trim(),
         logo: logo || undefined,
         imagen_portada: imagenPortada || undefined,
       });
-      showToast("Información de contacto y horarios actualizada correctamente", "success");
+      showToast("Información de contacto, ubicación y reglas de puntos actualizada correctamente", "success");
     } catch (err: any) {
       showToast(err.response?.data?.message || "Error al guardar cambios", "error");
     } finally {
@@ -281,6 +291,68 @@ export const CommercePerfil: React.FC = () => {
                   </label>
                   <label className="space-y-1 block sm:col-span-2">
                     <span className="font-bold text-[#736868] flex items-center gap-1.5">
+                      <MapPin size={12} className="text-[#7C0A1E]" />
+                      Dirección de la Sede Principal
+                    </span>
+                    <input
+                      type="text"
+                      value={direccion}
+                      onChange={(e) => setDireccion(e.target.value)}
+                      placeholder="Ej. Av. Balta 450, Chiclayo"
+                      className="input-base text-xs"
+                    />
+                  </label>
+                  <label className="space-y-1 block sm:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#736868] flex items-center gap-1.5">
+                        <Globe size={12} className="text-[#7C0A1E]" />
+                        Enlace de Ubicación en Google Maps
+                      </span>
+                      {googleMapsUrl && (
+                        <a
+                          href={googleMapsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-[#7C0A1E] font-bold hover:underline flex items-center gap-0.5"
+                        >
+                          Ver en Maps ↗
+                        </a>
+                      )}
+                    </div>
+                    <input
+                      type="url"
+                      value={googleMapsUrl}
+                      onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                      placeholder="Ej. https://maps.app.goo.gl/... o https://www.google.com/maps/place/..."
+                      className="input-base text-xs font-mono"
+                    />
+                    <p className="text-[10px] text-[#8E7D7D] pt-0.5">
+                      Las coordenadas GPS se actualizan automáticamente al ingresar el enlace de Google Maps.
+                    </p>
+                  </label>
+                  <label className="space-y-1 block">
+                    <span className="font-bold text-[#736868] flex items-center gap-1.5">
+                      <Sparkles size={12} className="text-[#C5A059]" />
+                      Regla de Puntos por Consumo (Soles por 1 Punto)
+                    </span>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-xs font-bold text-[#8E7D7D]">S/</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={montoPorPunto}
+                        onChange={(e) => setMontoPorPunto(e.target.value)}
+                        placeholder="10"
+                        className="input-base text-xs pl-8 font-bold"
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#8E7D7D] pt-0.5">
+                      El cliente ganará 1 punto por cada S/ {montoPorPunto || 10} gastados en su compra.
+                    </p>
+                  </label>
+                  <label className="space-y-1 block sm:col-span-2">
+                    <span className="font-bold text-[#736868] flex items-center gap-1.5">
                       <FileText size={12} className="text-[#7C0A1E]" />
                       Descripción de Marca / Sobre Nosotros
                     </span>
@@ -300,13 +372,13 @@ export const CommercePerfil: React.FC = () => {
                     className="px-4 py-2 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                   >
                     {savingPerfil ? <Spinner size={14} /> : <Save size={14} />}
-                    <span>Guardar datos de contacto</span>
+                    <span>Guardar datos y reglas del local</span>
                   </button>
                 </div>
               </form>
 
               {/* 3. Programa de Sellos y Puntos */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div className="p-4 rounded-2xl bg-white border border-[#EFE7DE]">
                   <span className="font-bold text-[#8E7D7D] uppercase text-[10px] block">Programa de Sellos Digital</span>
                   <p className="flex items-center gap-2 font-bold text-[#2D1A1E] text-sm mt-1">
@@ -315,9 +387,15 @@ export const CommercePerfil: React.FC = () => {
                   </p>
                 </div>
                 <div className="p-4 rounded-2xl bg-white border border-[#EFE7DE]">
-                  <span className="font-bold text-[#8E7D7D] uppercase text-[10px] block">Puntos Acreditados por Visita</span>
+                  <span className="font-bold text-[#8E7D7D] uppercase text-[10px] block">Puntos por Sello Diario</span>
                   <p className="font-black text-[#C5A059] text-base mt-1">
-                    {local.id_programa ? `+${local.puntos_por_visita ?? 20} puntos` : "No aplica"}
+                    {local.id_programa ? `+${local.puntos_por_visita ?? 20} pts` : "No aplica"}
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-white border border-[#EFE7DE]">
+                  <span className="font-bold text-[#8E7D7D] uppercase text-[10px] block">Puntos por Consumo</span>
+                  <p className="font-black text-[#7C0A1E] text-base mt-1">
+                    +1 pt cada S/ {montoPorPunto || 10}
                   </p>
                 </div>
               </div>
@@ -336,6 +414,17 @@ export const CommercePerfil: React.FC = () => {
                         <h4 className="text-xs font-bold text-[#2D1A1E]">{sucursal.nombre}</h4>
                         <p className="text-[11px] text-[#8E7D7D]">{sucursal.direccion || "Dirección no registrada"}</p>
                         <p className="text-[11px] text-[#8E7D7D]">Teléfono: {sucursal.telefono || "No registrado"}</p>
+                        {sucursal.google_maps_url && (
+                          <a
+                            href={sucursal.google_maps_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-[#7C0A1E] font-medium flex items-center gap-1 pt-0.5 hover:underline"
+                          >
+                            <Globe size={11} />
+                            <span>Ver ubicación en Google Maps ↗</span>
+                          </a>
+                        )}
                         {sucursal.horario && (
                           <p className="text-[11px] text-[#7C0A1E] font-medium flex items-center gap-1 pt-0.5">
                             <Clock size={11} />

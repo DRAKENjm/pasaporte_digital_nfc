@@ -15,5 +15,7 @@ router.get("/mis-sellos", ActivityController.misSellos);
 // Notificaciones del usuario
 router.get("/notificaciones", ActivityController.notificaciones);
 router.patch("/notificaciones/:id/leer", ActivityController.marcarNotificacionLeida);
+router.delete("/notificaciones/:id", ActivityController.eliminarNotificacion);
+router.delete("/notificaciones", ActivityController.vaciarNotificaciones);
 
 export default router;

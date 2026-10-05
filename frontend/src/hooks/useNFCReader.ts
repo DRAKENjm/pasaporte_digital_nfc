@@ -43,12 +43,19 @@ export const useNFCReader = () => {
         reader.onreadingerror = () =>
           setError("No se pudo leer la etiqueta NDEF. Acércala nuevamente.");
       } catch (e: any) {
-        if (e.name !== "AbortError")
-          setError(
-            e.name === "NotAllowedError"
-              ? "Permiso NFC denegado. Revisa los permisos del navegador."
-              : "No se pudo iniciar NFC. Comprueba que esté activado.",
-          );
+        if (e.name !== "AbortError") {
+          let msg = "No se pudo iniciar el lector NFC.";
+          if (e.name === "NotAllowedError") {
+            msg = "Permiso NFC denegado en el navegador. Concede permisos para continuar.";
+          } else if (e.name === "NotSupportedError") {
+            msg = "Este dispositivo o navegador no cuenta con soporte de hardware NFC. Puedes usar el código QR o un lector USB.";
+          } else if (e.name === "SecurityError") {
+            msg = "NFC requiere una conexión segura (HTTPS) para funcionar en tu dispositivo.";
+          } else {
+            msg = "No se pudo iniciar NFC. Comprueba que tu celular tenga antena NFC física y que esté activada en los Ajustes del sistema.";
+          }
+          setError(msg);
+        }
         if (abort.current === controller) stopScan();
       }
     },

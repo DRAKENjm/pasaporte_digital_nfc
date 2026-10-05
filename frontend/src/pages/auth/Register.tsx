@@ -1,7 +1,7 @@
 import { LegalLink } from "../../components/common/LegalLink";
 import React, { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, UserPlus, ShieldCheck, CreditCard, Wifi, CheckCircle2, QrCode, Sparkles, Gift } from "lucide-react";
+import { ArrowRight, UserPlus, ShieldCheck, CreditCard, Wifi, CheckCircle2, QrCode, Sparkles, Gift, Smartphone } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { useUI } from "../../hooks/useUI";
 import { useNFCReader } from "../../hooks/useNFCReader";
@@ -216,11 +216,11 @@ export const Register: React.FC = () => {
                       : "bg-[#7C0A1E] text-white hover:bg-[#600616]"
                   }`}
                 >
-                  <Wifi size={14} className="rotate-90" />
+                  <Smartphone size={14} />
                   <span>
                     {isScanning
-                      ? "📱 Acerca la tarjeta a la parte trasera del teléfono"
-                      : "📱 Acercar tarjeta al lector NFC del teléfono"}
+                      ? "Acerca la tarjeta a la parte trasera del teléfono"
+                      : "Acercar tarjeta al lector NFC del teléfono"}
                   </span>
                 </button>
               )}

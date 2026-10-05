@@ -191,13 +191,32 @@ export const HomePage: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowNotifDropdown(false)}
-                  className="w-7 h-7 rounded-full bg-[#FAF8F5] text-[#8E7D7D] hover:text-[#2D1A1E] flex items-center justify-center transition-colors"
-                >
-                  <X size={15} />
-                </button>
+                <div className="flex items-center space-x-1">
+                  {notificaciones.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await api.delete("/activity/notificaciones");
+                          setNotificaciones([]);
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                      className="text-[10px] font-bold text-[#8E7D7D] hover:text-[#7C0A1E] px-2 py-1 rounded-lg hover:bg-[#FAF8F5] transition-colors"
+                      title="Limpiar todas las notificaciones"
+                    >
+                      Limpiar todas
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowNotifDropdown(false)}
+                    className="w-7 h-7 rounded-full bg-[#FAF8F5] text-[#8E7D7D] hover:text-[#2D1A1E] flex items-center justify-center transition-colors"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
               </div>
 
               {/* Lista */}
@@ -208,23 +227,64 @@ export const HomePage: React.FC = () => {
                     No tienes avisos pendientes
                   </div>
                 ) : (
-                  notificaciones.slice(0, 5).map((n) => (
+                  notificaciones.slice(0, 6).map((n) => (
                     <div
                       key={n.id_notificacion}
-                      className={`p-2.5 rounded-xl transition-colors ${
+                      onClick={async () => {
+                        if (!n.leida) {
+                          try {
+                            await api.patch(`/activity/notificaciones/${n.id_notificacion}/leer`);
+                            setNotificaciones((prev) =>
+                              prev.map((item) =>
+                                item.id_notificacion === n.id_notificacion
+                                  ? { ...item, leida: 1 }
+                                  : item
+                              )
+                            );
+                          } catch {
+                            /* ignore */
+                          }
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl transition-colors cursor-pointer group relative ${
                         n.leida ? "bg-white" : "bg-[#FFF9F5]"
                       }`}
                     >
                       <div className="flex items-start justify-between">
-                        <h4 className="text-xs font-bold text-[#2D1A1E] leading-snug">
-                          {n.titulo}
-                        </h4>
-                        <span className="text-[9px] text-[#8E7D7D] ml-2 shrink-0">
-                          {new Date(n.fecha_creacion).toLocaleDateString("es-PE", {
-                            day: "2-digit",
-                            month: "short",
-                          })}
-                        </span>
+                        <div className="flex items-center space-x-1.5 flex-1 min-w-0">
+                          {!n.leida && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#7C0A1E] shrink-0" />
+                          )}
+                          <h4 className="text-xs font-bold text-[#2D1A1E] leading-snug truncate">
+                            {n.titulo}
+                          </h4>
+                        </div>
+                        <div className="flex items-center space-x-1 shrink-0 ml-2">
+                          <span className="text-[9px] text-[#8E7D7D]">
+                            {new Date(n.fecha_creacion).toLocaleDateString("es-PE", {
+                              day: "2-digit",
+                              month: "short",
+                            })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await api.delete(`/activity/notificaciones/${n.id_notificacion}`);
+                                setNotificaciones((prev) =>
+                                  prev.filter((item) => item.id_notificacion !== n.id_notificacion)
+                                );
+                              } catch {
+                                /* ignore */
+                              }
+                            }}
+                            className="w-5 h-5 flex items-center justify-center text-[#8E7D7D] hover:text-[#7C0A1E] hover:bg-rose-50 rounded transition-colors"
+                            title="Eliminar notificación"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-[11px] text-[#8E7D7D] mt-1 leading-relaxed">
                         {n.mensaje}

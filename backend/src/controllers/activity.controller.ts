@@ -129,6 +129,47 @@ export const ActivityController = {
     }
   },
 
+  /** Eliminar una notificación específica para siempre */
+  async eliminarNotificacion(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const idUsuario = req.user!.id;
+      await query(
+        `DELETE FROM notificaciones 
+         WHERE id_notificacion = $1 AND id_usuario = $2`,
+        [id, idUsuario],
+      );
+      sendResponse(res, 200, { success: true }, "Notificación eliminada permanentemente.");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Eliminar todas las notificaciones leídas o todas las notificaciones del usuario */
+  async vaciarNotificaciones(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const soloLeidas = req.query.solo_leidas === "true";
+
+      if (soloLeidas) {
+        await query(
+          `DELETE FROM notificaciones 
+           WHERE id_usuario = $1 AND leida = 1`,
+          [idUsuario],
+        );
+      } else {
+        await query(
+          `DELETE FROM notificaciones 
+           WHERE id_usuario = $1`,
+          [idUsuario],
+        );
+      }
+      sendResponse(res, 200, { success: true }, "Notificaciones eliminadas.");
+    } catch (error) {
+      next(error);
+    }
+  },
+
   /** Sellos del usuario agrupados por establecimiento y categoría */
   async misSellos(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {

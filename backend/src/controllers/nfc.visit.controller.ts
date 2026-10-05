@@ -94,14 +94,31 @@ export const NfcVisitController = {
 
       // Validar si el cliente ya recibió un sello hoy en este establecimiento si se proveyó la sucursal
       let yaTieneSelloHoy = false;
+      let montoPorPunto = 10;
+      let puntosPorVisitaLocal = 20;
       const { id_sucursal } = req.body;
       if (id_sucursal) {
         const sucEstRes = await query(
-          `SELECT id_establecimiento FROM sucursales WHERE id_sucursal = $1`,
+          `SELECT s.id_establecimiento, e.monto_por_punto,
+                  COALESCE(ps.puntos_por_visita, 20) AS puntos_por_visita
+           FROM sucursales s
+           JOIN establecimientos e ON e.id_establecimiento = s.id_establecimiento
+           LEFT JOIN LATERAL (
+             SELECT puntos_por_visita FROM programas_sellos
+             WHERE id_establecimiento = e.id_establecimiento AND estado = 'ACTIVO'
+             ORDER BY id_programa DESC LIMIT 1
+           ) ps ON true
+           WHERE s.id_sucursal = $1`,
           [id_sucursal]
         );
         if (sucEstRes.rows[0]) {
           const estId = sucEstRes.rows[0].id_establecimiento;
+          if (sucEstRes.rows[0].monto_por_punto != null) {
+            montoPorPunto = Number(sucEstRes.rows[0].monto_por_punto);
+          }
+          if (sucEstRes.rows[0].puntos_por_visita != null) {
+            puntosPorVisitaLocal = Number(sucEstRes.rows[0].puntos_por_visita);
+          }
           const sellosHoyRes = await query(
             `SELECT COUNT(*)::int AS total_hoy
              FROM sellos_digitales s
@@ -123,13 +140,14 @@ export const NfcVisitController = {
         qr_respaldo: data.qr_respaldo || data.codigo_interno,
         metodo_identificacion: (uid_nfc && !qr_code) ? "NFC" : "QR_RESPALDO",
         ya_tiene_sello_hoy: yaTieneSelloHoy,
+        monto_por_punto: montoPorPunto,
+        puntos_por_visita: puntosPorVisitaLocal,
         cliente: {
           id_cliente: data.id_cliente,
           codigo_cliente: data.codigo_cliente,
           nombres: data.nombres,
           apellidos: data.apellidos,
           foto_perfil: data.foto_perfil,
-          puntos_actuales: data.puntos_actuales,
         },
       }, "Cliente identificado con éxito.");
     } catch (error) {
@@ -276,6 +294,15 @@ export const NfcVisitController = {
       );
       const ordenSello = (totalSellosClienteRes.rows[0].total % programa.meta_sellos) + 1;
 
+      // Obtener monto_por_punto configurado en el establecimiento
+      const estConfigRes = await client.query(
+        `SELECT monto_por_punto FROM establecimientos WHERE id_establecimiento = $1`,
+        [establecimientoId],
+      );
+      const ratioMontoPorPunto = Number(estConfigRes.rows[0]?.monto_por_punto) > 0
+        ? Number(estConfigRes.rows[0].monto_por_punto)
+        : 10;
+
       // 1. Puntos Base (solo si no ha recibido sello hoy)
       const puntosBase = !yaTieneSelloHoy ? (Number(programa.puntos_por_sello) || 0) : 0;
 
@@ -301,18 +328,24 @@ export const NfcVisitController = {
         tagFrecuencia = " (+10 pts bono racha semanal)";
       }
 
-      // 3. Bono por Consumo / Monto de compra (+1 punto por cada S/ 5 gastados)
+      // 3. Bono por Consumo / Monto de compra según el ratio configurado por el local
       let bonoConsumo = 0;
       let tagConsumo = "";
-      if (monto_compra !== undefined && Number(monto_compra) > 0) {
+      if (monto_compra !== undefined && Number(monto_compra) > 0 && ratioMontoPorPunto > 0) {
         const montoNum = Number(monto_compra);
-        bonoConsumo = Math.floor(montoNum / 5);
+        bonoConsumo = Math.floor(montoNum / ratioMontoPorPunto);
         if (bonoConsumo > 0) {
           tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
         }
       }
 
-      const puntosOtorgados = puntosBase + bonoFrecuencia + bonoConsumo;
+      // 4. Puntos de Regalo / Cortesía opcionales ingresados por el cajero
+      const puntosRegalo = (req.body.puntos_regalo && !isNaN(Number(req.body.puntos_regalo)))
+        ? Math.max(0, Math.floor(Number(req.body.puntos_regalo)))
+        : 0;
+      const tagRegalo = puntosRegalo > 0 ? ` (+${puntosRegalo} pts de cortesía)` : "";
+
+      const puntosOtorgados = puntosBase + bonoFrecuencia + bonoConsumo + puntosRegalo;
 
       let selloId: number | null = null;
 
@@ -351,8 +384,8 @@ export const NfcVisitController = {
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
       const descripcionMovimiento = yaTieneSelloHoy
-        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagFrecuencia}`
-        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagFrecuencia}${tagConsumo}`;
+        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagFrecuencia}${tagRegalo}`
+        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagFrecuencia}${tagConsumo}${tagRegalo}`;
 
       // 4. Crear Movimiento Contable de Puntos (Ledger) si se otorgaron puntos
       if (puntosOtorgados > 0) {

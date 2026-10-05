@@ -1,4 +1,6 @@
 import { Response, NextFunction } from "express";
+import http from "http";
+import https from "https";
 import { query, pool } from "../config/database";
 import { ApiError, sendResponse } from "../utils";
 import { AuthenticatedRequest } from "../types";
@@ -73,6 +75,7 @@ export const EstablishmentsController = {
                 e.id_establecimiento, e.nombre_comercial, e.razon_social, e.ruc,
                 e.email, e.telefono AS telefono_establecimiento,
                 e.logo, e.imagen_portada, e.descripcion,
+                COALESCE(e.monto_por_punto, 10) AS monto_por_punto,
                 cat.icono_url AS categoria_icono, cat.nombre AS categoria_nombre,
                 ps.id_programa, ps.nombre AS programa_nombre, ps.meta_sellos,
                 CASE WHEN ps.id_programa IS NOT NULL
@@ -110,7 +113,7 @@ export const EstablishmentsController = {
   async actualizarMiPerfil(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const idUsuario = req.user!.id;
-      const { logo, imagen_portada, telefono, email, descripcion, horario, id_sucursal } = req.body;
+      const { logo, imagen_portada, telefono, email, descripcion, horario, id_sucursal, google_maps_url, direccion, monto_por_punto } = req.body;
 
       // Obtener el establecimiento del usuario
       const sucRes = await query(
@@ -130,15 +133,19 @@ export const EstablishmentsController = {
       const idEst = sucRes.rows[0].id_establecimiento;
       const idSucTarget = sucRes.rows[0].id_sucursal;
 
+      const hasMontoPorPunto = monto_por_punto !== undefined && !isNaN(Number(monto_por_punto)) && Number(monto_por_punto) > 0;
+      const montoPorPuntoVal = hasMontoPorPunto ? Number(monto_por_punto) : null;
+
       const updateRes = await query(
         `UPDATE establecimientos
          SET logo = COALESCE($1, logo),
              imagen_portada = COALESCE($2, imagen_portada),
              telefono = COALESCE($3, telefono),
              email = COALESCE($4, email),
-             descripcion = COALESCE($5, descripcion)
+             descripcion = COALESCE($5, descripcion),
+             monto_por_punto = CASE WHEN $7::boolean THEN $8::numeric ELSE monto_por_punto END
          WHERE id_establecimiento = $6
-         RETURNING id_establecimiento, nombre_comercial, logo, imagen_portada, telefono, email, descripcion`,
+         RETURNING id_establecimiento, nombre_comercial, logo, imagen_portada, telefono, email, descripcion, monto_por_punto`,
         [
           logo !== undefined ? (logo || null) : null,
           imagen_portada !== undefined ? (imagen_portada || null) : null,
@@ -146,20 +153,92 @@ export const EstablishmentsController = {
           email !== undefined ? (email || null) : null,
           descripcion !== undefined ? (descripcion || null) : null,
           idEst,
+          hasMontoPorPunto,
+          montoPorPuntoVal,
         ],
       );
 
-      // Si se proporcionó horario, actualizar la sucursal asignada
-      if (horario !== undefined) {
+      // Si se proporcionó horario, dirección o enlace de Google Maps, actualizar la sucursal asignada
+      if (horario !== undefined || direccion !== undefined || google_maps_url !== undefined) {
+        let latVal: number | null = null;
+        let lngVal: number | null = null;
+
+        if (google_maps_url && typeof google_maps_url === "string" && google_maps_url.trim()) {
+          let targetUrl = google_maps_url.trim();
+          if (targetUrl.includes("maps.app.goo.gl") || targetUrl.includes("goo.gl/maps")) {
+            try {
+              const redirectUrl = await new Promise<string | null>((resolve) => {
+                const client = targetUrl.startsWith("https:") ? https : http;
+                const reqHttp = client.get(targetUrl, { timeout: 4000 }, (res) => {
+                  resolve(res.headers.location || null);
+                });
+                reqHttp.on("error", () => resolve(null));
+                reqHttp.on("timeout", () => {
+                  reqHttp.destroy();
+                  resolve(null);
+                });
+              });
+              if (redirectUrl) targetUrl = redirectUrl;
+            } catch {}
+          }
+
+          const pinMatch = targetUrl.match(/!3d(-?\d+\.?\d+)!4d(-?\d+\.?\d+)/);
+          if (pinMatch) {
+            latVal = parseFloat(pinMatch[1]);
+            lngVal = parseFloat(pinMatch[2]);
+          } else {
+            const destMatch = targetUrl.match(/destination=(-?\d+\.?\d+),(-?\d+\.?\d+)/);
+            if (destMatch) {
+              latVal = parseFloat(destMatch[1]);
+              lngVal = parseFloat(destMatch[2]);
+            } else {
+              const dirMatch = targetUrl.match(/!2d(-?\d+\.?\d+)!2d(-?\d+\.?\d+)/);
+              if (dirMatch) {
+                lngVal = parseFloat(dirMatch[1]);
+                latVal = parseFloat(dirMatch[2]);
+              } else {
+                const patterns = [
+                  /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+                  /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+                  /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+                  /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
+                ];
+                for (const pat of patterns) {
+                  const m = targetUrl.match(pat);
+                  if (m) {
+                    latVal = parseFloat(m[1]);
+                    lngVal = parseFloat(m[2]);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+
         await query(
           `UPDATE sucursales
-           SET horario = $1
-           WHERE id_sucursal = $2`,
-          [horario ? String(horario).trim() : null, idSucTarget],
+           SET horario = CASE WHEN $1::boolean THEN $2 ELSE horario END,
+               direccion = CASE WHEN $3::boolean THEN $4 ELSE direccion END,
+               google_maps_url = CASE WHEN $5::boolean THEN $6 ELSE google_maps_url END,
+               latitud = CASE WHEN $7::numeric IS NOT NULL THEN $7::numeric ELSE latitud END,
+               longitud = CASE WHEN $8::numeric IS NOT NULL THEN $8::numeric ELSE longitud END
+           WHERE id_sucursal = $9`,
+          [
+            horario !== undefined,
+            horario ? String(horario).trim() : null,
+            direccion !== undefined,
+            direccion ? String(direccion).trim() : null,
+            google_maps_url !== undefined,
+            google_maps_url ? String(google_maps_url).trim() : null,
+            latVal,
+            lngVal,
+            idSucTarget,
+          ],
         );
       }
 
-      sendResponse(res, 200, { ...updateRes.rows[0], horario }, "Perfil del establecimiento actualizado exitosamente");
+      sendResponse(res, 200, { ...updateRes.rows[0], horario, direccion, google_maps_url }, "Perfil del establecimiento actualizado exitosamente");
     } catch (error) {
       next(error);
     }

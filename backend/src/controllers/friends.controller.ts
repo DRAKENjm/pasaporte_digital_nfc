@@ -13,11 +13,27 @@ export class FriendsController {
 
       const result = await query(
         `SELECT a.id AS amistad_id, a.created_at AS amigos_desde,
-                u.id AS amigo_id, u.nombres, u.apellidos, u.username, u.avatar_url,
-                np.nombre_rango AS nivel, np.color_hex AS nivel_color
+                u.id_usuario AS amigo_id, u.nombres, u.apellidos, u.foto_perfil AS avatar_url,
+                c.id_cliente, c.codigo_cliente,
+                (
+                  SELECT COALESCE(SUM(cantidad), 0)::int
+                  FROM movimientos_puntos
+                  WHERE id_cliente = c.id_cliente
+                ) AS puntos_actuales,
+                (
+                  SELECT COUNT(DISTINCT id_sucursal)::int
+                  FROM visitas
+                  WHERE id_cliente = c.id_cliente AND estado = 'CONFIRMADA'
+                ) AS locales_visitados,
+                (
+                  SELECT COUNT(*)::int
+                  FROM sellos_digitales s
+                  JOIN visitas v ON v.id_visita = s.id_visita
+                  WHERE v.id_cliente = c.id_cliente AND s.estado = 'OTORGADO'
+                ) AS total_sellos
          FROM amistades a
-         JOIN usuarios u ON (u.id = CASE WHEN a.usuario_solicitante_id = $1 THEN a.usuario_receptor_id ELSE a.usuario_solicitante_id END)
-         LEFT JOIN niveles_pasaporte np ON np.id = u.nivel_id
+         JOIN usuarios u ON (u.id_usuario = CASE WHEN a.usuario_solicitante_id = $1 THEN a.usuario_receptor_id ELSE a.usuario_solicitante_id END)
+         LEFT JOIN clientes c ON c.id_usuario = u.id_usuario
          WHERE (a.usuario_solicitante_id = $1 OR a.usuario_receptor_id = $1)
            AND a.estado = 'ACEPTADA'
          ORDER BY a.updated_at DESC`,
@@ -45,11 +61,11 @@ export class FriendsController {
 
       const result = await query(
         `SELECT a.id AS solicitud_id, a.created_at,
-                u.id AS solicitante_id, u.nombres, u.apellidos, u.username, u.avatar_url,
-                np.nombre_rango AS nivel, np.color_hex AS nivel_color
+                u.id_usuario AS solicitante_id, u.nombres, u.apellidos, u.foto_perfil AS avatar_url,
+                c.codigo_cliente
          FROM amistades a
-         JOIN usuarios u ON u.id = a.usuario_solicitante_id
-         LEFT JOIN niveles_pasaporte np ON np.id = u.nivel_id
+         JOIN usuarios u ON u.id_usuario = a.usuario_solicitante_id
+         LEFT JOIN clientes c ON c.id_usuario = u.id_usuario
          WHERE a.usuario_receptor_id = $1 AND a.estado = 'PENDIENTE'
          ORDER BY a.created_at DESC`,
         [userId],
@@ -267,4 +283,43 @@ export class FriendsController {
       next(error);
     }
   }
+
+  // 6. Buscar usuarios para agregar (por nombre o código de cliente)
+  static async buscarUsuarios(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user!.id;
+      const q = String(req.query.q || "").trim();
+
+      if (!q || q.length < 2) {
+        return sendResponse(res, 200, []);
+      }
+
+      const searchTerm = `%${q}%`;
+      const result = await query(
+        `SELECT u.id_usuario, u.nombres, u.apellidos, u.foto_perfil,
+                c.id_cliente, c.codigo_cliente,
+                (
+                  SELECT estado FROM amistades
+                  WHERE (usuario_solicitante_id = $1 AND usuario_receptor_id = u.id_usuario)
+                     OR (usuario_solicitante_id = u.id_usuario AND usuario_receptor_id = $1)
+                  LIMIT 1
+                ) AS relacion_estado
+         FROM usuarios u
+         JOIN clientes c ON c.id_usuario = u.id_usuario
+         WHERE u.id_usuario != $1
+           AND u.estado = 1
+           AND (
+             LOWER(u.nombres || ' ' || u.apellidos) ILIKE LOWER($2)
+             OR UPPER(c.codigo_cliente) ILIKE UPPER($2)
+           )
+         LIMIT 20`,
+        [userId, searchTerm],
+      );
+
+      return sendResponse(res, 200, result.rows);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
+

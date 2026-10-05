@@ -256,9 +256,18 @@ export const ExplorarPage: React.FC = () => {
       if (found) {
         setLocalSeleccionado(found);
         const suc = found.sucursales?.[0];
-        if (suc?.latitud) {
-          setMapCenter({ lat: Number(suc.latitud), lng: Number(suc.longitud) });
-          map?.panTo({ lat: Number(suc.latitud), lng: Number(suc.longitud) });
+        let latTarget = suc?.latitud ? Number(suc.latitud) : NaN;
+        let lngTarget = suc?.longitud ? Number(suc.longitud) : NaN;
+        if (isNaN(latTarget) || isNaN(lngTarget)) {
+          const parsed = parseCoordsFromUrl(suc?.google_maps_url || found.google_maps_url);
+          if (parsed) {
+            latTarget = parsed.lat;
+            lngTarget = parsed.lng;
+          }
+        }
+        if (!isNaN(latTarget) && !isNaN(lngTarget)) {
+          setMapCenter({ lat: latTarget, lng: lngTarget });
+          map?.panTo({ lat: latTarget, lng: lngTarget });
         }
       }
     } else if (lat && lng) {
@@ -449,8 +458,17 @@ export const ExplorarPage: React.FC = () => {
     setDirectionsVersion((v) => v + 1);
     setLocalSeleccionado(loc);
     const suc = loc.sucursales?.[0];
-    if (suc?.latitud && suc?.longitud) {
-      map?.panTo({ lat: Number(suc.latitud), lng: Number(suc.longitud) });
+    let latTarget = suc?.latitud ? Number(suc.latitud) : NaN;
+    let lngTarget = suc?.longitud ? Number(suc.longitud) : NaN;
+    if (isNaN(latTarget) || isNaN(lngTarget)) {
+      const parsed = parseCoordsFromUrl(suc?.google_maps_url || loc.google_maps_url);
+      if (parsed) {
+        latTarget = parsed.lat;
+        lngTarget = parsed.lng;
+      }
+    }
+    if (!isNaN(latTarget) && !isNaN(lngTarget)) {
+      map?.panTo({ lat: latTarget, lng: lngTarget });
       map?.setZoom(16);
     }
   };
@@ -471,12 +489,34 @@ export const ExplorarPage: React.FC = () => {
   // Extraer coordenadas de cualquier formato de URL de Google Maps si la sucursal no tiene lat/lng
   const parseCoordsFromUrl = (url?: string): { lat: number; lng: number } | null => {
     if (!url || !url.trim()) return null;
+
+    // 1. Coordenadas de pin específico: !3dlat!4dlng
+    const pinMatch = url.match(/!3d(-?\d+\.?\d+)!4d(-?\d+\.?\d+)/);
+    if (pinMatch) {
+      const lat = parseFloat(pinMatch[1]);
+      const lng = parseFloat(pinMatch[2]);
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+    }
+
+    // 2. Coordenadas en rutas: destination=lat,lng o !2dlng!2dlat
+    const destMatch = url.match(/destination=(-?\d+\.?\d+),(-?\d+\.?\d+)/);
+    if (destMatch) {
+      const lat = parseFloat(destMatch[1]);
+      const lng = parseFloat(destMatch[2]);
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+    }
+    const dirMatch = url.match(/!2d(-?\d+\.?\d+)!2d(-?\d+\.?\d+)/);
+    if (dirMatch) {
+      const lng = parseFloat(dirMatch[1]);
+      const lat = parseFloat(dirMatch[2]);
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+    }
+
     const patterns = [
       /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
       /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
       /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
       /maps\?.*ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-      /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
       /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
     ];
     for (const pat of patterns) {
@@ -894,8 +934,17 @@ export const ExplorarPage: React.FC = () => {
             {/* Locales con marcadores circulares */}
             {localesFiltrados.map((loc) => {
               const suc = loc.sucursales?.[0];
-              if (!suc?.latitud || !suc?.longitud) return null;
-              const pos = { lat: Number(suc.latitud), lng: Number(suc.longitud) };
+              let markerLat = suc?.latitud ? Number(suc.latitud) : NaN;
+              let markerLng = suc?.longitud ? Number(suc.longitud) : NaN;
+              if (isNaN(markerLat) || isNaN(markerLng) || (markerLat === 0 && markerLng === 0)) {
+                const parsed = parseCoordsFromUrl(suc?.google_maps_url || loc.google_maps_url);
+                if (parsed) {
+                  markerLat = parsed.lat;
+                  markerLng = parsed.lng;
+                }
+              }
+              if (isNaN(markerLat) || isNaN(markerLng)) return null;
+              const pos = { lat: markerLat, lng: markerLng };
               const activo = localSeleccionado?.id_establecimiento === loc.id_establecimiento;
 
               return (

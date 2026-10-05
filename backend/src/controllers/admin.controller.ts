@@ -1,8 +1,89 @@
 import { Response, NextFunction } from "express";
+import http from "http";
+import https from "https";
 import { query } from "../config/database";
 import { ApiError, sendResponse, hashPassword } from "../utils";
 import { AuthenticatedRequest } from "../types";
 import { UserModel } from "../models/user.model";
+
+/**
+ * Resuelve y extrae coordenadas (lat, lng) de enlaces de Google Maps,
+ * soportando URLs cortas (maps.app.goo.gl, goo.gl) siguiendo redirecciones HTTP.
+ */
+async function resolveGoogleMapsCoords(rawUrl: string): Promise<{ lat: number; lng: number } | null> {
+  if (!rawUrl || !rawUrl.trim()) return null;
+  let targetUrl = rawUrl.trim();
+
+  // Si es un enlace corto o redirección, obtener la URL de destino final
+  if (targetUrl.includes("maps.app.goo.gl") || targetUrl.includes("goo.gl/maps")) {
+    try {
+      const redirectUrl = await new Promise<string | null>((resolve) => {
+        const client = targetUrl.startsWith("https:") ? https : http;
+        const req = client.get(targetUrl, { timeout: 4000 }, (res) => {
+          if (res.headers.location) {
+            resolve(res.headers.location);
+          } else {
+            resolve(null);
+          }
+        });
+        req.on("error", () => resolve(null));
+        req.on("timeout", () => {
+          req.destroy();
+          resolve(null);
+        });
+      });
+      if (redirectUrl) {
+        targetUrl = redirectUrl;
+      }
+    } catch {
+      // Continuar con targetUrl original si falla el fetch
+    }
+  }
+
+  // 1. Patrón de pin de lugar: !3d(lat)!4d(lng)
+  const pinMatch = targetUrl.match(/!3d(-?\d+\.?\d+)!4d(-?\d+\.?\d+)/);
+  if (pinMatch) {
+    const lat = parseFloat(pinMatch[1]);
+    const lng = parseFloat(pinMatch[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+  }
+
+  // 2. Patrón de destino en rutas: destination=(lat),(lng) o !2d(lng)!2d(lat)
+  const destMatch = targetUrl.match(/destination=(-?\d+\.?\d+),(-?\d+\.?\d+)/);
+  if (destMatch) {
+    const lat = parseFloat(destMatch[1]);
+    const lng = parseFloat(destMatch[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+  }
+  const dirMatch = targetUrl.match(/!2d(-?\d+\.?\d+)!2d(-?\d+\.?\d+)/);
+  if (dirMatch) {
+    const lng = parseFloat(dirMatch[1]);
+    const lat = parseFloat(dirMatch[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+  }
+
+  // 3. Patrones estándar: @lat,lng / ?q=lat,lng / ?ll=lat,lng / etc.
+  const patterns = [
+    /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+    /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+    /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+    /maps\?.*ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
+    /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
+  ];
+
+  for (const pat of patterns) {
+    const m = targetUrl.match(pat);
+    if (m) {
+      const parsedLat = parseFloat(m[1]);
+      const parsedLng = parseFloat(m[2]);
+      if (parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
+        return { lat: parsedLat, lng: parsedLng };
+      }
+    }
+  }
+
+  return null;
+}
 
 export const AdminController = {
   /** Dashboard: contadores generales */
@@ -1797,7 +1878,8 @@ export const AdminController = {
           COALESCE(ps.imagen_sello, cat.icono_url, '🏛️') AS imagen_sello,
           COALESCE(ps.color_sello, '#7C0A1E') AS color_sello,
           COALESCE(ps.puntos_por_visita, 20) AS puntos_por_visita,
-          COALESCE(ps.meta_sellos, 8) AS meta_sellos
+          COALESCE(ps.meta_sellos, 8) AS meta_sellos,
+          COALESCE(e.monto_por_punto, 10) AS monto_por_punto
         FROM establecimientos e
         LEFT JOIN categorias_establecimiento cat ON cat.id = e.categoria_id
         LEFT JOIN sucursales sp ON sp.id_establecimiento = e.id_establecimiento AND sp.es_principal = 1
@@ -1879,12 +1961,16 @@ export const AdminController = {
         throw new ApiError(409, "Ya existe un establecimiento registrado con ese RUC");
       }
 
+      const ratioMonto = req.body.monto_por_punto && Number(req.body.monto_por_punto) > 0
+        ? Number(req.body.monto_por_punto)
+        : 10;
+
       // 1. Crear establecimiento
       const estRes = await query(
         `INSERT INTO establecimientos (
            nombre_comercial, razon_social, ruc, descripcion,
-           logo, imagen_portada, email, telefono, categoria_id, estado, fecha_afiliacion, tipo
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVO', CURRENT_TIMESTAMP, $10)
+           logo, imagen_portada, email, telefono, categoria_id, estado, fecha_afiliacion, tipo, monto_por_punto
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ACTIVO', CURRENT_TIMESTAMP, $10, $11)
          RETURNING *`,
         [
           razon_social.trim(),
@@ -1897,6 +1983,7 @@ export const AdminController = {
           telefono?.trim() || null,
           categoria_id ? Number(categoria_id) : null,
           req.body.tipo === "LUGAR_TURISTICO" ? "LUGAR_TURISTICO" : "LOCAL",
+          ratioMonto,
         ],
       );
 
@@ -1906,24 +1993,10 @@ export const AdminController = {
       let latFinal = lat != null && !isNaN(Number(lat)) ? Number(lat) : null;
       let lngFinal = lng != null && !isNaN(Number(lng)) ? Number(lng) : null;
       if ((latFinal == null || lngFinal == null) && google_maps_url) {
-        const patterns = [
-          /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-          /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-          /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-          /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
-          /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
-        ];
-        for (const pat of patterns) {
-          const m = String(google_maps_url).match(pat);
-          if (m) {
-            const parsedLat = parseFloat(m[1]);
-            const parsedLng = parseFloat(m[2]);
-            if (parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
-              latFinal = parsedLat;
-              lngFinal = parsedLng;
-              break;
-            }
-          }
+        const resolved = await resolveGoogleMapsCoords(String(google_maps_url));
+        if (resolved) {
+          latFinal = resolved.lat;
+          lngFinal = resolved.lng;
         }
       }
 
@@ -2045,6 +2118,9 @@ export const AdminController = {
       const hasImagen = imagen_url !== undefined;
       const imgVal = imagen_url?.trim() ? imagen_url.trim() : null;
 
+      const hasMontoPorPunto = req.body.monto_por_punto !== undefined && !isNaN(Number(req.body.monto_por_punto)) && Number(req.body.monto_por_punto) > 0;
+      const montoPorPuntoVal = hasMontoPorPunto ? Number(req.body.monto_por_punto) : null;
+
       const result = await query(
         `UPDATE establecimientos
          SET 
@@ -2058,7 +2134,8 @@ export const AdminController = {
            imagen_portada = CASE WHEN $9::boolean THEN $10 ELSE imagen_portada END,
            logo = CASE WHEN $9::boolean THEN $10 ELSE logo END,
            estado = COALESCE($11, estado),
-           tipo = CASE WHEN $12::boolean THEN $13 ELSE tipo END
+           tipo = CASE WHEN $12::boolean THEN $13 ELSE tipo END,
+           monto_por_punto = CASE WHEN $14::boolean THEN $15::numeric ELSE monto_por_punto END
          WHERE id_establecimiento = $1
          RETURNING *`,
         [
@@ -2075,6 +2152,8 @@ export const AdminController = {
           estado ?? null,
           req.body.tipo !== undefined,
           req.body.tipo === "LUGAR_TURISTICO" ? "LUGAR_TURISTICO" : "LOCAL",
+          hasMontoPorPunto,
+          montoPorPuntoVal,
         ],
       );
 
@@ -2082,25 +2161,10 @@ export const AdminController = {
       let latFinal = lat != null && !isNaN(Number(lat)) ? Number(lat) : null;
       let lngFinal = lng != null && !isNaN(Number(lng)) ? Number(lng) : null;
       if ((latFinal == null || lngFinal == null) && google_maps_url) {
-        const patterns = [
-          /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-          /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-          /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-          /maps\?.*ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-          /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
-          /(-?\d+\.?\d+),\s*(-?\d+\.?\d+)/,
-        ];
-        for (const pat of patterns) {
-          const m = String(google_maps_url).match(pat);
-          if (m) {
-            const parsedLat = parseFloat(m[1]);
-            const parsedLng = parseFloat(m[2]);
-            if (parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
-              latFinal = parsedLat;
-              lngFinal = parsedLng;
-              break;
-            }
-          }
+        const resolved = await resolveGoogleMapsCoords(String(google_maps_url));
+        if (resolved) {
+          latFinal = resolved.lat;
+          lngFinal = resolved.lng;
         }
       }
 

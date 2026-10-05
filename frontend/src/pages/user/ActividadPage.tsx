@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
-import { Star, ArrowUpRight, ArrowDownLeft, Bell } from "lucide-react";
+import { Star, ArrowUpRight, ArrowDownLeft, Bell, Trash2, CheckCheck } from "lucide-react";
 import api from "../../services/api";
 import { useLanguage } from "../../context/LanguageContext";
 
@@ -44,6 +44,25 @@ export const ActividadPage: React.FC = () => {
       setNotificaciones((prev) =>
         prev.map((n) => (n.id_notificacion === id ? { ...n, leida: 1 } : n))
       );
+    } catch {
+      // silent
+    }
+  };
+
+  const eliminarNotificacion = async (id: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      await api.delete(`/activity/notificaciones/${id}`);
+      setNotificaciones((prev) => prev.filter((n) => n.id_notificacion !== id));
+    } catch {
+      // silent
+    }
+  };
+
+  const vaciarTodas = async () => {
+    try {
+      await api.delete("/activity/notificaciones");
+      setNotificaciones([]);
     } catch {
       // silent
     }
@@ -184,33 +203,68 @@ export const ActividadPage: React.FC = () => {
       )}
 
       {tab === "notificaciones" && (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
+          {notificaciones.length > 0 && (
+            <div className="flex justify-between items-center px-1">
+              <span className="text-xs font-semibold text-[#8E7D7D]">
+                {notificaciones.length} aviso{notificaciones.length !== 1 ? "s" : ""}
+              </span>
+              <button
+                type="button"
+                onClick={vaciarTodas}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-[#8E7D7D] hover:text-[#7C0A1E] transition-colors"
+              >
+                <Trash2 size={13} /> Limpiar todas
+              </button>
+            </div>
+          )}
+
           {notificaciones.length > 0 ? (
             notificaciones.map((n: any) => (
               <div
                 key={n.id_notificacion}
                 onClick={() => !n.leida && marcarLeida(n.id_notificacion)}
-                className={`p-3.5 rounded-2xl border shadow-sm flex items-start space-x-3 cursor-pointer transition-colors ${
+                className={`p-3.5 rounded-2xl border shadow-sm flex items-start justify-between space-x-3 cursor-pointer transition-colors ${
                   n.leida ? "bg-white border-[#EFE7DE]" : "bg-[#FFF9F5] border-[#C5A059]/40"
                 }`}
               >
-                <Bell size={18} className="text-[#7C0A1E] shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-[#2D1A1E]">{n.titulo}</h4>
-                    <span className="text-[9px] text-[#8E7D7D]">
-                      {new Date(n.fecha_creacion).toLocaleDateString()}
+                <div className="flex items-start space-x-3 flex-1 min-w-0">
+                  <Bell size={18} className="text-[#7C0A1E] shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2">
+                      <h4 className="text-xs font-bold text-[#2D1A1E] truncate">{n.titulo}</h4>
+                      {!n.leida && (
+                        <span className="px-1.5 py-0.2 text-[9px] font-black bg-[#7C0A1E] text-white rounded-md shrink-0">
+                          Nueva
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[#8E7D7D] mt-0.5 leading-relaxed">{n.mensaje}</p>
+                    <span className="text-[9px] text-[#8E7D7D] mt-1 block">
+                      {new Date(n.fecha_creacion).toLocaleDateString("es-PE", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </span>
                   </div>
-                  <p className="text-[11px] text-[#8E7D7D] mt-0.5">{n.mensaje}</p>
-                  {!n.leida && (
-                    <span className="inline-block mt-1 text-[9px] font-bold text-[#C5A059]">Nueva</span>
-                  )}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => eliminarNotificacion(n.id_notificacion, e)}
+                  className="p-1.5 text-[#8E7D7D] hover:text-[#7C0A1E] hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                  title="Eliminar notificación permanentemente"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))
           ) : (
-            <div className="text-center py-10 bg-white rounded-2xl border border-[#EFE7DE] p-4 text-xs text-[#8E7D7D]">
+            <div className="text-center py-12 bg-white rounded-2xl border border-[#EFE7DE] p-6 text-xs text-[#8E7D7D]">
+              <Bell size={24} className="mx-auto mb-2 text-[#C5A059]/60" />
               No tienes notificaciones pendientes.
             </div>
           )}

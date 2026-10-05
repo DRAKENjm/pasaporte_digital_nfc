@@ -29,10 +29,11 @@ interface Amigo {
   amigo_id: string;
   nombres: string;
   apellidos: string;
-  username?: string;
+  codigo_cliente?: string;
   avatar_url?: string;
-  nivel?: string;
-  nivel_color?: string;
+  puntos_actuales?: number;
+  locales_visitados?: number;
+  total_sellos?: number;
   amigos_desde: string;
 }
 
@@ -155,7 +156,7 @@ export const FriendsPage: React.FC = () => {
 
     setBuscandoUsuarios(true);
     try {
-      const res = await api.get(`/social/usuarios?q=${encodeURIComponent(busquedaQuery.trim())}`);
+      const res = await api.get(`/friends/buscar?q=${encodeURIComponent(busquedaQuery.trim())}`);
       const list = res.data?.data ?? res.data ?? [];
       setUsuariosEncontrados(Array.isArray(list) ? list : []);
     } catch {
@@ -170,8 +171,13 @@ export const FriendsPage: React.FC = () => {
     try {
       await api.post("/friends/solicitudes", { receptor_id: targetId });
       showToast("Solicitud de amistad enviada", "success");
-      setBusquedaQuery("");
-      setUsuariosEncontrados([]);
+      setUsuariosEncontrados((prev) =>
+        prev.map((u) =>
+          (u.id_usuario === targetId || u.id === targetId)
+            ? { ...u, relacion_estado: "PENDIENTE" }
+            : u
+        )
+      );
     } catch (err: any) {
       showToast(err?.response?.data?.message || "No se pudo enviar la solicitud", "error");
     } finally {
@@ -313,41 +319,45 @@ export const FriendsPage: React.FC = () => {
                       key={a.amistad_id}
                       className="p-3.5 rounded-2xl border border-[#EFE7DE] bg-white flex items-center justify-between shadow-2xs hover:shadow-sm transition"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         {a.avatar_url ? (
                           <img
                             src={a.avatar_url}
                             alt=""
-                            className="w-11 h-11 rounded-full object-cover border border-[#EFE7DE]"
+                            className="w-11 h-11 rounded-full object-cover border border-[#EFE7DE] shrink-0"
                           />
                         ) : (
-                          <div className="w-11 h-11 rounded-full bg-rose-50 text-[#7C0A1E] font-bold flex items-center justify-center text-xs border border-[#7C0A1E]/20">
+                          <div className="w-11 h-11 rounded-full bg-rose-50 text-[#7C0A1E] font-bold flex items-center justify-center text-xs border border-[#7C0A1E]/20 shrink-0">
                             {initials({ nombres: a.nombres, apellidos: a.apellidos })}
                           </div>
                         )}
-                        <div>
-                          <p className="font-bold text-xs text-[#2D1A1E]">
+                        <div className="min-w-0">
+                          <p className="font-bold text-xs text-[#2D1A1E] truncate">
                             {a.nombres} {a.apellidos}
                           </p>
-                          <p className="text-[11px] text-[#8E7D7D]">@{a.username || "viajero"}</p>
-                          {a.nivel && (
-                            <span
-                              className="text-[9px] font-bold px-1.5 py-0.5 rounded-md mt-0.5 inline-block"
-                              style={{
-                                color: a.nivel_color || "#7C0A1E",
-                                backgroundColor: `${a.nivel_color || "#7C0A1E"}15`,
-                              }}
-                            >
-                              {a.nivel}
+                          <p className="text-[11px] text-[#8E7D7D] font-mono">
+                            {a.codigo_cliente || "Viajero"}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] font-bold text-[#7C0A1E] bg-[#7C0A1E]/10 px-1.5 py-0.5 rounded-md">
+                              {a.puntos_actuales ?? 0} pts
                             </span>
-                          )}
+                            <span className="text-[10px] text-[#8E7D7D] bg-[#FAF8F5] border border-[#EFE7DE] px-1.5 py-0.5 rounded-md">
+                              {a.locales_visitados ?? 0} locales
+                            </span>
+                            {(a.total_sellos ?? 0) > 0 && (
+                              <span className="text-[10px] text-[#8E7D7D] bg-[#FAF8F5] border border-[#EFE7DE] px-1.5 py-0.5 rounded-md">
+                                {a.total_sellos} sellos
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => handleEliminarAmigo(a.amigo_id)}
-                        className="p-2 text-[#8E7D7D] hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                        className="p-2 text-[#8E7D7D] hover:text-red-600 hover:bg-red-50 rounded-lg transition shrink-0 ml-2"
                         title="Eliminar de mi lista"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -532,7 +542,7 @@ export const FriendsPage: React.FC = () => {
                   type="text"
                   value={busquedaQuery}
                   onChange={(e) => setBusquedaQuery(e.target.value)}
-                  placeholder="Buscar por código, usuario o nombre..."
+                  placeholder="Buscar por nombre o código de cliente..."
                   className="input-base flex-1"
                 />
                 <button
@@ -546,28 +556,60 @@ export const FriendsPage: React.FC = () => {
 
               {usuariosEncontrados.length > 0 ? (
                 <div className="divide-y divide-[#EFE7DE] border border-[#EFE7DE] rounded-2xl bg-white overflow-hidden shadow-2xs">
-                  {usuariosEncontrados.map((u) => (
-                    <div key={u.id_usuario || u.id} className="p-3.5 flex items-center justify-between">
-                      <div>
-                        <p className="font-bold text-xs text-[#2D1A1E]">
-                          {u.nombres} {u.apellidos}
-                        </p>
-                        <p className="text-[11px] text-[#8E7D7D]">@{u.username || "usuario"}</p>
+                  {usuariosEncontrados.map((u) => {
+                    const idDestino = u.id_usuario || u.id;
+                    const esPendiente = u.relacion_estado === "PENDIENTE";
+                    const esAmigo = u.relacion_estado === "ACEPTADA";
+
+                    return (
+                      <div key={idDestino} className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {u.foto_perfil ? (
+                            <img
+                              src={u.foto_perfil}
+                              alt=""
+                              className="w-10 h-10 rounded-full object-cover border border-[#EFE7DE] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-rose-50 text-[#7C0A1E] font-bold flex items-center justify-center text-xs border border-[#7C0A1E]/20 shrink-0">
+                              {initials({ nombres: u.nombres, apellidos: u.apellidos })}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs text-[#2D1A1E] truncate">
+                              {u.nombres} {u.apellidos}
+                            </p>
+                            <p className="text-[11px] text-[#8E7D7D] font-mono">
+                              {u.codigo_cliente || "Viajero"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {esAmigo ? (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl">
+                            Ya son amigos
+                          </span>
+                        ) : esPendiente ? (
+                          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl">
+                            Solicitud pendiente
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleEnviarSolicitud(idDestino)}
+                            disabled={enviando}
+                            className="px-3.5 py-1.5 bg-[#7C0A1E] hover:bg-[#650818] disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shrink-0"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" /> Enviar Solicitud
+                          </button>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleEnviarSolicitud(u.id_usuario || u.id)}
-                        disabled={enviando}
-                        className="px-3 py-1.5 bg-[#7C0A1E] hover:bg-[#650818] disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" /> Enviar Solicitud
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : busquedaQuery && !buscandoUsuarios ? (
                 <div className="text-center py-8 text-xs text-[#8E7D7D]">
-                  No se encontraron viajeros con ese término. Puedes probar compartiendo tu enlace en la pestaña "Invitar Amigos".
+                  No se encontraron viajeros con ese nombre o código de cliente.
                 </div>
               ) : null}
             </div>

@@ -16,7 +16,9 @@ import {
   ShieldCheck,
   QrCode,
   Camera,
-  ScanLine
+  ScanLine,
+  Smartphone,
+  Info
 } from "lucide-react";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
@@ -49,6 +51,7 @@ export const CommerceValidar: React.FC = () => {
   const [qrInput, setQrInput] = useState("");
   const [clienteData, setClienteData] = useState<any>(null);
   const [montoCompra, setMontoCompra] = useState("");
+  const [puntosRegalo, setPuntosRegalo] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingSucursales, setLoadingSucursales] = useState(true);
   const [errorSucursales, setErrorSucursales] = useState("");
@@ -207,6 +210,7 @@ export const CommerceValidar: React.FC = () => {
         id_tarjeta: clienteData.id_tarjeta,
         id_sucursal: selectedSucursal,
         monto_compra: montoCompra,
+        puntos_regalo: puntosRegalo ? Number(puntosRegalo) : 0,
         id_programa: selectedPrograma || undefined,
         metodo_validacion: clienteData.metodo_identificacion || metodoValidacion,
       });
@@ -235,6 +239,7 @@ export const CommerceValidar: React.FC = () => {
     setClienteData(null);
     setResultadoVisita(null);
     setMontoCompra("");
+    setPuntosRegalo("");
     setUidInput("");
     setQrInput("");
     setMostrarCamaraQr(false);
@@ -360,7 +365,7 @@ export const CommerceValidar: React.FC = () => {
           </div>
 
           {/* Botón de lectura Web NFC para Móviles / Navegadores compatibles */}
-          {isSupported && (
+          {isSupported ? (
             <div className="w-full max-w-md space-y-2">
               <button
                 type="button"
@@ -385,14 +390,34 @@ export const CommerceValidar: React.FC = () => {
                     : "bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white hover:bg-[#600616] active:scale-95"
                 } disabled:opacity-50`}
               >
-                <Wifi size={16} className="rotate-90" />
+                <Smartphone size={16} />
                 <span>
                   {isScanning
-                    ? "📱 Escaneando... acerca la tarjeta al teléfono (Click para cancelar)"
-                    : "📱 Activar Lector NFC del Celular"}
+                    ? "Escaneando... acerca la tarjeta al teléfono (Click para cancelar)"
+                    : "Activar lector NFC del teléfono"}
                 </span>
               </button>
-              {nfcError && <p role="alert" className="text-xs text-[#7C0A1E] font-medium">{nfcError}</p>}
+              {nfcError && (
+                <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-xl text-left flex items-start gap-2.5">
+                  <AlertCircle size={15} className="text-red-700 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-red-700 font-semibold">{nfcError}</p>
+                    <p className="text-[11px] text-[#8E7D7D]">
+                      Si el teléfono no posee sensor NFC o está desactivado, selecciona la opción <strong>QR de Respaldo</strong> o conecta un lector USB.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full max-w-md p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-left space-y-1">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                <Smartphone size={14} className="shrink-0 text-amber-700" />
+                <span>Sensor NFC no detectado en este navegador</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed pl-5">
+                Este dispositivo o navegador no admite la lectura Web NFC directa. Puedes conectar un lector USB en la computadora o usar la pestaña <strong>QR de Respaldo</strong> para validar la visita.
+              </p>
             </div>
           )}
 
@@ -424,8 +449,9 @@ export const CommerceValidar: React.FC = () => {
                 {loading ? <RotateCw className="w-4 h-4 animate-spin" /> : "IDENTIFICAR"}
               </button>
             </div>
-            <p className="text-[11px] text-[#8E7D7D] text-center">
-              💡 Lectores USB: al escanear la tarjeta el UID se enviará automáticamente.
+            <p className="text-[11px] text-[#8E7D7D] text-center flex items-center justify-center gap-1.5">
+              <Info size={12} className="text-[#C5A059]" />
+              <span>Lectores USB: al apoyar la tarjeta el UID se enviará de forma automática.</span>
             </p>
           </form>
         </div>
@@ -503,40 +529,38 @@ export const CommerceValidar: React.FC = () => {
       {/* ESTADO 2: CLIENTE IDENTIFICADO + CONFIGURACIÓN DE VISITA */}
       {step === "IDENTIFIED" && clienteData && (
         <div className="space-y-5 animate-fadeIn">
-          {/* Card de Información del Cliente */}
+          {/* Card de Información del Cliente (Limpia, sobria, sin datos confusos) */}
           <div className="bg-white rounded-3xl p-6 border border-[#EFE7DE] shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-[#7C0A1E]/30 text-[#7C0A1E] font-black text-xl flex items-center justify-center shadow-inner">
-                {clienteData.cliente?.nombres?.charAt(0) || "J"}
+              <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-[#7C0A1E]/30 text-[#7C0A1E] font-black text-xl flex items-center justify-center shadow-inner">
+                {clienteData.cliente?.nombres?.charAt(0) || "C"}
               </div>
-              <div>
+              <div className="space-y-0.5">
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                  ✓ Cliente Identificado
+                  Cliente Identificado
                 </span>
-                <h2 className="text-xl font-black text-[#2D1A1E] mt-0.5">
+                <h2 className="text-lg font-black text-[#2D1A1E]">
                   {clienteData.cliente?.nombres} {clienteData.cliente?.apellidos || ""}
                 </h2>
                 <p className="text-xs text-[#8E7D7D] font-mono">
-                  Código: {clienteData.cliente?.codigo_cliente || "CLI-100234"} · Tarjeta: {clienteData.codigo_interno || "NFC-101234"}
+                  {clienteData.codigo_interno ? `Tarjeta: ${clienteData.codigo_interno}` : `Código: ${clienteData.cliente?.codigo_cliente || "Registrado"}`}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-[#EFE7DE]">
-              <div className="bg-[#FAF8F5] border border-[#EFE7DE] px-4 py-2.5 rounded-2xl text-center">
-                <span className="text-[10px] font-bold text-[#8E7D7D] block uppercase">Puntos Globales</span>
-                <span className="text-base font-black text-[#7C0A1E]">{clienteData.cliente?.puntos_actuales ?? 0} pts</span>
-              </div>
-              <div className="bg-[#FAF8F5] border border-[#EFE7DE] px-4 py-2.5 rounded-2xl text-center">
-                <span className="text-[10px] font-bold text-[#8E7D7D] block uppercase">Visitas en Local</span>
-                <span className="text-base font-black text-[#C5A059]">Frecuente</span>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-[#EFE7DE]">
+              <div className="bg-[#FAF8F5] border border-[#EFE7DE] px-4 py-2 rounded-2xl text-center">
+                <span className="text-[10px] font-bold text-[#8E7D7D] block uppercase">Estado del Sello</span>
+                <span className={`text-xs font-black ${clienteData.ya_tiene_sello_hoy ? "text-amber-700" : "text-emerald-700"}`}>
+                  {clienteData.ya_tiene_sello_hoy ? "Sello de hoy completado" : "Pendiente de sellar"}
+                </span>
               </div>
             </div>
           </div>
 
           {/* Formulario de Confirmación de Consumo */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EFE7DE] shadow-xs space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Input Compra */}
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
@@ -547,28 +571,29 @@ export const CommerceValidar: React.FC = () => {
                   <input
                     type="number"
                     step="0.01"
-                    min="0.01"
+                    min="0"
+                    placeholder="0.00"
                     disabled={loading}
                     value={montoCompra}
                     onChange={(e) => setMontoCompra(e.target.value)}
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
                   />
                 </div>
+                <p className="text-[10px] text-[#8E7D7D]">
+                  Regla: +1 pt por cada S/ {clienteData.monto_por_punto || 10}
+                </p>
               </div>
 
-              {/* Sello o Estado Diario */}
+              {/* Sello a Otorgar */}
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  {clienteData.ya_tiene_sello_hoy ? "Estado de Sellos Hoy" : "Sello a Otorgar"}
+                  {clienteData.ya_tiene_sello_hoy ? "Sello Diario" : "Sello a Otorgar"}
                 </label>
                 {clienteData.ya_tiene_sello_hoy ? (
                   <div className="px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                      <span>1 Sello diario ya registrado</span>
-                    </div>
-                    <span className="text-[10px] text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md font-extrabold uppercase">
-                      Solo Puntos
+                    <span>1 Sello otorgado hoy</span>
+                    <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-extrabold uppercase">
+                      Al día
                     </span>
                   </div>
                 ) : sellosActivos.length > 1 ? (
@@ -576,35 +601,74 @@ export const CommerceValidar: React.FC = () => {
                     value={selectedPrograma || ""}
                     disabled={loading}
                     onChange={(e) => setSelectedPrograma(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EFE7DE] bg-rose-50 text-[#7C0A1E] font-black text-sm focus:outline-none focus:border-[#7C0A1E]"
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#EFE7DE] bg-rose-50 text-[#7C0A1E] font-black text-xs focus:outline-none focus:border-[#7C0A1E]"
                   >
                     {sellosActivos.map((s) => (
                       <option key={s.id_programa} value={s.id_programa}>
-                        {s.nombre_sello || "Sello"} · meta {s.meta_sellos}
+                        {s.nombre_sello || "Sello"} · {s.puntos_por_visita || 20} pts
                       </option>
                     ))}
                   </select>
                 ) : (
-                  <div className="px-4 py-2.5 rounded-xl bg-rose-50 border border-[#7C0A1E]/20 text-[#7C0A1E] font-black text-sm flex items-center justify-between">
+                  <div className="px-3.5 py-2.5 rounded-xl bg-rose-50 border border-[#7C0A1E]/20 text-[#7C0A1E] font-black text-xs flex items-center justify-between">
                     <span>{sellosActivos[0]?.nombre_sello || "+1 Sello"}</span>
-                    <Award size={18} />
+                    <Award size={16} />
                   </div>
                 )}
+                <p className="text-[10px] text-[#8E7D7D]">
+                  {clienteData.ya_tiene_sello_hoy ? "Máximo 1 sello por día" : `+${sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20} pts por sello`}
+                </p>
               </div>
 
-              {/* Puntos a otorgar */}
+              {/* Puntos de Regalo Opcionales */}
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  Puntos a Entregar
+                  Puntos de Regalo / Bono
                 </label>
-                <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-[#C5A059]/30 text-amber-900 font-black text-sm flex items-center justify-between">
-                  <span>
-                    {clienteData.ya_tiene_sello_hoy
-                      ? `+${Math.floor(Number(montoCompra || 0) / 5)} pts por consumo`
-                      : `+${(sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita ?? 20) + Math.floor(Number(montoCompra || 0) / 5)} pts`}
-                  </span>
-                  <Sparkles size={18} className="text-[#C5A059]" />
-                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="0 (opcional)"
+                  disabled={loading}
+                  value={puntosRegalo}
+                  onChange={(e) => setPuntosRegalo(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
+                />
+                <p className="text-[10px] text-[#8E7D7D]">
+                  Cortesía, promoción o evento
+                </p>
+              </div>
+
+              {/* Total Puntos Calculados */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
+                  Total Puntos a Entregar
+                </label>
+                {(() => {
+                  const ptsSello = clienteData.ya_tiene_sello_hoy
+                    ? 0
+                    : Number(sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20);
+                  const ratio = Number(clienteData.monto_por_punto) > 0 ? Number(clienteData.monto_por_punto) : 10;
+                  const ptsConsumo = Math.floor(Number(montoCompra || 0) / ratio);
+                  const ptsExtra = Math.max(0, Math.floor(Number(puntosRegalo || 0)));
+                  const total = ptsSello + ptsConsumo + ptsExtra;
+
+                  return (
+                    <div>
+                      <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-[#C5A059]/30 text-amber-900 font-black text-sm flex items-center justify-between">
+                        <span>+{total} pts</span>
+                        <Sparkles size={16} className="text-[#C5A059]" />
+                      </div>
+                      <p className="text-[10px] text-[#8E7D7D] mt-1">
+                        {ptsSello > 0 && `${ptsSello} sello `}
+                        {ptsConsumo > 0 && `+ ${ptsConsumo} compra `}
+                        {ptsExtra > 0 && `+ ${ptsExtra} regalo`}
+                        {total === 0 && "0 puntos calculados"}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -612,7 +676,7 @@ export const CommerceValidar: React.FC = () => {
               <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800">
                 <Award size={18} className="shrink-0 text-amber-600" />
                 <p className="leading-snug">
-                  Este cliente ya recibió su sello oficial de hoy en este local (máximo 1 sello por día). Esta visita acumulará <strong>puntos por consumo y fidelidad</strong> sin duplicar sellos.
+                  Este cliente ya recibió su sello oficial de hoy en este establecimiento. Esta visita acumulará <strong>puntos por consumo y cortesía</strong> sin duplicar sellos.
                 </p>
               </div>
             )}

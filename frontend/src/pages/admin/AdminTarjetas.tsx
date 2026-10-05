@@ -28,6 +28,7 @@ import {
   UserCheck,
   UserX,
   Wifi,
+  Smartphone,
   Trash2,
 } from "lucide-react";
 import QRCode from "qrcode";
@@ -1243,11 +1244,11 @@ export const AdminTarjetas: React.FC = () => {
                           : "bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white hover:bg-[#600616]"
                       }`}
                     >
-                      <Wifi size={16} className="rotate-90" />
+                      <Smartphone size={16} />
                       <span>
                         {isNfcScanning
-                          ? "📱 Escuchando NFC... acerca tarjetas al teléfono (Click para pausar)"
-                          : "📱 Activar Lector NFC del Celular para captura continua"}
+                          ? "Escuchando NFC... acerca tarjetas al teléfono (Click para pausar)"
+                          : "Activar lector NFC del teléfono para captura continua"}
                       </span>
                     </button>
                     {nfcReaderError && (

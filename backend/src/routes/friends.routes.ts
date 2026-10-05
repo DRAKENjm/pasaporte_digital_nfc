@@ -8,6 +8,7 @@ const router = Router();
 router.use(authMiddleware, requireRoles("CLIENTE"));
 
 router.get("/", FriendsController.listarAmigos);
+router.get("/buscar", FriendsController.buscarUsuarios);
 router.get("/solicitudes", FriendsController.listarSolicitudesPendientes);
 router.post("/solicitudes", FriendsController.enviarSolicitud);
 router.patch("/solicitudes/:id/responder", FriendsController.responderSolicitud);
