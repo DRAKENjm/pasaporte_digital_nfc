@@ -325,8 +325,6 @@ export const NfcVisitController = {
 
       let bonoConsumo = 0;
       let tagConsumo = "";
-      let puntosRegalo = 0;
-      let tagRegalo = "";
 
       if (yaTieneSelloHoy) {
         // En visitas posteriores del mismo día: aplica regla de puntos por consumo
@@ -337,34 +335,12 @@ export const NfcVisitController = {
             tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
           }
         }
-
-        // Puntos de regalo / cortesía: verificar si ya recibió cortesía hoy en este local
-        const rawRegalo = (req.body.puntos_regalo && !isNaN(Number(req.body.puntos_regalo)))
-          ? Math.max(0, Math.floor(Number(req.body.puntos_regalo)))
-          : 0;
-
-        if (rawRegalo > 0) {
-          const regaloPrevioRes = await client.query(
-            `SELECT COUNT(*)::int AS total_regalo_hoy
-             FROM movimientos_puntos mp
-             JOIN visitas v ON v.id_visita = mp.id_visita
-             JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
-             WHERE mp.id_cliente = $1 AND suc.id_establecimiento = $2
-               AND mp.descripcion LIKE '%cortesía%'
-               AND mp.fecha_movimiento >= (date_trunc('day', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')`,
-            [clienteId, establecimientoId],
-          );
-          if ((regaloPrevioRes.rows[0]?.total_regalo_hoy || 0) === 0) {
-            puntosRegalo = rawRegalo;
-            tagRegalo = ` (+${puntosRegalo} pts de cortesía)`;
-          }
-        }
       }
 
       // En la primera visita solo se otorgan los puntos del sello diario;
-      // En la segunda visita o posterior se otorgan puntos por consumo + puntos de cortesía
+      // En la segunda visita o posterior se otorgan puntos por consumo
       const puntosOtorgados = yaTieneSelloHoy
-        ? (bonoConsumo + puntosRegalo)
+        ? bonoConsumo
         : puntosBase;
 
       let selloId: number | null = null;
@@ -404,10 +380,11 @@ export const NfcVisitController = {
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
       const descripcionMovimiento = yaTieneSelloHoy
-        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagRegalo}`
-        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagRegalo}`;
+        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}`
+        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}`;
 
       // 4. Crear Movimiento Contable de Puntos (Ledger) si se otorgaron puntos
+      // Nota: tipo_movimiento en DB debe ser 'GANANCIA_VISITA' o 'GANANCIA_SELLO' para satisfacer el CHECK constraint
       if (puntosOtorgados > 0) {
         await client.query(
           `INSERT INTO movimientos_puntos (
@@ -424,7 +401,7 @@ export const NfcVisitController = {
             programa.id_programa,
             visitaId,
             selloId,
-            yaTieneSelloHoy ? "GANANCIA_COMPRA" : "GANANCIA_SELLO",
+            yaTieneSelloHoy ? "GANANCIA_VISITA" : "GANANCIA_SELLO",
             puntosOtorgados,
             saldoAnterior,
             saldoPosterior,
@@ -491,7 +468,6 @@ export const NfcVisitController = {
           desglose: {
             puntos_base: puntosBase,
             bono_consumo: bonoConsumo,
-            puntos_regalo: puntosRegalo,
           },
         },
       }, yaTieneSelloHoy ? "Compra confirmada y puntos acreditados." : "Visita confirmada, sello y puntos acreditados.");
