@@ -27,6 +27,7 @@ import {
 } from "@react-google-maps/api";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
+import { useLanguage } from "../../context/LanguageContext";
 
 const mapContainerStyle: React.CSSProperties = {
   width: "100%",
@@ -92,6 +93,7 @@ const CircularMarker: React.FC<{
 
 export const ExplorarPage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [categoriaActiva, setCategoriaActiva] = useState<string>("Todos");
   const [busqueda, setBusqueda] = useState<string>("");
   const [locales, setLocales] = useState<any[]>([]);
@@ -1035,7 +1037,7 @@ export const ExplorarPage: React.FC = () => {
                     title="Minimizar barra"
                   >
                     <ChevronDown size={14} />
-                    <span>Minimizar</span>
+                    <span>{t("minimize") || "Minimizar"}</span>
                   </button>
                 )}
                 <button
@@ -1064,6 +1066,7 @@ export const ExplorarPage: React.FC = () => {
                       }
                       alt={localSeleccionado.nombre_comercial}
                       className="w-full h-full object-cover"
+                      loading="lazy"
                     />
                   </div>
                   <div className="min-w-0">
@@ -1121,7 +1124,7 @@ export const ExplorarPage: React.FC = () => {
 
                 {/* Selector de Modo: En auto vs Caminando */}
                 <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-[#EFE7DE]">
-                  <span className="text-[11px] font-semibold text-[#8E7D7D]">Modo de viaje:</span>
+                  <span className="text-[11px] font-semibold text-[#8E7D7D]">{t("travelMode") || "Modo de viaje"}:</span>
                   <div className="flex bg-[#FAF8F5] p-1 rounded-xl border border-[#EFE7DE] text-xs">
                     <button
                       type="button"
@@ -1133,7 +1136,7 @@ export const ExplorarPage: React.FC = () => {
                       }`}
                     >
                       <Car size={13} />
-                      <span>En auto</span>
+                      <span>{t("driving") || "En auto"}</span>
                     </button>
                     <button
                       type="button"
@@ -1145,7 +1148,7 @@ export const ExplorarPage: React.FC = () => {
                       }`}
                     >
                       <Footprints size={13} />
-                      <span>Caminando</span>
+                      <span>{t("walking") || "Caminando"}</span>
                     </button>
                   </div>
                 </div>
@@ -1162,7 +1165,7 @@ export const ExplorarPage: React.FC = () => {
                     title="Ver toda la información del comercio"
                   >
                     <Info size={15} className="text-[#7C0A1E]" />
-                    <span>Ver Local</span>
+                    <span>{t("viewLocal") || "Ver Local"}</span>
                   </button>
 
                   {directions ? (
@@ -1171,7 +1174,7 @@ export const ExplorarPage: React.FC = () => {
                       className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-red-200 active:scale-[0.98] transition-all cursor-pointer hover:bg-red-100"
                     >
                       <X size={16} />
-                      Cancelar ruta
+                      {t("cancelRoute") || "Cancelar ruta"}
                     </button>
                   ) : (
                     <button
@@ -1181,8 +1184,10 @@ export const ExplorarPage: React.FC = () => {
                     >
                       <Navigation size={16} />
                       {cargandoRuta
-                        ? "Calculando..."
-                        : `Iniciar ruta (${modoViaje === "WALKING" ? "A pie" : "Auto"})`}
+                        ? t("calculating") || "Calculando..."
+                        : modoViaje === "WALKING"
+                        ? t("startRouteFoot") || "A pie"
+                        : t("startRouteCar") || "Auto"}
                     </button>
                   )}
                 </div>
