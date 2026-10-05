@@ -49,6 +49,7 @@ export const CommercePerfil: React.FC = () => {
   const [direccion, setDireccion] = useState<string>("");
   const [googleMapsUrl, setGoogleMapsUrl] = useState<string>("");
   const [montoPorPunto, setMontoPorPunto] = useState<string>("10");
+  const [puntosPorSello, setPuntosPorSello] = useState<string>("20");
   const [descripcion, setDescripcion] = useState<string>("");
 
   useEffect(() => {
@@ -70,6 +71,7 @@ export const CommercePerfil: React.FC = () => {
           setDireccion(first.direccion || "");
           setGoogleMapsUrl(first.google_maps_url || "");
           setMontoPorPunto(String(first.monto_por_punto || 10));
+          setPuntosPorSello(String(first.puntos_por_visita || 20));
           setDescripcion(first.descripcion || "");
         }
       })
@@ -138,6 +140,7 @@ export const CommercePerfil: React.FC = () => {
         direccion: direccion.trim(),
         google_maps_url: googleMapsUrl.trim(),
         monto_por_punto: Number(montoPorPunto) > 0 ? Number(montoPorPunto) : 10,
+        puntos_por_sello: Number(puntosPorSello) > 0 ? Number(puntosPorSello) : 20,
         descripcion: descripcion.trim(),
         logo: logo || undefined,
         imagen_portada: imagenPortada || undefined,
@@ -349,6 +352,28 @@ export const CommercePerfil: React.FC = () => {
                     </div>
                     <p className="text-[10px] text-[#8E7D7D] pt-0.5">
                       El cliente ganará 1 punto por cada S/ {montoPorPunto || 10} gastados en su compra.
+                    </p>
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="font-bold text-[#736868] flex items-center gap-1.5">
+                      <Award size={12} className="text-[#7C0A1E]" />
+                      Puntos Otorgados por Sello Diario
+                    </span>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={puntosPorSello}
+                        onChange={(e) => setPuntosPorSello(e.target.value)}
+                        placeholder="20"
+                        className="input-base text-xs pr-10 font-bold"
+                      />
+                      <span className="absolute right-3 top-2.5 text-xs font-bold text-[#8E7D7D]">pts</span>
+                    </div>
+                    <p className="text-[10px] text-[#8E7D7D] pt-0.5">
+                      Puntos acreditados automáticamente al estampar el sello diario del cliente.
                     </p>
                   </label>
                   <label className="space-y-1 block sm:col-span-2">

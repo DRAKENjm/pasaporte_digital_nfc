@@ -205,12 +205,17 @@ export const CommerceValidar: React.FC = () => {
       }
     }
 
-    // Si ya tiene sello hoy, no puede registrar visita vacía de 0 pts sin compra ni regalo
+    // En la primera visita del día: la compra es opcional y no genera puntos extras (solo el sello y sus puntos de sello)
+    // En visitas posteriores de hoy: no se entrega sello; se otorgan puntos por consumo o cortesía
     if (clienteData.ya_tiene_sello_hoy) {
       const ptsRegaloNum = puntosRegalo ? Number(puntosRegalo) : 0;
       const montoNum = tieneCompra ? Number(montoCompra) : 0;
       if (montoNum <= 0 && ptsRegaloNum <= 0) {
-        showToast("El cliente ya recibió su sello de hoy. Ingresa un monto de compra o puntos de regalo para registrar este consumo.", "error");
+        showToast("El cliente ya recibió su sello de hoy. Ingresa un monto de compra o puntos de regalo para otorgar puntos.", "error");
+        return;
+      }
+      if (clienteData.ya_tiene_regalo_hoy && ptsRegaloNum > 0) {
+        showToast("El cliente ya recibió sus puntos de cortesía diarios en este local hoy.", "error");
         return;
       }
     }
@@ -223,14 +228,14 @@ export const CommerceValidar: React.FC = () => {
         id_tarjeta: clienteData.id_tarjeta,
         id_sucursal: selectedSucursal,
         monto_compra: tieneCompra && Number(montoCompra) > 0 ? montoCompra : undefined,
-        puntos_regalo: puntosRegalo ? Number(puntosRegalo) : 0,
+        puntos_regalo: clienteData.ya_tiene_sello_hoy && puntosRegalo ? Number(puntosRegalo) : undefined,
         id_programa: selectedPrograma || undefined,
         metodo_validacion: clienteData.metodo_identificacion || metodoValidacion,
       });
 
       setResultadoVisita(res.data.data);
       setStep("SUCCESS");
-      showToast("¡Visita registrada, sello y puntos acreditados!", "success");
+      showToast(clienteData.ya_tiene_sello_hoy ? "¡Consumo registrado y puntos acreditados!" : "¡Visita confirmada y sello otorgado!", "success");
       const sonidoHabilitado = (clienteData.metodo_identificacion === "QR" || metodoValidacion === "QR") 
         ? preferences.sonidoQr 
         : preferences.sonidoLectura;
@@ -571,145 +576,152 @@ export const CommerceValidar: React.FC = () => {
             </div>
           </div>
 
-          {/* Formulario Dinámico: Sello de Hoy vs Consumo Adicional */}
+          {/* Formulario Dinámico: Primera Visita (Sello Diario) vs Visita Posterior (Consumo y Cortesía) */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EFE7DE] shadow-xs space-y-6">
             {!clienteData.ya_tiene_sello_hoy ? (
-              <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-900">
-                <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
-                <p className="leading-snug">
-                  <strong>Primera visita del día:</strong> Al confirmar se otorgará su sello digital de hoy y sus puntos de visita correspondientes. Si realizó alguna compra, puedes registrarla a continuación.
-                </p>
-              </div>
-            ) : (
-              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900">
-                <Award size={18} className="shrink-0 text-amber-600" />
-                <p className="leading-snug">
-                  <strong>Sello de hoy ya completado:</strong> El cliente ya tiene su sello oficial de hoy en este establecimiento. Esta visita registrará únicamente sus <strong>puntos por consumo o cortesía</strong>.
-                </p>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Sello a Otorgar */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  {clienteData.ya_tiene_sello_hoy ? "Estado del Sello" : "Sello de Hoy"}
-                </label>
-                {clienteData.ya_tiene_sello_hoy ? (
-                  <div className="px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between">
-                    <span>1 Sello otorgado hoy</span>
-                    <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-extrabold uppercase">
-                      Al día
-                    </span>
-                  </div>
-                ) : sellosActivos.length > 1 ? (
-                  <select
-                    value={selectedPrograma || ""}
-                    disabled={loading}
-                    onChange={(e) => setSelectedPrograma(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-[#EFE7DE] bg-rose-50 text-[#7C0A1E] font-black text-xs focus:outline-none focus:border-[#7C0A1E]"
-                  >
-                    {sellosActivos.map((s) => (
-                      <option key={s.id_programa} value={s.id_programa}>
-                        {s.nombre_sello || "Sello"} · +{s.puntos_por_visita || 20} pts
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="px-3.5 py-2.5 rounded-xl bg-rose-50 border border-[#7C0A1E]/20 text-[#7C0A1E] font-black text-xs flex items-center justify-between">
-                    <span>{sellosActivos[0]?.nombre_sello || "Sello Oficial"}</span>
-                    <Award size={16} />
-                  </div>
-                )}
-                <p className="text-[10px] text-[#8E7D7D]">
-                  {clienteData.ya_tiene_sello_hoy
-                    ? "Máximo 1 sello por día por cliente"
-                    : `+${sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20} pts por sello`}
-                </p>
-              </div>
-
-              {/* Input Compra */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  Monto de Compra {clienteData.ya_tiene_sello_hoy ? "(Requerido)" : "(Opcional)"}
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-3 text-xs font-bold text-[#8E7D7D]">S/</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    disabled={loading}
-                    value={montoCompra}
-                    onChange={(e) => setMontoCompra(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
-                  />
+              <>
+                <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-900">
+                  <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
+                  <p className="leading-snug">
+                    <strong>Primera visita del día:</strong> Al confirmar se otorgará su sello digital de hoy y sus <strong>+{sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20} puntos</strong> por sello.
+                  </p>
                 </div>
-                <p className="text-[10px] text-[#8E7D7D]">
-                  Regla: +1 pt por cada S/ {clienteData.monto_por_punto || 10}
-                </p>
-              </div>
 
-              {/* Puntos de Regalo Opcionales */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  Puntos de Regalo / Bono
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  placeholder="0 (opcional)"
-                  disabled={loading}
-                  value={puntosRegalo}
-                  onChange={(e) => setPuntosRegalo(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
-                />
-                <p className="text-[10px] text-[#8E7D7D]">
-                  Cortesía, promoción o evento
-                </p>
-              </div>
-
-              {/* Total Puntos Calculados */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  Total Puntos a Entregar
-                </label>
-                {(() => {
-                  const ptsSello = clienteData.ya_tiene_sello_hoy
-                    ? 0
-                    : Number(sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20);
-                  const ratio = Number(clienteData.monto_por_punto) > 0 ? Number(clienteData.monto_por_punto) : 10;
-                  const ptsConsumo = Math.floor(Number(montoCompra || 0) / ratio);
-                  const ptsExtra = Math.max(0, Math.floor(Number(puntosRegalo || 0)));
-                  const total = ptsSello + ptsConsumo + ptsExtra;
-
-                  return (
-                    <div>
-                      <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-[#C5A059]/30 text-amber-900 font-black text-sm flex items-center justify-between">
-                        <span>+{total} pts</span>
-                        <Sparkles size={16} className="text-[#C5A059]" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Sello a Otorgar */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
+                      Sello de Hoy a Estampar
+                    </label>
+                    {sellosActivos.length > 1 ? (
+                      <select
+                        value={selectedPrograma || ""}
+                        disabled={loading}
+                        onChange={(e) => setSelectedPrograma(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-[#EFE7DE] bg-rose-50 text-[#7C0A1E] font-black text-xs focus:outline-none focus:border-[#7C0A1E]"
+                      >
+                        {sellosActivos.map((s) => (
+                          <option key={s.id_programa} value={s.id_programa}>
+                            {s.nombre_sello || "Sello"} · +{s.puntos_por_visita || 20} pts
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="px-3.5 py-2.5 rounded-xl bg-rose-50 border border-[#7C0A1E]/20 text-[#7C0A1E] font-black text-xs flex items-center justify-between">
+                        <span>{sellosActivos[0]?.nombre_sello || "Sello Oficial"}</span>
+                        <Award size={16} />
                       </div>
-                      <p className="text-[10px] text-[#8E7D7D] mt-1">
-                        {ptsSello > 0 && `${ptsSello} sello `}
-                        {ptsConsumo > 0 && `+ ${ptsConsumo} compra `}
-                        {ptsExtra > 0 && `+ ${ptsExtra} regalo`}
-                        {total === 0 && "0 puntos calculados"}
-                      </p>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
+                    )}
+                    <p className="text-[10px] text-[#8E7D7D]">
+                      +{sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20} pts por sello
+                    </p>
+                  </div>
 
-            {clienteData.ya_tiene_sello_hoy && (
-              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800">
-                <Award size={18} className="shrink-0 text-amber-600" />
-                <p className="leading-snug">
-                  Este cliente ya recibió su sello oficial de hoy en este establecimiento. Esta visita acumulará <strong>puntos por consumo y cortesía</strong> sin duplicar sellos.
-                </p>
-              </div>
+                  {/* Input Compra Opcional / Informativo */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
+                      Monto de Compra (Opcional)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-3 text-xs font-bold text-[#8E7D7D]">S/</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00 (opcional)"
+                        disabled={loading}
+                        value={montoCompra}
+                        onChange={(e) => setMontoCompra(e.target.value)}
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#8E7D7D]">
+                      Quedará registrado en el historial de la visita del cliente.
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900">
+                  <Award size={18} className="shrink-0 text-amber-600" />
+                  <p className="leading-snug">
+                    <strong>Sello de hoy ya otorgado:</strong> El cliente ya tiene su sello oficial de hoy (1/1). Esta visita otorgará puntos por su consumo y/o cortesía.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Input Compra Requerido para puntos de consumo */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
+                      Monto de Consumo
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-3 text-xs font-bold text-[#8E7D7D]">S/</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        disabled={loading}
+                        value={montoCompra}
+                        onChange={(e) => setMontoCompra(e.target.value)}
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#8E7D7D]">
+                      Regla: +1 pt por cada S/ {clienteData.monto_por_punto || 10}
+                    </p>
+                  </div>
+
+                  {/* Puntos de Regalo / Bono de Cortesía */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
+                      Puntos de Cortesía
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder={clienteData.ya_tiene_regalo_hoy ? "Ya otorgado hoy" : "0 (opcional)"}
+                      disabled={loading || clienteData.ya_tiene_regalo_hoy}
+                      value={puntosRegalo}
+                      onChange={(e) => setPuntosRegalo(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E] disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                    <p className="text-[10px] text-[#8E7D7D]">
+                      {clienteData.ya_tiene_regalo_hoy ? "Límite: ya recibió cortesía hoy" : "Máximo 1 cortesía al día"}
+                    </p>
+                  </div>
+
+                  {/* Total Puntos Calculados */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
+                      Total Puntos por Consumo
+                    </label>
+                    {(() => {
+                      const ratio = Number(clienteData.monto_por_punto) > 0 ? Number(clienteData.monto_por_punto) : 10;
+                      const ptsConsumo = Math.floor(Number(montoCompra || 0) / ratio);
+                      const ptsExtra = (!clienteData.ya_tiene_regalo_hoy && puntosRegalo) ? Math.max(0, Math.floor(Number(puntosRegalo))) : 0;
+                      const total = ptsConsumo + ptsExtra;
+
+                      return (
+                        <div>
+                          <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-[#C5A059]/30 text-amber-900 font-black text-sm flex items-center justify-between">
+                            <span>+{total} pts</span>
+                            <Sparkles size={16} className="text-[#C5A059]" />
+                          </div>
+                          <p className="text-[10px] text-[#8E7D7D] mt-1">
+                            {ptsConsumo > 0 && `+${ptsConsumo} consumo `}
+                            {ptsExtra > 0 && `+${ptsExtra} cortesía`}
+                            {total === 0 && "0 pts calculados"}
+                          </p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Botones de Acción */}

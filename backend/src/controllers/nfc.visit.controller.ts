@@ -94,6 +94,7 @@ export const NfcVisitController = {
 
       // Validar si el cliente ya recibió un sello hoy en este establecimiento si se proveyó la sucursal
       let yaTieneSelloHoy = false;
+      let yaTieneRegaloHoy = false;
       let montoPorPunto = 10;
       let puntosPorVisitaLocal = 20;
       const { id_sucursal } = req.body;
@@ -130,6 +131,19 @@ export const NfcVisitController = {
             [data.id_cliente, estId],
           );
           yaTieneSelloHoy = (sellosHoyRes.rows[0]?.total_hoy || 0) >= 1;
+
+          // Verificar si ya recibió puntos de cortesía/regalo hoy en este establecimiento
+          const regaloHoyRes = await query(
+            `SELECT COUNT(*)::int AS total_regalo_hoy
+             FROM movimientos_puntos mp
+             JOIN visitas v ON v.id_visita = mp.id_visita
+             JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+             WHERE mp.id_cliente = $1 AND suc.id_establecimiento = $2
+               AND mp.descripcion LIKE '%cortesía%'
+               AND mp.fecha_movimiento >= (date_trunc('day', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')`,
+            [data.id_cliente, estId],
+          );
+          yaTieneRegaloHoy = (regaloHoyRes.rows[0]?.total_regalo_hoy || 0) >= 1;
         }
       }
 
@@ -140,6 +154,7 @@ export const NfcVisitController = {
         qr_respaldo: data.qr_respaldo || data.codigo_interno,
         metodo_identificacion: (uid_nfc && !qr_code) ? "NFC" : "QR_RESPALDO",
         ya_tiene_sello_hoy: yaTieneSelloHoy,
+        ya_tiene_regalo_hoy: yaTieneRegaloHoy,
         monto_por_punto: montoPorPunto,
         puntos_por_visita: puntosPorVisitaLocal,
         cliente: {
@@ -305,49 +320,52 @@ export const NfcVisitController = {
         ? Number(estConfigRes.rows[0].monto_por_punto)
         : 10;
 
-      // 1. Puntos Base (solo si no ha recibido sello hoy)
+      // 1. Puntos Base de Sello (únicamente si es la primera visita del día)
       const puntosBase = !yaTieneSelloHoy ? (Number(programa.puntos_por_sello) || 0) : 0;
 
-      // 2. Bono por Frecuencia (visitas en los últimos 7 días a este establecimiento)
-      const visitasRecientesRes = await client.query(
-        `SELECT COUNT(*)::int AS total
-         FROM visitas v
-         JOIN sucursales s ON s.id_sucursal = v.id_sucursal
-         WHERE v.id_cliente = $1 
-           AND s.id_establecimiento = $2
-           AND v.estado = 'CONFIRMADA'
-           AND v.fecha_hora >= (CURRENT_TIMESTAMP - INTERVAL '7 days')`,
-        [clienteId, establecimientoId],
-      );
-      const visitasPrevias7d = visitasRecientesRes.rows[0]?.total || 0;
-      let bonoFrecuencia = 0;
-      let tagFrecuencia = "";
-      if (visitasPrevias7d === 1) {
-        bonoFrecuencia = 5; // 2da visita en 7 días
-        tagFrecuencia = " (+5 pts bono cliente frecuente)";
-      } else if (visitasPrevias7d >= 2) {
-        bonoFrecuencia = 10; // 3ra+ visita en 7 días
-        tagFrecuencia = " (+10 pts bono racha semanal)";
-      }
-
-      // 3. Bono por Consumo / Monto de compra según el ratio configurado por el local
       let bonoConsumo = 0;
       let tagConsumo = "";
-      if (monto_compra !== undefined && Number(monto_compra) > 0 && ratioMontoPorPunto > 0) {
-        const montoNum = Number(monto_compra);
-        bonoConsumo = Math.floor(montoNum / ratioMontoPorPunto);
-        if (bonoConsumo > 0) {
-          tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
+      let puntosRegalo = 0;
+      let tagRegalo = "";
+
+      if (yaTieneSelloHoy) {
+        // En visitas posteriores del mismo día: aplica regla de puntos por consumo
+        if (monto_compra !== undefined && Number(monto_compra) > 0 && ratioMontoPorPunto > 0) {
+          const montoNum = Number(monto_compra);
+          bonoConsumo = Math.floor(montoNum / ratioMontoPorPunto);
+          if (bonoConsumo > 0) {
+            tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
+          }
+        }
+
+        // Puntos de regalo / cortesía: verificar si ya recibió cortesía hoy en este local
+        const rawRegalo = (req.body.puntos_regalo && !isNaN(Number(req.body.puntos_regalo)))
+          ? Math.max(0, Math.floor(Number(req.body.puntos_regalo)))
+          : 0;
+
+        if (rawRegalo > 0) {
+          const regaloPrevioRes = await client.query(
+            `SELECT COUNT(*)::int AS total_regalo_hoy
+             FROM movimientos_puntos mp
+             JOIN visitas v ON v.id_visita = mp.id_visita
+             JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+             WHERE mp.id_cliente = $1 AND suc.id_establecimiento = $2
+               AND mp.descripcion LIKE '%cortesía%'
+               AND mp.fecha_movimiento >= (date_trunc('day', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')`,
+            [clienteId, establecimientoId],
+          );
+          if ((regaloPrevioRes.rows[0]?.total_regalo_hoy || 0) === 0) {
+            puntosRegalo = rawRegalo;
+            tagRegalo = ` (+${puntosRegalo} pts de cortesía)`;
+          }
         }
       }
 
-      // 4. Puntos de Regalo / Cortesía opcionales ingresados por el cajero
-      const puntosRegalo = (req.body.puntos_regalo && !isNaN(Number(req.body.puntos_regalo)))
-        ? Math.max(0, Math.floor(Number(req.body.puntos_regalo)))
-        : 0;
-      const tagRegalo = puntosRegalo > 0 ? ` (+${puntosRegalo} pts de cortesía)` : "";
-
-      const puntosOtorgados = puntosBase + bonoFrecuencia + bonoConsumo + puntosRegalo;
+      // En la primera visita solo se otorgan los puntos del sello diario;
+      // En la segunda visita o posterior se otorgan puntos por consumo + puntos de cortesía
+      const puntosOtorgados = yaTieneSelloHoy
+        ? (bonoConsumo + puntosRegalo)
+        : puntosBase;
 
       let selloId: number | null = null;
 
@@ -386,8 +404,8 @@ export const NfcVisitController = {
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
       const descripcionMovimiento = yaTieneSelloHoy
-        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagFrecuencia}${tagRegalo}`
-        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagFrecuencia}${tagConsumo}${tagRegalo}`;
+        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagRegalo}`
+        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}${tagRegalo}`;
 
       // 4. Crear Movimiento Contable de Puntos (Ledger) si se otorgaron puntos
       if (puntosOtorgados > 0) {
@@ -420,7 +438,7 @@ export const NfcVisitController = {
       const notifTitulo = yaTieneSelloHoy ? "¡Consumo registrado!" : "¡Nuevo sello obtenido!";
       const notifMensaje = yaTieneSelloHoy
         ? `Se registraron tus compras en ${sucursalRes.rows[0].nombre_comercial} y ganaste +${puntosOtorgados} puntos (el sello diario de hoy ya fue acumulado).`
-        : `Has obtenido el sello #${ordenSello} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.${tagFrecuencia}${tagConsumo}`;
+        : `Has obtenido el sello #${ordenSello} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.${tagConsumo}`;
 
       await client.query(
         `INSERT INTO notificaciones (
@@ -472,8 +490,8 @@ export const NfcVisitController = {
           saldo_actual: saldoPosterior,
           desglose: {
             puntos_base: puntosBase,
-            bono_frecuencia: bonoFrecuencia,
             bono_consumo: bonoConsumo,
+            puntos_regalo: puntosRegalo,
           },
         },
       }, yaTieneSelloHoy ? "Compra confirmada y puntos acreditados." : "Visita confirmada, sello y puntos acreditados.");

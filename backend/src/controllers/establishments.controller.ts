@@ -113,7 +113,7 @@ export const EstablishmentsController = {
   async actualizarMiPerfil(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const idUsuario = req.user!.id;
-      const { logo, imagen_portada, telefono, email, descripcion, horario, id_sucursal, google_maps_url, direccion, monto_por_punto } = req.body;
+      const { logo, imagen_portada, telefono, email, descripcion, horario, id_sucursal, google_maps_url, direccion, monto_por_punto, puntos_por_sello } = req.body;
 
       // Obtener el establecimiento del usuario
       const sucRes = await query(
@@ -157,6 +157,23 @@ export const EstablishmentsController = {
           montoPorPuntoVal,
         ],
       );
+
+      // Si se configuraron puntos por sello, actualizar programas_sellos y reglas_sellos
+      if (puntos_por_sello !== undefined && !isNaN(Number(puntos_por_sello)) && Number(puntos_por_sello) > 0) {
+        const ptsSelloVal = Math.floor(Number(puntos_por_sello));
+        await query(
+          `UPDATE programas_sellos 
+           SET puntos_por_visita = $1, fecha_actualizacion = CURRENT_TIMESTAMP 
+           WHERE id_establecimiento = $2`,
+          [ptsSelloVal, idEst],
+        );
+        await query(
+          `UPDATE reglas_sellos 
+           SET valor_puntos_por_sello = $1 
+           WHERE establecimiento_id = $2`,
+          [ptsSelloVal, idEst],
+        );
+      }
 
       // Si se proporcionó horario, dirección o enlace de Google Maps, actualizar la sucursal asignada
       if (horario !== undefined || direccion !== undefined || google_maps_url !== undefined) {
