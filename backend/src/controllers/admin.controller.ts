@@ -658,7 +658,35 @@ export const AdminController = {
   ) {
     try {
       const { id } = req.params;
-      const { estado, motivo } = req.body;
+      const { estado, motivo, uid_nfc } = req.body;
+
+      const actual = await query(
+        `SELECT id_tarjeta, uid_nfc, estado FROM tarjetas_nfc WHERE id_tarjeta = $1`,
+        [id],
+      );
+      if (!actual.rows[0]) throw new ApiError(404, "Tarjeta no encontrada");
+
+      const estadoAnterior = actual.rows[0].estado;
+      const uidAnterior = actual.rows[0].uid_nfc;
+
+      // Si se envía un nuevo UID para actualizar el chip físico
+      let nuevoUid = uidAnterior;
+      if (uid_nfc && String(uid_nfc).trim()) {
+        const cleanUid = String(uid_nfc).trim().toUpperCase();
+        if (cleanUid !== uidAnterior) {
+          const existeUid = await query(
+            `SELECT id_tarjeta FROM tarjetas_nfc WHERE UPPER(uid_nfc) = $1 AND id_tarjeta != $2`,
+            [cleanUid, id]
+          );
+          if (existeUid.rows.length > 0) {
+            throw new ApiError(409, `El UID ${cleanUid} ya está registrado en otra tarjeta`);
+          }
+          nuevoUid = cleanUid;
+        }
+      }
+
+      // Si no se pasó estado, conservar el actual
+      const estadoFinal = estado || estadoAnterior;
 
       const ESTADOS_VALIDOS = [
         "DISPONIBLE",
@@ -668,44 +696,44 @@ export const AdminController = {
         "DANADA",
         "REEMPLAZADA",
       ];
-      if (!ESTADOS_VALIDOS.includes(estado)) {
+      if (!ESTADOS_VALIDOS.includes(estadoFinal)) {
         throw new ApiError(
           400,
           `Estado de tarjeta inválido. Permitidos: ${ESTADOS_VALIDOS.join(", ")}`,
         );
       }
 
-      const actual = await query(
-        `SELECT id_tarjeta, estado FROM tarjetas_nfc WHERE id_tarjeta = $1`,
-        [id],
-      );
-      if (!actual.rows[0]) throw new ApiError(404, "Tarjeta no encontrada");
-
-      const estadoAnterior = actual.rows[0].estado;
+      const codigoInterno = `NFC-${nuevoUid.replace(/[^A-Z0-9]/g, "").slice(0, 10)}`;
 
       const result = await query(
         `UPDATE tarjetas_nfc 
          SET estado = $2,
+             uid_nfc = $3,
+             codigo_interno = COALESCE(codigo_interno, $4),
              fecha_bloqueo = CASE WHEN $2 IN ('BLOQUEADA', 'PERDIDA') THEN CURRENT_TIMESTAMP ELSE fecha_bloqueo END,
-             motivo_bloqueo = CASE WHEN $2 IN ('BLOQUEADA', 'PERDIDA') THEN COALESCE($3, motivo_bloqueo) ELSE motivo_bloqueo END,
+             motivo_bloqueo = CASE WHEN $2 IN ('BLOQUEADA', 'PERDIDA') THEN COALESCE($5, motivo_bloqueo) ELSE motivo_bloqueo END,
              fecha_actualizacion = CURRENT_TIMESTAMP
          WHERE id_tarjeta = $1 
          RETURNING id_tarjeta AS id, uid_nfc, codigo_interno, estado, fecha_bloqueo, motivo_bloqueo`,
-        [id, estado, motivo || null],
+        [id, estadoFinal, nuevoUid, codigoInterno, motivo || null],
       );
 
       // Registrar trazabilidad inmutable en historial_tarjeta_nfc
       try {
+        const accionDesc = nuevoUid !== uidAnterior 
+          ? `UID actualizado de ${uidAnterior} a ${nuevoUid}${estadoFinal !== estadoAnterior ? ` y estado a ${estadoFinal}` : ''}`
+          : (motivo || "Actualizado desde panel administrativo");
+
         await query(
           `INSERT INTO historial_tarjeta_nfc (id_tarjeta, id_usuario_accion, accion, estado_anterior, estado_nuevo, motivo, fecha_hora)
            VALUES ($1, $2, 'CAMBIO_ESTADO', $3, $4, $5, CURRENT_TIMESTAMP)`,
-          [id, req.user?.id || null, estadoAnterior, estado, motivo || "Actualizado desde panel administrativo"],
+          [id, req.user?.id || null, estadoAnterior, estadoFinal, accionDesc],
         );
       } catch {
         // No bloquear la respuesta si el log falla
       }
 
-      sendResponse(res, 200, result.rows[0], "Estado de tarjeta actualizado");
+      sendResponse(res, 200, result.rows[0], "Tarjeta actualizada con éxito");
     } catch (error) {
       next(error);
     }

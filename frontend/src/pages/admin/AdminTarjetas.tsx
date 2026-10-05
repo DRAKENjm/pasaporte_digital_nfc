@@ -158,6 +158,7 @@ export const AdminTarjetas: React.FC = () => {
 
   // Formulario de cambio de estado
   const [nuevoEstado, setNuevoEstado] = useState<EstadoNfc>("ACTIVA");
+  const [editarUidInput, setEditarUidInput] = useState("");
   const [motivoCambio, setMotivoCambio] = useState("");
   const [savingEstado, setSavingEstado] = useState(false);
 
@@ -438,6 +439,7 @@ export const AdminTarjetas: React.FC = () => {
     // Normalizar a valor válido oficial
     const est = t.estado === "EN_STOCK" ? "DISPONIBLE" : t.estado === "ASIGNADA" ? "ACTIVA" : t.estado;
     setNuevoEstado(est as EstadoNfc);
+    setEditarUidInput(t.uid_nfc || "");
     setMotivoCambio(t.motivo_bloqueo || "");
     setModalEstadoOpen(true);
   };
@@ -446,32 +448,40 @@ export const AdminTarjetas: React.FC = () => {
     e.preventDefault();
     if (!selectedTarjeta) return;
 
+    const uidLimpio = editarUidInput.trim().toUpperCase();
+    if (!uidLimpio) {
+      showToast("El UID de la tarjeta no puede estar vacío", "error");
+      return;
+    }
+
     setSavingEstado(true);
     try {
-      await api.patch(`/admin/tarjetas/${selectedTarjeta.id}/estado`, {
+      const { data } = await api.patch(`/admin/tarjetas/${selectedTarjeta.id}/estado`, {
         estado: nuevoEstado,
+        uid_nfc: uidLimpio,
         motivo: motivoCambio.trim() || undefined,
       });
 
-      showToast(`Estado de tarjeta actualizado a ${nuevoEstado}`, "success");
+      const updatedCard = data?.data || data;
+      const finalUid = updatedCard?.uid_nfc || uidLimpio;
+
+      showToast(`Tarjeta ${finalUid} actualizada exitosamente`, "success");
 
       setTarjetas((prev) =>
         prev.map((t) =>
           t.id === selectedTarjeta.id
-            ? { ...t, estado: nuevoEstado, motivo_bloqueo: motivoCambio }
+            ? { ...t, uid_nfc: finalUid, estado: nuevoEstado, motivo_bloqueo: motivoCambio }
             : t,
         ),
       );
 
-      if (selectedTarjeta.id === selectedTarjeta.id) {
-        setSelectedTarjeta((prev) =>
-          prev ? { ...prev, estado: nuevoEstado, motivo_bloqueo: motivoCambio } : null,
-        );
-      }
+      setSelectedTarjeta((prev) =>
+        prev ? { ...prev, uid_nfc: finalUid, estado: nuevoEstado, motivo_bloqueo: motivoCambio } : null,
+      );
 
       setModalEstadoOpen(false);
     } catch (err: any) {
-      showToast(err?.response?.data?.message || "Error al actualizar estado", "error");
+      showToast(err?.response?.data?.message || "Error al actualizar tarjeta", "error");
     } finally {
       setSavingEstado(false);
     }
@@ -831,18 +841,40 @@ export const AdminTarjetas: React.FC = () => {
       >
         {selectedTarjeta && (
           <form onSubmit={handleGuardarEstado} className="space-y-5">
-            {/* Resumen de la tarjeta */}
-            <div className="p-3.5 rounded-2xl bg-[#FAF8F5] dark:bg-slate-800/60 border border-[#EFE7DE] dark:border-slate-700/60 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase text-[#8E7D7D]">UID Chip NFC</p>
-                <p className="font-mono font-bold text-sm text-[#2D1A1E] dark:text-white">
-                  {selectedTarjeta.uid_nfc}
-                </p>
+            {/* Resumen y edición de UID de la tarjeta */}
+            <div className="p-4 rounded-2xl bg-[#FAF8F5] dark:bg-slate-800/60 border border-[#EFE7DE] dark:border-slate-700/60 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-[#8E7D7D]">ID Interno</p>
+                  <p className="font-mono text-xs text-[#2D1A1E] dark:text-white">
+                    {selectedTarjeta.codigo_interno || `ID-${selectedTarjeta.id}`}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold uppercase text-[#8E7D7D]">Titular</p>
+                  <p className="text-xs font-semibold text-[#2D1A1E] dark:text-white">
+                    {selectedTarjeta.nombres ? `${selectedTarjeta.nombres} ${selectedTarjeta.apellidos || ""}` : "Sin asignar"}
+                  </p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold uppercase text-[#8E7D7D]">Titular</p>
-                <p className="text-xs font-semibold text-[#2D1A1E] dark:text-white">
-                  {selectedTarjeta.nombres ? `${selectedTarjeta.nombres} ${selectedTarjeta.apellidos || ""}` : "Sin asignar"}
+
+              {/* Input editable de UID NFC */}
+              <div className="space-y-1.5 text-left pt-1 border-t border-[#EFE7DE] dark:border-slate-700/60">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+                  UID del Chip NFC (Modificable / Escanear nuevo chip):
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={editarUidInput}
+                    onChange={(e) => setEditarUidInput(e.target.value)}
+                    placeholder="Ej: 04:79:BA:71:CF:2A:81"
+                    className="w-full px-4 py-2.5 rounded-xl border border-[#D9D0C7] dark:border-slate-700 text-xs font-mono font-bold text-[#2D1A1E] dark:text-white bg-white dark:bg-slate-900 focus:outline-none focus:border-[#7C0A1E] uppercase"
+                  />
+                </div>
+                <p className="text-[10px] text-[#8E7D7D]">
+                  Puedes corregir o reemplazar el UID de prueba por el UID real de la tarjeta física.
                 </p>
               </div>
             </div>
@@ -850,7 +882,7 @@ export const AdminTarjetas: React.FC = () => {
             {/* Opciones de los 6 estados oficiales */}
             <div className="space-y-2">
               <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
-                Selecciona el nuevo estado de la tarjeta:
+                Selecciona el estado de la tarjeta:
               </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

@@ -289,8 +289,8 @@ export const HomePage: React.FC = () => {
           <span>
             <strong className="text-[#7C0A1E] font-bold">{puntosActuales}</strong> / {puntosMeta} Pts
           </span>
-          <span className="text-[#8E7D7D]">
-            {puntosRestantes > 0 ? `${puntosRestantes} / ${puntosMeta} Pts` : "¡Meta alcanzada!"}
+          <span className="text-[#8E7D7D] font-medium text-[11px]">
+            {puntosRestantes > 0 ? `Faltan ${puntosRestantes} pts para el siguiente nivel` : "¡Meta alcanzada!"}
           </span>
         </div>
       </div>
