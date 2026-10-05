@@ -2,8 +2,6 @@ import React, { createContext, useState, useEffect, useCallback, useRef } from "
 import { User } from "../types";
 import { authService } from "../services/authService";
 
-// Tiempo de inactividad para cierre de sesión automático (3 minutos)
-const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000;
 
 interface AuthContextType {
   user: User | null;
@@ -49,14 +47,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(() => getStoredUser());
   const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [loading, setLoading] = useState(true);
-  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   const clearSessionData = useCallback(() => {
     sessionStorage.removeItem("token");
     sessionStorage.removeItem("user");
     sessionStorage.removeItem("pasaporte_uid_nfc");
     sessionStorage.removeItem("comercio_establecimiento_id");
-    // Limpiar también cualquier token previo que haya quedado en localStorage
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("pasaporte_uid_nfc");
@@ -67,59 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     clearSessionData();
     setToken(null);
     setUser(null);
-    if (reason === "inactivity") {
-      // Notificar opcionalmente por query param o alert
-      if (!window.location.pathname.includes("/auth/login")) {
-        window.location.href = "/auth/login?inactivity=1";
-      }
-    }
   }, [clearSessionData]);
-
-  // Manejo de inactividad de 5 minutos
-  const resetInactivityTimer = useCallback(() => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-    }
-    // Solo activar temporizador si está autenticado
-    if (token) {
-      inactivityTimerRef.current = setTimeout(() => {
-        logout("inactivity");
-      }, INACTIVITY_TIMEOUT_MS);
-    }
-  }, [token, logout]);
-
-  useEffect(() => {
-    if (!token) return;
-
-    const activityEvents = [
-      "mousedown",
-      "mousemove",
-      "keydown",
-      "scroll",
-      "touchstart",
-      "click",
-    ];
-
-    const handleUserActivity = () => {
-      resetInactivityTimer();
-    };
-
-    activityEvents.forEach((evt) => {
-      window.addEventListener(evt, handleUserActivity, { passive: true });
-    });
-
-    // Iniciar temporizador inicial
-    resetInactivityTimer();
-
-    return () => {
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-      }
-      activityEvents.forEach((evt) => {
-        window.removeEventListener(evt, handleUserActivity);
-      });
-    };
-  }, [token, resetInactivityTimer]);
 
   const refreshProfile = useCallback(async () => {
     try {

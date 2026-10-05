@@ -17,14 +17,14 @@ export const ClientLayout: React.FC = () => {
   ];
 
   const sideItems = [
-    { to: "/user/home", icon: Home, label: "Inicio" },
-    { to: "/user/explorar", icon: Compass, label: "Explorar" },
-    { to: "/user/locales", icon: Store, label: "Locales" },
-    { to: "/user/mis-sellos", icon: Stamp, label: "Mis Sellos" },
-    { to: "/user/pasaporte", icon: Award, label: "Tarjeta NFC" },
-    { to: "/user/amigos", icon: Users, label: "Amigos" },
-    { to: "/user/actividad", icon: Clock, label: "Actividad" },
-    { to: "/user/perfil", icon: User, label: "Perfil" },
+    { to: "/user/home", icon: Home, label: t("home") || "Inicio" },
+    { to: "/user/explorar", icon: Compass, label: t("explore") || "Explorar" },
+    { to: "/user/locales", icon: Store, label: t("venues") || "Locales" },
+    { to: "/user/mis-sellos", icon: Stamp, label: t("myStamps") || "Mis Sellos" },
+    { to: "/user/pasaporte", icon: Award, label: t("myCard") || "Tarjeta NFC" },
+    { to: "/user/amigos", icon: Users, label: t("friends") || "Amigos" },
+    { to: "/user/actividad", icon: Clock, label: t("activity") || "Actividad" },
+    { to: "/user/perfil", icon: User, label: t("profile") || "Perfil" },
   ];
 
   return (

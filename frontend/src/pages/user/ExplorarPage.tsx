@@ -39,6 +39,9 @@ const defaultCenter = {
   lng: -79.84088,
 };
 
+const ACTIVE_ROUTE_STORAGE_KEY = "pd_active_route_v1";
+const ROUTE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
 function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -262,6 +265,33 @@ export const ExplorarPage: React.FC = () => {
     // ruta=1: no auto-start sin GPS; usuario pulsa Iniciar ruta
   }, [locales, searchParams, map]);
 
+  // Restaurar ruta activa de sessionStorage si tiene menos de 10 min
+  useEffect(() => {
+    if (!locales.length || !userCoords || directions) return;
+    try {
+      const raw = sessionStorage.getItem(ACTIVE_ROUTE_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.savedAt || Date.now() - parsed.savedAt > ROUTE_TTL_MS) {
+        sessionStorage.removeItem(ACTIVE_ROUTE_STORAGE_KEY);
+        return;
+      }
+      const found = locales.find(
+        (l) => String(l.id_establecimiento || l.id) === String(parsed.localId)
+      );
+      if (found) {
+        setLocalSeleccionado(found);
+        if (parsed.modoViaje) setModoViaje(parsed.modoViaje);
+        setTimeout(() => {
+          calcularRuta(parsed.modoViaje || "DRIVING");
+        }, 400);
+      }
+    } catch {
+      sessionStorage.removeItem(ACTIVE_ROUTE_STORAGE_KEY);
+    }
+  }, [locales, userCoords]);
+
+
   // NO solicitar ubicación automáticamente al montar
   // Solo al presionar "Mi Ubicación"
   const solicitarPermisoUbicacion = useCallback(
@@ -308,18 +338,18 @@ export const ExplorarPage: React.FC = () => {
                   const suc = localSeleccionadoRef.current.sucursales[0];
                   if (suc.latitud && suc.longitud) {
                     const destDist = getDistanceKm(newCoords.lat, newCoords.lng, Number(suc.latitud), Number(suc.longitud));
-                    // Si ya estás a menos de 25 metros del destino
-                    if (destDist <= 0.025) {
+                    // Si ya estás a menos de 50 metros del destino
+                    if (destDist <= 0.05) {
                       showToast("🎉 ¡Has llegado a tu destino!", "success");
                     } else if (lastRouteOriginRef.current) {
-                      // Si el usuario se desplazó más de 25 metros desde el último cálculo
+                      // Si el usuario se desplazó más de 40 metros desde el último cálculo
                       const distMovida = getDistanceKm(
                         lastRouteOriginRef.current.lat,
                         lastRouteOriginRef.current.lng,
                         newCoords.lat,
                         newCoords.lng
                       );
-                      if (distMovida >= 0.025) {
+                      if (distMovida >= 0.04) {
                         lastRouteOriginRef.current = newCoords;
                         calcularRutaSilenciosaRef.current(newCoords);
                       }
@@ -532,6 +562,18 @@ export const ExplorarPage: React.FC = () => {
               right: 40,
             });
           }
+          try {
+            sessionStorage.setItem(
+              ACTIVE_ROUTE_STORAGE_KEY,
+              JSON.stringify({
+                localId: localSeleccionado.id_establecimiento || localSeleccionado.id,
+                modoViaje: travelMode,
+                destLat,
+                destLng,
+                savedAt: Date.now(),
+              })
+            );
+          } catch {}
           showToast(travelMode === "WALKING" ? "Ruta a pie trazada" : "Ruta en auto trazada", "success");
         } else {
           showToast("No se pudo calcular ruta exacta. Abriendo en Google Maps...", "info");
@@ -623,6 +665,9 @@ export const ExplorarPage: React.FC = () => {
     setDirections(null);
     lastRouteOriginRef.current = null;
     setTarjetaExpandidaEnRuta(false);
+    try {
+      sessionStorage.removeItem(ACTIVE_ROUTE_STORAGE_KEY);
+    } catch {}
   };
 
   const cerrarTarjeta = () => {
@@ -630,6 +675,9 @@ export const ExplorarPage: React.FC = () => {
     setDirections(null);
     lastRouteOriginRef.current = null;
     setTarjetaExpandidaEnRuta(false);
+    try {
+      sessionStorage.removeItem(ACTIVE_ROUTE_STORAGE_KEY);
+    } catch {}
   };
 
   const onLoad = useCallback((mapInstance: google.maps.Map) => {

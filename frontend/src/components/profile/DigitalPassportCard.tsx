@@ -1,6 +1,6 @@
 import QRCode from "qrcode";
 import api from "../../services/api";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, memo } from "react";
 import {
   Nfc,
   ShieldCheck,
@@ -34,19 +34,35 @@ function formatUid(uid?: string | null, userId?: string) {
   return "NFC-SIN-VINCULAR";
 }
 
-export const DigitalPassportCard: React.FC<Props> = ({
+const QrCountdown: React.FC<{ expires: number }> = memo(({ expires }) => {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  const remainingSec = Math.max(0, Math.ceil((expires - now) / 1000));
+  const mm = String(Math.floor(remainingSec / 60)).padStart(2, "0");
+  const ss = String(remainingSec % 60).padStart(2, "0");
+  return (
+    <p className="text-xs text-sky-600 dark:text-sky-400 font-medium tabular-nums">
+      Válido por {mm}:{ss} min
+    </p>
+  );
+});
+
+export const DigitalPassportCard: React.FC<Props> = memo(({
   user,
   uidNfc,
   onAcercarLector,
 }) => {
   const navigate = useNavigate();
-  const info = getNivelInfo(user);
-  const nivel = normalizeNivel(user?.nivel_nombre || user?.nivel);
+  const info = useMemo(() => getNivelInfo(user), [user]);
+  const nivel = useMemo(() => normalizeNivel(user?.nivel_nombre || user?.nivel), [user?.nivel_nombre, user?.nivel]);
   const [showQr, setShowQr] = useState(true);
-  const [qrUrl, setQrUrl] = useState(""),
-    [qrError, setQrError] = useState(""),
-    [expires, setExpires] = useState(0),
-    [now, setNow] = useState(Date.now());
+  const [qrUrl, setQrUrl] = useState("");
+  const [qrError, setQrError] = useState("");
+  const [expires, setExpires] = useState(0);
+
   const renew = async () => {
     setQrError("");
     try {
@@ -60,40 +76,43 @@ export const DigitalPassportCard: React.FC<Props> = ({
       setQrUrl("");
     }
   };
+
   useEffect(() => {
     renew();
-    const refresh = setInterval(renew, 300000),
-      tick = setInterval(() => setNow(Date.now()), 1000);
+    const refresh = setInterval(renew, 300000); // 5 minutos
     return () => {
       clearInterval(refresh);
-      clearInterval(tick);
     };
   }, [user?.id]);
-  const remainingSec = Math.max(0, Math.ceil((expires - now) / 1000)),
-    mm = String(Math.floor(remainingSec / 60)).padStart(2, "0"),
-    ss = String(remainingSec % 60).padStart(2, "0");
 
-  const displayName =
-    [user?.nombres, user?.apellidos].filter(Boolean).join(" ").toUpperCase() ||
-    (user?.email || "USUARIO").toUpperCase();
+  const displayName = useMemo(
+    () =>
+      [user?.nombres, user?.apellidos].filter(Boolean).join(" ").toUpperCase() ||
+      (user?.email || "USUARIO").toUpperCase(),
+    [user?.nombres, user?.apellidos, user?.email]
+  );
 
-  const badgeLabel =
-    nivel === "Diamante"
+  const uidDisplay = useMemo(() => formatUid(uidNfc, user?.id), [uidNfc, user?.id]);
+
+  const badgeLabel = useMemo(() => {
+    return nivel === "Diamante"
       ? "DIAMANTE VIP"
       : nivel === "Oro"
         ? "GOLD VIP"
         : nivel === "Plata"
           ? "PLATA"
           : "BRONCE";
+  }, [nivel]);
 
-  const gradient =
-    nivel === "Diamante"
+  const gradient = useMemo(() => {
+    return nivel === "Diamante"
       ? "from-cyan-500 via-sky-600 to-indigo-700"
       : nivel === "Oro"
         ? "from-fuchsia-500 via-violet-600 to-indigo-700"
         : nivel === "Plata"
           ? "from-slate-400 via-slate-500 to-slate-700"
           : "from-amber-700 via-orange-800 to-stone-900";
+  }, [nivel]);
 
   return (
     <div className="space-y-3 animate-fadeIn">
@@ -118,7 +137,7 @@ export const DigitalPassportCard: React.FC<Props> = ({
           NFC ID seguro
         </p>
         <p className="relative z-10 text-lg font-extrabold tracking-wide font-mono mt-0.5">
-          {formatUid(uidNfc, user?.id)}
+          {uidDisplay}
         </p>
 
         <div className="relative z-10 mt-4 flex items-end justify-between gap-3">
@@ -193,9 +212,7 @@ export const DigitalPassportCard: React.FC<Props> = ({
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted mt-1">
               Código de respaldo dinámico
             </p>
-            <p className="text-xs text-sky-600 dark:text-sky-400 font-medium tabular-nums">
-              Válido por {mm}:{ss} min
-            </p>
+            {expires > 0 && <QrCountdown expires={expires} />}
           </div>
         )}
       </div>
@@ -224,4 +241,4 @@ export const DigitalPassportCard: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});

@@ -19,11 +19,32 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLangState(l);
     localStorage.setItem("pd_idioma", l);
     document.documentElement.lang = l;
+    window.dispatchEvent(new CustomEvent("pd-lang-change", { detail: l }));
   };
 
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "pd_idioma" && e.newValue && ["es", "en", "pt", "ru", "qu"].includes(e.newValue)) {
+        setLangState(e.newValue as Lang);
+      }
+    };
+    const onCustom = (e: Event) => {
+      const detail = (e as CustomEvent).detail as Lang;
+      if (detail && ["es", "en", "pt", "ru", "qu"].includes(detail)) {
+        setLangState(detail);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("pd-lang-change", onCustom);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("pd-lang-change", onCustom);
+    };
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -40,7 +61,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [lang]
   );
 
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  return (
+    <LanguageContext.Provider value={value}>
+      <div key={lang} className="contents">
+        {children}
+      </div>
+    </LanguageContext.Provider>
+  );
 };
 
 /** Nunca lanza error si falta el Provider */
@@ -50,7 +77,10 @@ export const useLanguage = (): Ctx => {
     const fallbackLang = (localStorage.getItem("pd_idioma") || "es") as Lang;
     return {
       lang: fallbackLang,
-      setLang: (l: Lang) => localStorage.setItem("pd_idioma", l),
+      setLang: (l: Lang) => {
+        localStorage.setItem("pd_idioma", l);
+        window.dispatchEvent(new CustomEvent("pd-lang-change", { detail: l }));
+      },
       t: (key: string) => String(key),
     };
   }

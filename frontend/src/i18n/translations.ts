@@ -47,6 +47,8 @@ const t = {
     close: "Cerrar",
     active: "Activa",
     customizeCard: "Personalizar imagen y QR",
+    venues: "Locales",
+    friends: "Amigos",
   },
   en: {
     home: "Home",
@@ -94,6 +96,8 @@ const t = {
     close: "Close",
     active: "Active",
     customizeCard: "Customize image and QR",
+    venues: "Venues",
+    friends: "Friends",
   },
   pt: {
     home: "Início",
@@ -141,6 +145,8 @@ const t = {
     close: "Fechar",
     active: "Ativa",
     customizeCard: "Personalizar imagem e QR",
+    venues: "Locais",
+    friends: "Amigos",
   },
   ru: {
     home: "Главная",
@@ -188,6 +194,8 @@ const t = {
     close: "Закрыть",
     active: "Активна",
     customizeCard: "Фон и QR",
+    venues: "Заведения",
+    friends: "Друзья",
   },
   qu: {
     home: "Qallariy",
@@ -235,6 +243,8 @@ const t = {
     close: "Wichqay",
     active: "Activo",
     customizeCard: "Imagen y QR",
+    venues: "Localkuna",
+    friends: "Amigokuna",
   },
 } as const;
 

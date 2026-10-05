@@ -10,6 +10,7 @@ import {
 } from "../utils";
 import { AuthenticatedRequest } from "../types";
 import { query } from "../config/database";
+import { verifyGoogleIdToken } from "../services/googleAuth.service";
 
 const failedAttemptsMap = new Map<string, number>();
 
@@ -267,6 +268,78 @@ export const AuthController = {
           role: user.rol_nombre,
           id_cliente: user.id_cliente,
           codigo_cliente: user.codigo_cliente,
+        },
+        token,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async loginWithGoogle(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { credential } = req.body;
+      if (!credential) {
+        throw new ApiError(400, "Credencial de Google no proporcionada");
+      }
+
+      // 1. Validación de Identidad con Google OAuth 2.0 y obtención de email verificado
+      const googleProfile = await verifyGoogleIdToken(credential);
+      const email = googleProfile.email.toLowerCase().trim();
+
+      // 2. Consulta en Base de Datos: verificar si el usuario ya existe
+      const user = await UserModel.findByEmail(email);
+
+      // Bifurcación: Si NO existe, denegar acceso estricto y no crear cuenta vacía
+      if (!user) {
+        throw new ApiError(
+          404,
+          `El correo (${email}) no está registrado en nuestro sistema. Para acceder o vincular una tarjeta NFC, debes crear una cuenta primero.`
+        );
+      }
+
+      // Si existe pero está inactivo o suspendido
+      if (user.estado !== 1) {
+        throw new ApiError(403, "Tu cuenta no está activa o se encuentra suspendida");
+      }
+
+      // 3. Si SÍ existe: actualizar último acceso
+      await UserModel.updateUltimoAcceso(user.id_usuario);
+
+      // Si no tenía foto de perfil y Google la provee, guardarla
+      if (!user.foto_perfil && googleProfile.picture) {
+        await query(
+          `UPDATE usuarios SET foto_perfil = $1 WHERE id_usuario = $2`,
+          [googleProfile.picture, user.id_usuario]
+        ).catch(() => {});
+      }
+
+      await query(
+        `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion, ip, user_agent)
+         VALUES ($1, 'AUTH', 'LOGIN_GOOGLE', 'usuarios', $1, 'Inicio de sesión con Google OAuth 2.0', $2, $3)`,
+        [user.id_usuario, req.ip || null, req.headers["user-agent"] || null],
+      ).catch(() => {});
+
+      const token = generateToken({
+        id: user.id_usuario,
+        email: user.email,
+        role: user.rol_nombre,
+        nombres: user.nombres,
+        apellidos: user.apellidos,
+        id_cliente: user.id_cliente,
+      });
+
+      sendResponse(res, 200, {
+        user: {
+          id: user.id_usuario,
+          email: user.email,
+          nombres: user.nombres,
+          apellidos: user.apellidos,
+          role: user.rol_nombre,
+          id_cliente: user.id_cliente,
+          codigo_cliente: user.codigo_cliente,
+          telefono: user.telefono,
+          foto_perfil: user.foto_perfil || googleProfile.picture || null,
         },
         token,
       });

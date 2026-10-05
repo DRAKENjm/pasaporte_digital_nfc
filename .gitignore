@@ -48,6 +48,9 @@ pnpm-debug.log*
 # Herramientas AI y temporales
 CLAUDE.md
 .claude/
+scratch_img/
+web_pasaporte/
+test_*.js
 
 # Archivos temporales del SO
 .DS_Store
