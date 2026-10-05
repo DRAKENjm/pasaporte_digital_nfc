@@ -196,10 +196,23 @@ export const CommerceValidar: React.FC = () => {
       return;
     }
 
-    if (!/^\d+(\.\d{1,2})?$/.test(montoCompra) ||
-        !Number.isFinite(Number(montoCompra)) || Number(montoCompra) <= 0) {
-      showToast("Ingresa un monto mayor a cero con hasta dos decimales", "error");
-      return;
+    const tieneCompra = montoCompra.trim() !== "";
+    if (tieneCompra) {
+      if (!/^\d+(\.\d{1,2})?$/.test(montoCompra) ||
+          !Number.isFinite(Number(montoCompra)) || Number(montoCompra) < 0) {
+        showToast("El monto de compra debe ser un número positivo con hasta dos decimales", "error");
+        return;
+      }
+    }
+
+    // Si ya tiene sello hoy, no puede registrar visita vacía de 0 pts sin compra ni regalo
+    if (clienteData.ya_tiene_sello_hoy) {
+      const ptsRegaloNum = puntosRegalo ? Number(puntosRegalo) : 0;
+      const montoNum = tieneCompra ? Number(montoCompra) : 0;
+      if (montoNum <= 0 && ptsRegaloNum <= 0) {
+        showToast("El cliente ya recibió su sello de hoy. Ingresa un monto de compra o puntos de regalo para registrar este consumo.", "error");
+        return;
+      }
     }
 
     requestPending.current = true;
@@ -209,7 +222,7 @@ export const CommerceValidar: React.FC = () => {
         id_cliente: clienteData.cliente.id_cliente,
         id_tarjeta: clienteData.id_tarjeta,
         id_sucursal: selectedSucursal,
-        monto_compra: montoCompra,
+        monto_compra: tieneCompra && Number(montoCompra) > 0 ? montoCompra : undefined,
         puntos_regalo: puntosRegalo ? Number(puntosRegalo) : 0,
         id_programa: selectedPrograma || undefined,
         metodo_validacion: clienteData.metodo_identificacion || metodoValidacion,
@@ -558,36 +571,29 @@ export const CommerceValidar: React.FC = () => {
             </div>
           </div>
 
-          {/* Formulario de Confirmación de Consumo */}
+          {/* Formulario Dinámico: Sello de Hoy vs Consumo Adicional */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EFE7DE] shadow-xs space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Input Compra */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  Monto de Compra
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-3 text-xs font-bold text-[#8E7D7D]">S/</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    disabled={loading}
-                    value={montoCompra}
-                    onChange={(e) => setMontoCompra(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
-                  />
-                </div>
-                <p className="text-[10px] text-[#8E7D7D]">
-                  Regla: +1 pt por cada S/ {clienteData.monto_por_punto || 10}
+            {!clienteData.ya_tiene_sello_hoy ? (
+              <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-900">
+                <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
+                <p className="leading-snug">
+                  <strong>Primera visita del día:</strong> Al confirmar se otorgará su sello digital de hoy y sus puntos de visita correspondientes. Si realizó alguna compra, puedes registrarla a continuación.
                 </p>
               </div>
+            ) : (
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900">
+                <Award size={18} className="shrink-0 text-amber-600" />
+                <p className="leading-snug">
+                  <strong>Sello de hoy ya completado:</strong> El cliente ya tiene su sello oficial de hoy en este establecimiento. Esta visita registrará únicamente sus <strong>puntos por consumo o cortesía</strong>.
+                </p>
+              </div>
+            )}
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Sello a Otorgar */}
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  {clienteData.ya_tiene_sello_hoy ? "Sello Diario" : "Sello a Otorgar"}
+                  {clienteData.ya_tiene_sello_hoy ? "Estado del Sello" : "Sello de Hoy"}
                 </label>
                 {clienteData.ya_tiene_sello_hoy ? (
                   <div className="px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between">
@@ -605,18 +611,43 @@ export const CommerceValidar: React.FC = () => {
                   >
                     {sellosActivos.map((s) => (
                       <option key={s.id_programa} value={s.id_programa}>
-                        {s.nombre_sello || "Sello"} · {s.puntos_por_visita || 20} pts
+                        {s.nombre_sello || "Sello"} · +{s.puntos_por_visita || 20} pts
                       </option>
                     ))}
                   </select>
                 ) : (
                   <div className="px-3.5 py-2.5 rounded-xl bg-rose-50 border border-[#7C0A1E]/20 text-[#7C0A1E] font-black text-xs flex items-center justify-between">
-                    <span>{sellosActivos[0]?.nombre_sello || "+1 Sello"}</span>
+                    <span>{sellosActivos[0]?.nombre_sello || "Sello Oficial"}</span>
                     <Award size={16} />
                   </div>
                 )}
                 <p className="text-[10px] text-[#8E7D7D]">
-                  {clienteData.ya_tiene_sello_hoy ? "Máximo 1 sello por día" : `+${sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20} pts por sello`}
+                  {clienteData.ya_tiene_sello_hoy
+                    ? "Máximo 1 sello por día por cliente"
+                    : `+${sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita || clienteData.puntos_por_visita || 20} pts por sello`}
+                </p>
+              </div>
+
+              {/* Input Compra */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
+                  Monto de Compra {clienteData.ya_tiene_sello_hoy ? "(Requerido)" : "(Opcional)"}
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-3 text-xs font-bold text-[#8E7D7D]">S/</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    disabled={loading}
+                    value={montoCompra}
+                    onChange={(e) => setMontoCompra(e.target.value)}
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-[#EFE7DE] text-sm font-black text-[#2D1A1E] focus:outline-none focus:border-[#7C0A1E]"
+                  />
+                </div>
+                <p className="text-[10px] text-[#8E7D7D]">
+                  Regla: +1 pt por cada S/ {clienteData.monto_por_punto || 10}
                 </p>
               </div>
 

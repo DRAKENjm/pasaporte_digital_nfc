@@ -382,8 +382,17 @@ export const AdminTarjetas: React.FC = () => {
   const handleAgregarUidEscaneado = (uid: string) => {
     const clean = uid.trim().toUpperCase();
     if (!clean) return;
+
+    // Verificar si ya existe en la base de datos (inventario actual cargado)
+    const yaExisteEnBaseDatos = tarjetas.find((t) => t.uid_nfc?.toUpperCase() === clean);
+    if (yaExisteEnBaseDatos) {
+      showToast(`Esta tarjeta (${clean}) ya está registrada en el sistema`, "error");
+      setSingleUidInput("");
+      return;
+    }
+
     if (tarjetasEscaneadas.includes(clean)) {
-      showToast(`El UID ${clean} ya está en la lista de escaneo`, "info");
+      showToast(`Esta tarjeta ya está en la lista de escaneo`, "info");
       setSingleUidInput("");
       return;
     }
@@ -421,15 +430,26 @@ export const AdminTarjetas: React.FC = () => {
 
     setSavingStock(true);
     try {
-      await api.post("/admin/tarjetas/stock", { uids: list });
-      showToast(`${list.length} tarjeta(s) registrada(s) en almacén exitosamente`, "success");
+      const { data } = await api.post("/admin/tarjetas/stock", { uids: list });
+      const insertadas = data?.data?.insertadas ?? 0;
+      const totalEnviadas = list.length;
+      const duplicadas = totalEnviadas - insertadas;
+
+      if (insertadas === 0 && duplicadas > 0) {
+        showToast("Esta tarjeta ya está registrada en el sistema", "error");
+      } else if (duplicadas > 0) {
+        showToast(`Se registraron ${insertadas} tarjeta(s). ${duplicadas} ya estaban registradas.`, "info");
+      } else {
+        showToast(`${insertadas} tarjeta(s) registrada(s) en almacén exitosamente`, "success");
+      }
+
       setUidsInput("");
       setTarjetasEscaneadas([]);
       setSingleUidInput("");
       setModalStockOpen(false);
       await loadTarjetas();
     } catch (err: any) {
-      showToast(err?.response?.data?.message || "Error al registrar lote", "error");
+      showToast(err?.response?.data?.message || "Error al registrar tarjeta(s)", "error");
     } finally {
       setSavingStock(false);
     }
@@ -580,7 +600,7 @@ export const AdminTarjetas: React.FC = () => {
           className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] hover:bg-[#600616] text-white text-xs font-bold shadow-md active:scale-98 transition flex items-center gap-2 self-start sm:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>Importar Lote NFC</span>
+          <span>Registrar Tarjetas NFC</span>
         </button>
       </div>
 
@@ -859,23 +879,72 @@ export const AdminTarjetas: React.FC = () => {
                 </div>
               </div>
 
-              {/* Input editable de UID NFC */}
+              {/* Input editable de UID NFC con lector rápido */}
               <div className="space-y-1.5 text-left pt-1 border-t border-[#EFE7DE] dark:border-slate-700/60">
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
-                  UID del Chip NFC (Modificable / Escanear nuevo chip):
-                </label>
-                <div className="relative">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+                    UID del Chip NFC (Modificable / Escanear nuevo chip):
+                  </label>
+                  {isNfcSupported && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isNfcScanning) {
+                          stopNfcScan();
+                          return;
+                        }
+                        void startNfcScan(
+                          (result) => {
+                            if (result.serialNumber) {
+                              setEditarUidInput(result.serialNumber.trim().toUpperCase());
+                              showToast(`Nuevo chip ${result.serialNumber} detectado`, "success");
+                            }
+                          },
+                          { autoStop: true }
+                        );
+                      }}
+                      className={`px-3 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        isNfcScanning
+                          ? "bg-amber-600 text-white animate-pulse"
+                          : "bg-[#7C0A1E]/10 text-[#7C0A1E] hover:bg-[#7C0A1E]/20"
+                      }`}
+                    >
+                      <Smartphone size={13} />
+                      <span>{isNfcScanning ? "Escaneando tarjeta..." : "Escanear con Celular"}</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
                   <input
                     type="text"
                     required
                     value={editarUidInput}
                     onChange={(e) => setEditarUidInput(e.target.value)}
-                    placeholder="Ej: 04:79:BA:71:CF:2A:81"
-                    className="w-full px-4 py-2.5 rounded-xl border border-[#D9D0C7] dark:border-slate-700 text-xs font-mono font-bold text-[#2D1A1E] dark:text-white bg-white dark:bg-slate-900 focus:outline-none focus:border-[#7C0A1E] uppercase"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const clean = editarUidInput.trim().toUpperCase();
+                        setEditarUidInput(clean);
+                        showToast(`UID fijado: ${clean}`, "info");
+                      }
+                    }}
+                    placeholder="Ej: 04:79:BA:71:CF:2A:81 o acerca la tarjeta al lector USB"
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-[#D9D0C7] dark:border-slate-700 text-xs font-mono font-bold text-[#2D1A1E] dark:text-white bg-white dark:bg-slate-900 focus:outline-none focus:border-[#7C0A1E] uppercase"
                   />
+                  {editarUidInput && editarUidInput !== selectedTarjeta.uid_nfc && (
+                    <button
+                      type="button"
+                      onClick={() => setEditarUidInput(selectedTarjeta.uid_nfc)}
+                      className="px-3 py-2 text-[11px] font-bold text-[#8E7D7D] hover:text-[#2D1A1E] border border-[#EFE7DE] rounded-xl"
+                      title="Restablecer UID original"
+                    >
+                      Restablecer
+                    </button>
+                  )}
                 </div>
                 <p className="text-[10px] text-[#8E7D7D]">
-                  Puedes corregir o reemplazar el UID de prueba por el UID real de la tarjeta física.
+                  Puedes acercar la nueva tarjeta física al <strong>lector USB</strong> o pulsar <strong>Escanear con Celular</strong> para capturarla en un segundo.
                 </p>
               </div>
             </div>

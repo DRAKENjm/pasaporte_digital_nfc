@@ -785,25 +785,40 @@ export const AdminController = {
       }
 
       const codigoInterno = `NFC-${nuevoUid.replace(/[^A-Z0-9]/g, "").slice(0, 10)}`;
+      const esBloqueo = estadoFinal === "BLOQUEADA" || estadoFinal === "PERDIDA";
 
-      const result = await query(
-        `UPDATE tarjetas_nfc 
-         SET estado = $2,
-             uid_nfc = $3,
-             codigo_interno = COALESCE(codigo_interno, $4),
-             fecha_bloqueo = CASE WHEN $2 IN ('BLOQUEADA', 'PERDIDA') THEN CURRENT_TIMESTAMP ELSE fecha_bloqueo END,
-             motivo_bloqueo = CASE WHEN $2 IN ('BLOQUEADA', 'PERDIDA') THEN COALESCE($5, motivo_bloqueo) ELSE motivo_bloqueo END,
-             fecha_actualizacion = CURRENT_TIMESTAMP
-         WHERE id_tarjeta = $1 
-         RETURNING id_tarjeta AS id, uid_nfc, codigo_interno, estado, fecha_bloqueo, motivo_bloqueo`,
-        [id, estadoFinal, nuevoUid, codigoInterno, motivo || null],
-      );
+      let result;
+      if (esBloqueo) {
+        result = await query(
+          `UPDATE tarjetas_nfc 
+           SET estado = $2,
+               uid_nfc = $3,
+               codigo_interno = COALESCE(codigo_interno, $4),
+               fecha_bloqueo = CURRENT_TIMESTAMP,
+               motivo_bloqueo = COALESCE($5, motivo_bloqueo),
+               fecha_actualizacion = CURRENT_TIMESTAMP
+           WHERE id_tarjeta = $1 
+           RETURNING id_tarjeta AS id, uid_nfc, codigo_interno, estado, fecha_bloqueo, motivo_bloqueo`,
+          [id, estadoFinal, nuevoUid, codigoInterno, motivo || null],
+        );
+      } else {
+        result = await query(
+          `UPDATE tarjetas_nfc 
+           SET estado = $2,
+               uid_nfc = $3,
+               codigo_interno = COALESCE(codigo_interno, $4),
+               fecha_actualizacion = CURRENT_TIMESTAMP
+           WHERE id_tarjeta = $1 
+           RETURNING id_tarjeta AS id, uid_nfc, codigo_interno, estado, fecha_bloqueo, motivo_bloqueo`,
+          [id, estadoFinal, nuevoUid, codigoInterno],
+        );
+      }
 
       // Registrar trazabilidad inmutable en historial_tarjeta_nfc
       try {
         const accionDesc = nuevoUid !== uidAnterior 
           ? `UID actualizado de ${uidAnterior} a ${nuevoUid}${estadoFinal !== estadoAnterior ? ` y estado a ${estadoFinal}` : ''}`
-          : (motivo || "Actualizado desde panel administrativo");
+          : (motivo || `Estado actualizado a ${estadoFinal} desde panel administrativo`);
 
         await query(
           `INSERT INTO historial_tarjeta_nfc (id_tarjeta, id_usuario_accion, accion, estado_anterior, estado_nuevo, motivo, fecha_hora)

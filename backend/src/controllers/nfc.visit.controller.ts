@@ -177,10 +177,10 @@ export const NfcVisitController = {
       if (observacion != null && (typeof observacion !== "string" || observacion.length > 500)) {
         throw new ApiError(400, "La observación debe ser un texto de hasta 500 caracteres");
       }
-      if (monto_compra !== undefined &&
-          (typeof monto_compra !== "string" || !/^\d+(\.\d{1,2})?$/.test(monto_compra) ||
-           !Number.isFinite(Number(monto_compra)) || Number(monto_compra) <= 0)) {
-        throw new ApiError(400, "Ingresa un monto mayor a cero con hasta dos decimales");
+      if (monto_compra !== undefined && monto_compra !== null && String(monto_compra).trim() !== "" &&
+          (typeof monto_compra !== "string" && typeof monto_compra !== "number" || !/^\d+(\.\d{1,2})?$/.test(String(monto_compra)) ||
+           !Number.isFinite(Number(monto_compra)) || Number(monto_compra) < 0)) {
+        throw new ApiError(400, "Ingresa un monto de compra válido (número positivo con hasta dos decimales)");
       }
 
       client = await pool.connect();
@@ -278,7 +278,9 @@ export const NfcVisitController = {
           id_tarjeta,
           id_sucursal,
           validadorId,
-          monto_compra !== undefined ? `Compra S/ ${Number(monto_compra).toFixed(2)}` : observacion || null,
+          (monto_compra !== undefined && monto_compra !== null && String(monto_compra).trim() !== "" && Number(monto_compra) > 0)
+            ? `Compra S/ ${Number(monto_compra).toFixed(2)}`
+            : observacion || null,
           metodo,
         ],
       );
