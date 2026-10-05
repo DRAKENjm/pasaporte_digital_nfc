@@ -15,7 +15,10 @@ export const useNFCReader = () => {
   }, []);
   useEffect(() => () => abort.current?.abort(), []);
   const startScan = useCallback(
-    async (onTagRead: (result: NFCScanResult) => void) => {
+    async (
+      onTagRead: (result: NFCScanResult) => void,
+      options?: { autoStop?: boolean }
+    ) => {
       stopScan();
       setError(null);
       if (!isSupported || !window.isSecureContext) {
@@ -32,12 +35,14 @@ export const useNFCReader = () => {
         await reader.scan({ signal: controller.signal });
         reader.onreading = (event: any) => {
           if (controller.signal.aborted) return;
-          const records = event.message.records
+          const records = (event.message?.records || [])
             .filter((r: any) => ["text", "url"].includes(r.recordType))
             .map((r: any) =>
               new TextDecoder(r.encoding || "utf-8").decode(r.data),
             );
-          stopScan();
+          if (options?.autoStop !== false) {
+            stopScan();
+          }
           onTagRead({ serialNumber: event.serialNumber, records });
         };
         reader.onreadingerror = () =>

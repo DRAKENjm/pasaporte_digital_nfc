@@ -1232,11 +1232,14 @@ export const AdminTarjetas: React.FC = () => {
                           stopNfcScan();
                           return;
                         }
-                        void startNfcScan((result) => {
-                          if (result.serialNumber) {
-                            handleAgregarUidEscaneado(result.serialNumber);
-                          }
-                        });
+                        void startNfcScan(
+                          (result) => {
+                            if (result.serialNumber) {
+                              handleAgregarUidEscaneado(result.serialNumber);
+                            }
+                          },
+                          { autoStop: false }
+                        );
                       }}
                       className={`w-full py-3 px-4 rounded-2xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer ${
                         isNfcScanning
