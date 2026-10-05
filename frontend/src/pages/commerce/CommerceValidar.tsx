@@ -134,7 +134,8 @@ export const CommerceValidar: React.FC = () => {
     setLoading(true);
     try {
       const res = await api.post("/nfc/identificar", {
-        uid_nfc: uid.trim()
+        uid_nfc: uid.trim(),
+        id_sucursal: selectedSucursal,
       });
       setClienteData(res.data.data);
       setStep("IDENTIFIED");
@@ -163,7 +164,8 @@ export const CommerceValidar: React.FC = () => {
     setLoading(true);
     try {
       const res = await api.post("/nfc/identificar", {
-        qr_code: codigo.trim()
+        qr_code: codigo.trim(),
+        id_sucursal: selectedSucursal,
       });
       setClienteData(res.data.data);
       setStep("IDENTIFIED");
@@ -554,12 +556,22 @@ export const CommerceValidar: React.FC = () => {
                 </div>
               </div>
 
-              {/* Sello a otorgar */}
+              {/* Sello o Estado Diario */}
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-[#8E7D7D] uppercase tracking-wider">
-                  Sello a Otorgar
+                  {clienteData.ya_tiene_sello_hoy ? "Estado de Sellos Hoy" : "Sello a Otorgar"}
                 </label>
-                {sellosActivos.length > 1 ? (
+                {clienteData.ya_tiene_sello_hoy ? (
+                  <div className="px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                      <span>1 Sello diario ya registrado</span>
+                    </div>
+                    <span className="text-[10px] text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md font-extrabold uppercase">
+                      Solo Puntos
+                    </span>
+                  </div>
+                ) : sellosActivos.length > 1 ? (
                   <select
                     value={selectedPrograma || ""}
                     disabled={loading}
@@ -586,11 +598,24 @@ export const CommerceValidar: React.FC = () => {
                   Puntos a Entregar
                 </label>
                 <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-[#C5A059]/30 text-amber-900 font-black text-sm flex items-center justify-between">
-                  <span>+{sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita ?? 20} puntos</span>
+                  <span>
+                    {clienteData.ya_tiene_sello_hoy
+                      ? `+${Math.floor(Number(montoCompra || 0) / 5)} pts por consumo`
+                      : `+${(sellosActivos.find((s) => String(s.id_programa) === selectedPrograma)?.puntos_por_visita ?? 20) + Math.floor(Number(montoCompra || 0) / 5)} pts`}
+                  </span>
                   <Sparkles size={18} className="text-[#C5A059]" />
                 </div>
               </div>
             </div>
+
+            {clienteData.ya_tiene_sello_hoy && (
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800">
+                <Award size={18} className="shrink-0 text-amber-600" />
+                <p className="leading-snug">
+                  Este cliente ya recibió su sello oficial de hoy en este local (máximo 1 sello por día). Esta visita acumulará <strong>puntos por consumo y fidelidad</strong> sin duplicar sellos.
+                </p>
+              </div>
+            )}
 
             {/* Botones de Acción */}
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-4 border-t border-[#EFE7DE]">
@@ -617,7 +642,11 @@ export const CommerceValidar: React.FC = () => {
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>CONFIRMAR VISITA Y ENTREGAR SELLOS</span>
+                    <span>
+                      {clienteData.ya_tiene_sello_hoy
+                        ? "REGISTRAR VISITA Y ENTREGAR PUNTOS"
+                        : "CONFIRMAR VISITA Y ENTREGAR SELLOS"}
+                    </span>
                   </>
                 )}
               </button>

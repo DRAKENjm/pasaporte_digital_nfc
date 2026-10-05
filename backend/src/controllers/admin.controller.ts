@@ -1963,8 +1963,7 @@ export const AdminController = {
         await query(
           `INSERT INTO programas_sellos (
              id_establecimiento, nombre, meta_sellos, nombre_sello, imagen_sello, puntos_por_visita, estado, fecha_inicio
-           ) VALUES ($1, $2, 8, $3, $4, $5, 'ACTIVO', CURRENT_TIMESTAMP)
-           ON CONFLICT (id_establecimiento) DO NOTHING`,
+           ) VALUES ($1, $2, 8, $3, $4, $5, 'ACTIVO', CURRENT_TIMESTAMP)`,
           [
             nuevoEst.id_establecimiento,
             `Pasaporte ${razon_social.trim()}`,
@@ -2192,8 +2191,7 @@ export const AdminController = {
           await query(
             `INSERT INTO programas_sellos (
                id_establecimiento, nombre, meta_sellos, nombre_sello, imagen_sello, puntos_por_visita, estado, fecha_inicio
-             ) VALUES ($1, $2, 8, 'Visita', '☕', $3, 'ACTIVO', CURRENT_TIMESTAMP)
-             ON CONFLICT (id_establecimiento) DO NOTHING`,
+             ) VALUES ($1, $2, 8, 'Visita', '☕', $3, 'ACTIVO', CURRENT_TIMESTAMP)`,
             [id, `Pasaporte ${estActual.rows[0].nombre_comercial}`, pts],
           );
         }

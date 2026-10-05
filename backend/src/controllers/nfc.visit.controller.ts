@@ -92,12 +92,37 @@ export const NfcVisitController = {
         throw new ApiError(400, "El cliente asociado a esta tarjeta no se encuentra activo");
       }
 
+      // Validar si el cliente ya recibió un sello hoy en este establecimiento si se proveyó la sucursal
+      let yaTieneSelloHoy = false;
+      const { id_sucursal } = req.body;
+      if (id_sucursal) {
+        const sucEstRes = await query(
+          `SELECT id_establecimiento FROM sucursales WHERE id_sucursal = $1`,
+          [id_sucursal]
+        );
+        if (sucEstRes.rows[0]) {
+          const estId = sucEstRes.rows[0].id_establecimiento;
+          const sellosHoyRes = await query(
+            `SELECT COUNT(*)::int AS total_hoy
+             FROM sellos_digitales s
+             JOIN visitas v ON v.id_visita = s.id_visita
+             JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+             WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2 
+               AND s.estado = 'OTORGADO'
+               AND s.fecha_otorgamiento >= (date_trunc('day', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')`,
+            [data.id_cliente, estId],
+          );
+          yaTieneSelloHoy = (sellosHoyRes.rows[0]?.total_hoy || 0) >= 1;
+        }
+      }
+
       sendResponse(res, 200, {
         id_tarjeta: data.id_tarjeta,
         uid_nfc: data.uid_nfc,
         codigo_interno: data.codigo_interno,
         qr_respaldo: data.qr_respaldo || data.codigo_interno,
         metodo_identificacion: (uid_nfc && !qr_code) ? "NFC" : "QR_RESPALDO",
+        ya_tiene_sello_hoy: yaTieneSelloHoy,
         cliente: {
           id_cliente: data.id_cliente,
           codigo_cliente: data.codigo_cliente,
