@@ -255,9 +255,41 @@ export const AdminSellos: React.FC = () => {
     setModalEditar(true);
   };
 
+  const [escaneandoNfc, setEscaneandoNfc] = useState(false);
+
+  const escanearNfcSello = async () => {
+    if (!("NDEFReader" in window)) {
+      showToast("Tu navegador o dispositivo no soporta lectura NFC directa. Puedes ingresar el UID manualmente.", "info");
+      return;
+    }
+    try {
+      setEscaneandoNfc(true);
+      const ndef = new (window as any).NDEFReader();
+      await ndef.scan();
+      showToast("Acerca el chip NFC físico al dispositivo...", "info");
+      ndef.onreading = (event: any) => {
+        const serialNumber = event.serialNumber;
+        if (serialNumber) {
+          setNfcUidInput(serialNumber.toUpperCase());
+          showToast(`Chip detectado: ${serialNumber.toUpperCase()}`, "success");
+          setEscaneandoNfc(false);
+        }
+      };
+      ndef.onreadingerror = () => {
+        showToast("Error al leer el chip NFC. Intenta nuevamente.", "error");
+        setEscaneandoNfc(false);
+      };
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || "Error al iniciar el lector NFC", "error");
+      setEscaneandoNfc(false);
+    }
+  };
+
   const openVincularNfc = (item: any) => {
     setSelloSeleccionado(item);
     setNfcUidInput(item.sello_nfc_uid || "");
+    setEscaneandoNfc(false);
     setModalNfc(true);
   };
 
@@ -1462,22 +1494,27 @@ export const AdminSellos: React.FC = () => {
       {/* Modal Vincular Sello Físico NFC del Local */}
       <Modal
         open={modalNfc}
-        onClose={() => setModalNfc(false)}
+        onClose={() => {
+          setEscaneandoNfc(false);
+          setModalNfc(false);
+        }}
         title="Vincular Sello Físico NFC del Local"
         size="md"
       >
         <form onSubmit={handleGuardarNfc} className="space-y-4">
-          <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200/80 flex items-start gap-3">
-            <Wifi className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5 rotate-90" />
-            <div className="text-xs text-emerald-950 leading-relaxed">
-              <p className="font-bold">Sello Físico NFC para Estampado Autónomo</p>
-              <p className="mt-0.5 text-emerald-800">
-                Al vincular un chip NFC a <strong>"{selloSeleccionado?.establecimiento_nombre}"</strong>, los clientes que hayan olvidado su tarjeta física podrán acercar su teléfono al Sello NFC del mostrador para estampar su visita al instante.
-              </p>
+          <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200/80 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Wifi className="w-4 h-4 rotate-90" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold text-xs text-emerald-950 truncate">Sello Físico NFC para Estampado</p>
+                <p className="text-[11px] text-emerald-800 truncate">Estampado para {selloSeleccionado?.establecimiento_nombre}</p>
+              </div>
             </div>
           </div>
 
-          <div className="bg-[#FAF8F5] p-4 rounded-2xl border border-[#EFE7DE] flex items-center gap-4">
+          <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#EFE7DE] flex items-center gap-3.5">
             <DigitalStampBadge
               nombre_sello={selloSeleccionado?.nombre_sello}
               establecimiento_nombre={selloSeleccionado?.establecimiento_nombre}
@@ -1491,10 +1528,10 @@ export const AdminSellos: React.FC = () => {
                 {selloSeleccionado?.nombre_sello}
               </p>
               <p className="text-[#8E7D7D] truncate">
-                Establecimiento: <strong className="text-[#2D1A1E]">{selloSeleccionado?.establecimiento_nombre}</strong>
+                Local: <strong className="text-[#2D1A1E]">{selloSeleccionado?.establecimiento_nombre}</strong>
               </p>
               <p className="text-[#8E7D7D] text-[11px]">
-                Estado actual:{" "}
+                Estado:{" "}
                 {selloSeleccionado?.sello_nfc_uid ? (
                   <span className="font-mono font-bold text-emerald-700">
                     Vinculado ({selloSeleccionado.sello_nfc_uid})
@@ -1507,18 +1544,46 @@ export const AdminSellos: React.FC = () => {
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#736868]">
-              UID del Chip NFC del Sello
-            </label>
-            <input
-              type="text"
-              placeholder="Ej: 04:A1:B2:C3:D4:E5:67 o TOKEN-SELLO-01"
-              value={nfcUidInput}
-              onChange={(e) => setNfcUidInput(e.target.value.toUpperCase())}
-              className="input-base font-mono uppercase text-xs w-full"
-            />
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#736868]">
+                UID del Chip NFC
+              </label>
+              <button
+                type="button"
+                onClick={escanearNfcSello}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  escaneandoNfc
+                    ? "bg-[#7C0A1E] text-white animate-pulse shadow-xs"
+                    : "bg-[#7C0A1E]/10 text-[#7C0A1E] hover:bg-[#7C0A1E]/20"
+                }`}
+                title="Escanear chip acercándolo al dispositivo"
+              >
+                <Wifi className={`w-3.5 h-3.5 rotate-90 ${escaneandoNfc ? "animate-spin" : ""}`} />
+                <span>{escaneandoNfc ? "Acerca el chip..." : "Escanear NFC"}</span>
+              </button>
+            </div>
+
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="Ej: 04:A1:B2:C3:D4:E5:67 o TOKEN-SELLO-01"
+                value={nfcUidInput}
+                onChange={(e) => setNfcUidInput(e.target.value.toUpperCase())}
+                className="input-base font-mono uppercase text-xs w-full pr-8"
+              />
+              {nfcUidInput && (
+                <button
+                  type="button"
+                  onClick={() => setNfcUidInput("")}
+                  className="absolute right-2.5 text-[#8E7D7D] hover:text-red-600 text-xs p-1"
+                  title="Limpiar"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
             <span className="text-[10px] text-[#8E7D7D] block">
-              Ingresa o escanea el UID hexadecimal del chip NFC físico ubicado en el local. Deja vacío si deseas desvincular.
+              Acerca el chip físico con "Escanear NFC" o escribe su UID. Deja vacío para desvincular.
             </span>
           </div>
 
@@ -1535,7 +1600,10 @@ export const AdminSellos: React.FC = () => {
               type="button"
               variant="secondary"
               fullWidth
-              onClick={() => setModalNfc(false)}
+              onClick={() => {
+                setEscaneandoNfc(false);
+                setModalNfc(false);
+              }}
             >
               Cancelar
             </Button>
