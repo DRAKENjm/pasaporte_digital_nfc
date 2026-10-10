@@ -127,19 +127,22 @@ const CircularMarker: React.FC<{
 }> = ({ logo, nombre, activo, onClick }) => (
   <div
     onClick={onClick}
-    className={`cursor-pointer transition-transform flex flex-col items-center ${activo ? "scale-110" : "hover:scale-105"}`}
+    className={`cursor-pointer transition-transform flex flex-col items-center ${activo ? "scale-110 z-30" : "hover:scale-105 z-10"}`}
     title={nombre}
     style={{ transform: "translateY(-100%)" }}
   >
     <div
-      className={`w-11 h-11 rounded-full overflow-hidden border-2 shadow-lg bg-white relative z-10 ${
+      className={`w-11 h-11 rounded-full overflow-hidden border-2 shadow-lg bg-white relative z-10 flex items-center justify-center p-0.5 ${
         activo ? "border-[#7C0A1E] ring-2 ring-[#C5A059]" : "border-white"
       }`}
     >
       <img
         src={logo || "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=80"}
         alt={nombre}
-        className="w-full h-full object-cover"
+        className="w-full h-full object-cover object-center rounded-full"
+        onError={(e) => {
+          (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=80";
+        }}
       />
     </div>
     {/* Cola del pin */}

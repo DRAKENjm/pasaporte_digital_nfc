@@ -1,4 +1,4 @@
-export type Lang = "es" | "en" | "pt" | "ru" | "qu";
+export type Lang = "es" | "en" | "qu";
 
 const t = {
   es: {

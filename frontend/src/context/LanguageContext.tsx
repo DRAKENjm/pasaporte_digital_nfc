@@ -12,7 +12,7 @@ const LanguageContext = createContext<Ctx | null>(null);
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<Lang>(() => {
     const s = localStorage.getItem("pd_idioma") as Lang | null;
-    return s && ["es", "en", "pt", "ru", "qu"].includes(s) ? s : "es";
+    return s && ["es", "en", "qu"].includes(s) ? s : "es";
   });
 
   const setLang = (l: Lang) => {
@@ -28,13 +28,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "pd_idioma" && e.newValue && ["es", "en", "pt", "ru", "qu"].includes(e.newValue)) {
+      if (e.key === "pd_idioma" && e.newValue && ["es", "en", "qu"].includes(e.newValue)) {
         setLangState(e.newValue as Lang);
       }
     };
     const onCustom = (e: Event) => {
       const detail = (e as CustomEvent).detail as Lang;
-      if (detail && ["es", "en", "pt", "ru", "qu"].includes(detail)) {
+      if (detail && ["es", "en", "qu"].includes(detail)) {
         setLangState(detail);
       }
     };

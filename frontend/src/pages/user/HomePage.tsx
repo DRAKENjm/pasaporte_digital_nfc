@@ -367,51 +367,55 @@ export const HomePage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Accesos Rápidos: 4 Cards (Mi Tarjeta, Locales con Icono Store, Mis Sellos, Premios) */}
-      <div className="grid grid-cols-4 gap-2.5">
+      {/* 3. Accesos Rápidos: 4 Cards (Mi Tarjeta NFC, Locales, Mis Sellos, Recompensas) */}
+      <div className="grid grid-cols-4 gap-2 sm:gap-3">
         <Link
           to="/user/pasaporte"
-          className="bg-white/90 border border-[#EFE7DE] hover:border-[#C5A059]/50 rounded-2xl p-2.5 flex flex-col items-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group"
+          className="bg-white/95 border border-[#EFE7DE] hover:border-[#C5A059]/60 rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group min-h-[82px]"
         >
-          <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
-            <CreditCard size={22} strokeWidth={2.2} />
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-1.5 group-hover:scale-105 transition-transform shadow-2xs">
+            <CreditCard size={20} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("myCard") || "Mi Tarjeta"}</span>
-          <span className="text-[9px] text-[#8E7D7D] mt-0.5">{t("viewPassport") || "Ver pasaporte"}</span>
+          <span className="font-bold text-[10px] sm:text-xs text-[#2D1A1E] leading-tight text-center">
+            {t("myCard") || "Mi Tarjeta NFC"}
+          </span>
         </Link>
 
-        {/* Locales -> Ahora con icono Store y ruta dedicada /user/locales */}
+        {/* Locales -> Acceso directo */}
         <Link
           to="/user/locales"
-          className="bg-white/90 border border-[#EFE7DE] hover:border-[#C5A059]/50 rounded-2xl p-2.5 flex flex-col items-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group"
+          className="bg-white/95 border border-[#EFE7DE] hover:border-[#C5A059]/60 rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group min-h-[82px]"
         >
-          <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
-            <Store size={22} strokeWidth={2.2} />
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-1.5 group-hover:scale-105 transition-transform shadow-2xs">
+            <Store size={20} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("venues") || "Locales"}</span>
-          <span className="text-[9px] text-[#8E7D7D] mt-0.5">Establecimientos</span>
+          <span className="font-bold text-[10px] sm:text-xs text-[#2D1A1E] leading-tight text-center">
+            {t("venues") || "Locales"}
+          </span>
         </Link>
 
         <Link
           to="/user/mis-sellos"
-          className="bg-white/90 border border-[#EFE7DE] hover:border-[#C5A059]/50 rounded-2xl p-2.5 flex flex-col items-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group"
+          className="bg-white/95 border border-[#EFE7DE] hover:border-[#C5A059]/60 rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group min-h-[82px]"
         >
-          <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
-            <Stamp size={22} strokeWidth={2.2} />
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-1.5 group-hover:scale-105 transition-transform shadow-2xs">
+            <Stamp size={20} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("myStamps") || "Mis Sellos"}</span>
-          <span className="text-[9px] text-[#8E7D7D] mt-0.5">Colección</span>
+          <span className="font-bold text-[10px] sm:text-xs text-[#2D1A1E] leading-tight text-center">
+            {t("myStamps") || "Mis Sellos"}
+          </span>
         </Link>
 
         <Link
           to="/user/rewards"
-          className="bg-white/90 border border-[#EFE7DE] hover:border-[#C5A059]/50 rounded-2xl p-2.5 flex flex-col items-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group"
+          className="bg-white/95 border border-[#EFE7DE] hover:border-[#C5A059]/60 rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center text-center shadow-[0_4px_16px_rgba(45,26,30,0.04)] hover:shadow-md transition-all active:scale-95 group min-h-[82px]"
         >
-          <div className="w-11 h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-2 group-hover:scale-105 transition-transform shadow-2xs">
-            <Gift size={22} strokeWidth={2.2} />
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] mb-1.5 group-hover:scale-105 transition-transform shadow-2xs">
+            <Gift size={20} strokeWidth={2.2} />
           </div>
-          <span className="font-bold text-[11px] text-[#2D1A1E] leading-tight">{t("rewards") || "Premios"}</span>
-          <span className="text-[9px] text-[#8E7D7D] mt-0.5">{t("redeemNow") || "Canjear"}</span>
+          <span className="font-bold text-[10px] sm:text-xs text-[#2D1A1E] leading-tight text-center">
+            {t("rewards") || "Recompensas"}
+          </span>
         </Link>
       </div>
 

@@ -26,8 +26,6 @@ import { useLanguage } from "../../context/LanguageContext";
 const IDIOMAS = [
   { code: "es", label: "Español", flag: "🇵🇪" },
   { code: "en", label: "English", flag: "🇺🇸" },
-  { code: "pt", label: "Português", flag: "🇧🇷" },
-  { code: "ru", label: "Русский", flag: "🇷🇺" },
   { code: "qu", label: "Quechua", flag: "🏔️" },
 ] as const;
 
