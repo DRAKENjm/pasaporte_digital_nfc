@@ -15,16 +15,9 @@ import { useUI } from "../../hooks/useUI";
 import { homePathForRole } from "../../utils/roles";
 
 export const Login: React.FC = () => {
-  // 2. Estados de autenticación por Usuario/Email y Contraseña
-  const [identifier, setIdentifier] = useState(() => {
-    return localStorage.getItem("remembered_identifier") || "";
-  });
-  const [password, setPassword] = useState(() => {
-    return localStorage.getItem("remembered_password") || "";
-  });
-  const [rememberMe, setRememberMe] = useState(() => {
-    return Boolean(localStorage.getItem("remembered_identifier"));
-  });
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -116,13 +109,13 @@ export const Login: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
           <div>
             <div className="relative group">
               <Mail className="w-5 h-5 text-[#8E7D7D] absolute left-4 top-4 group-focus-within:text-[#7C0A1E] transition-colors" />
               <input
                 type="email"
-                autoComplete="username"
+                autoComplete="off"
                 required
                 disabled={loading}
                 value={identifier}
@@ -138,7 +131,7 @@ export const Login: React.FC = () => {
               <Lock className="w-5 h-5 text-[#8E7D7D] absolute left-4 top-4 group-focus-within:text-[#7C0A1E] transition-colors" />
               <input
                 type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
+                autoComplete="new-password"
                 required
                 disabled={loading}
                 value={password}

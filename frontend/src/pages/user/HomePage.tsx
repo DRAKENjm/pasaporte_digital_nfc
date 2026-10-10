@@ -581,7 +581,7 @@ export const HomePage: React.FC = () => {
             </div>
             <h4 className="text-xs font-bold text-[#2D1A1E]">Sin sellos registrados aún</h4>
             <p className="text-[11px] text-[#8E7D7D] mt-1 max-w-xs leading-relaxed">
-              Acércate a un local afiliado con tu pasaporte NFC para recibir tu primer sello oficial.
+              Visita un local afiliado con tu pasaporte NFC para registrar tu primer sello.
             </p>
             <Link
               to="/user/locales"

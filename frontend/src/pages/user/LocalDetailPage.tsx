@@ -457,35 +457,31 @@ export const LocalDetailPage: React.FC = () => {
         {/* SECCIÓN AUTO-SELLADO PARA LUGARES TURÍSTICOS O AUTORIZADOS */}
         {permiteAutosellado && (
           <div className="mt-4 bg-gradient-to-br from-amber-500/10 via-amber-100/30 to-[#7C0A1E]/10 rounded-3xl p-5 border border-[#C5A059]/40 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-[#7C0A1E] text-white flex items-center justify-center shadow-md">
-                  <Stamp size={20} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-[#7C0A1E] bg-white px-2 py-0.5 rounded-md border border-[#7C0A1E]/20">
-                      Punto Turístico Habilitado
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-black text-[#2D1A1E] mt-0.5">
-                    Auto-sellar Pasaporte en el Lugar
-                  </h3>
-                </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-[#7C0A1E] text-white flex items-center justify-center shadow-md">
+                <Stamp size={20} />
+              </div>
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#7C0A1E] bg-white px-2 py-0.5 rounded-md border border-[#7C0A1E]/20">
+                  Punto Turístico
+                </span>
+                <h3 className="text-sm font-black text-[#2D1A1E] mt-0.5">
+                  Auto-sellar visita
+                </h3>
               </div>
             </div>
 
             <p className="text-xs text-[#8E7D7D] leading-relaxed">
-              No necesitas personal validador aquí. Si te encuentras físicamente en el lugar, valida tu presencia con tu ubicación GPS (tolerancia {radioTolerancia}m) para recibir tu sello al instante.
+              Valida tu visita con tu ubicación GPS (radio: {radioTolerancia}m) para recibir tu sello al instante.
             </p>
 
             <button
               type="button"
               onClick={() => setMostrarModalAutosello(true)}
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:from-[#600616] hover:to-[#7C0A1E] transition-all"
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:from-[#600616] hover:to-[#7C0A1E] transition-all cursor-pointer"
             >
               <Sparkles size={16} className="text-[#C5A059]" />
-              <span>AUTO-SELLAR VISITA AHORA</span>
+              <span>AUTO-SELLAR AHORA</span>
             </button>
           </div>
         )}
@@ -519,13 +515,13 @@ export const LocalDetailPage: React.FC = () => {
 
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-[#7C0A1E] bg-rose-50 px-2.5 py-1 rounded-full border border-[#7C0A1E]/20">
-                    VERIFICACIÓN DE UBICACIÓN
+                    VERIFICACIÓN GPS
                   </span>
                   <h3 className="text-lg font-black text-[#2D1A1E] mt-2">
                     Auto-sellar en {nombre}
                   </h3>
                   <p className="text-xs text-[#8E7D7D] mt-1">
-                    Comprobaremos que tu dispositivo se encuentre a menos de {radioTolerancia} metros del lugar oficial.
+                    Radio de validación: {radioTolerancia} metros.
                   </p>
                 </div>
 

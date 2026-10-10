@@ -770,8 +770,12 @@ export const EstablishmentsController = {
       const params: any[] = [estId];
 
       if (estado && estado !== "TODOS") {
-        params.push(estado);
-        sql += ` AND c.estado = $${params.length}`;
+        if (estado === "ENTREGADO" || estado === "CANJEADO") {
+          sql += ` AND c.estado IN ('CANJEADO', 'ENTREGADO', 'CONFIRMADO')`;
+        } else {
+          params.push(estado);
+          sql += ` AND c.estado = $${params.length}`;
+        }
       }
 
       sql += ` ORDER BY c.fecha_solicitud DESC LIMIT 200`;

@@ -165,7 +165,7 @@ export const PasaporteNfcPage: React.FC = () => {
                   Aún no cuentas con una tarjeta física NFC
                 </h2>
                 <p className="text-xs text-[#8E7D7D] leading-relaxed">
-                  Acércate a cualquiera de nuestros locales afiliados para solicitar tu tarjeta física oficial de socio. El personal la vinculará a tu cuenta en segundos para que comiences a coleccionar sellos.
+                  Solicita tu tarjeta física en cualquier local afiliado para vincularla a tu cuenta y empezar a sellar.
                 </p>
               </div>
 
@@ -286,7 +286,7 @@ export const PasaporteNfcPage: React.FC = () => {
               </div>
 
               <p className="text-center text-xs text-[#8E7D7D] my-3 px-2">
-                ¿Olvidaste tu tarjeta NFC física? Muestra este QR al comercio para que te otorguen tus sellos y puntos.
+                Presenta este QR en el local si no tienes tu tarjeta NFC física a la mano.
               </p>
 
               <div className="space-y-2.5 max-w-sm mx-auto w-full">

@@ -84,7 +84,7 @@ export const CommerceCanjes: React.FC = () => {
 
   const filtered = canjes.filter((c) => {
     if (tab === "TODOS") return true;
-    if (tab === "ENTREGADO") return c.estado === "ENTREGADO" || c.estado === "CONFIRMADO";
+    if (tab === "ENTREGADO") return c.estado === "ENTREGADO" || c.estado === "CONFIRMADO" || c.estado === "CANJEADO";
     return c.estado === tab;
   });
 
@@ -238,11 +238,11 @@ export const CommerceCanjes: React.FC = () => {
                       <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         c.estado === "PENDIENTE"
                           ? "bg-amber-100 text-amber-800"
-                          : c.estado === "ENTREGADO" || c.estado === "CONFIRMADO"
+                          : c.estado === "ENTREGADO" || c.estado === "CONFIRMADO" || c.estado === "CANJEADO"
                           ? "bg-emerald-100 text-emerald-800"
                           : "bg-rose-100 text-rose-800"
                       }`}>
-                        {c.estado}
+                        {c.estado === "CANJEADO" ? "ENTREGADO" : c.estado}
                       </span>
                     </td>
                     <td className="py-4 px-6 text-right">
