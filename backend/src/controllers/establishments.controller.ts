@@ -728,6 +728,230 @@ export const EstablishmentsController = {
     }
   },
 
+  /** Crear recompensa propia del establecimiento */
+  async crearMiRecompensa(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const {
+        nombre,
+        nombre_recompensa,
+        descripcion,
+        puntos_requeridos,
+        costo_puntos_globales,
+        stock,
+        stock_disponible,
+        stock_ilimitado,
+        imagen,
+        imagen_url,
+        fecha_inicio,
+        fecha_fin,
+      } = req.body;
+
+      const nom = (nombre || nombre_recompensa || "").trim();
+      const pts = Number(puntos_requeridos ?? costo_puntos_globales ?? 0);
+      const stk = stock !== undefined ? stock : stock_disponible;
+      const img = imagen || imagen_url || null;
+      const isUnlimited = stock_ilimitado === 1 || stock_ilimitado === true || stk === null || stk === undefined || String(stk) === "" ? 1 : 0;
+      const numStock = isUnlimited === 1 ? null : Math.max(0, Number(stk) || 0);
+
+      if (!nom) {
+        throw new ApiError(400, "El nombre de la recompensa es obligatorio.");
+      }
+      if (isNaN(pts) || pts < 0) {
+        throw new ApiError(400, "Los puntos requeridos deben ser un número mayor o igual a 0.");
+      }
+
+      const sucRes = await query(
+        `SELECT s.id_establecimiento
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         WHERE us.id_usuario = $1 AND us.estado = 1
+         LIMIT 1`,
+        [idUsuario],
+      );
+
+      const estId = sucRes.rows[0]?.id_establecimiento;
+      if (!estId) {
+        throw new ApiError(403, "No tienes un establecimiento asignado para registrar recompensas.");
+      }
+
+      const result = await query(
+        `INSERT INTO recompensas (
+           id_establecimiento, nombre, descripcion, puntos_requeridos, stock,
+           stock_ilimitado, imagen, fecha_inicio, fecha_fin, estado,
+           fecha_creacion, fecha_actualizacion
+         ) VALUES (
+           $1, $2, $3, $4, $5,
+           $6, $7, COALESCE($8, CURRENT_TIMESTAMP), $9, 'ACTIVA',
+           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         ) RETURNING id_recompensa, id_establecimiento, nombre, descripcion, puntos_requeridos, stock, stock_ilimitado, imagen, imagen AS imagen_url, estado, fecha_creacion`,
+        [
+          estId,
+          nom,
+          descripcion || null,
+          pts,
+          numStock,
+          isUnlimited,
+          img,
+          fecha_inicio || null,
+          fecha_fin || null,
+        ],
+      );
+
+      sendResponse(res, 201, result.rows[0], "Recompensa registrada exitosamente para tu establecimiento.");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Actualizar recompensa del propio establecimiento */
+  async actualizarMiRecompensa(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const { id } = req.params;
+      const {
+        nombre,
+        nombre_recompensa,
+        descripcion,
+        puntos_requeridos,
+        costo_puntos_globales,
+        stock,
+        stock_disponible,
+        stock_ilimitado,
+        imagen,
+        imagen_url,
+        estado,
+        fecha_inicio,
+        fecha_fin,
+      } = req.body;
+
+      const sucRes = await query(
+        `SELECT s.id_establecimiento
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         WHERE us.id_usuario = $1 AND us.estado = 1
+         LIMIT 1`,
+        [idUsuario],
+      );
+
+      const estId = sucRes.rows[0]?.id_establecimiento;
+      if (!estId) {
+        throw new ApiError(403, "No autorizado.");
+      }
+
+      const checkRec = await query(
+        `SELECT id_recompensa FROM recompensas WHERE id_recompensa = $1 AND id_establecimiento = $2`,
+        [id, estId],
+      );
+      if (!checkRec.rows.length) {
+        throw new ApiError(404, "Recompensa no encontrada o no pertenece a tu establecimiento.");
+      }
+
+      const nom = nombre ?? nombre_recompensa ?? null;
+      const pts = puntos_requeridos !== undefined ? Number(puntos_requeridos) : costo_puntos_globales !== undefined ? Number(costo_puntos_globales) : null;
+      const stkVal = stock !== undefined ? stock : stock_disponible;
+      const isUnlim = stock_ilimitado !== undefined ? (stock_ilimitado === 1 || stock_ilimitado === true ? 1 : 0) : null;
+      const numStock = isUnlim === 1 ? null : (stkVal !== undefined ? (stkVal === null ? null : Math.max(0, Number(stkVal) || 0)) : null);
+      const img = imagen !== undefined ? imagen : imagen_url !== undefined ? imagen_url : null;
+
+      const result = await query(
+        `UPDATE recompensas
+         SET nombre = COALESCE($1, nombre),
+             descripcion = COALESCE($2, descripcion),
+             puntos_requeridos = COALESCE($3, puntos_requeridos),
+             stock = CASE WHEN $4 IS NOT NULL THEN $5 ELSE stock END,
+             stock_ilimitado = COALESCE($4, stock_ilimitado),
+             imagen = COALESCE($6, imagen),
+             estado = COALESCE($7, estado),
+             fecha_inicio = COALESCE($8, fecha_inicio),
+             fecha_fin = COALESCE($9, fecha_fin),
+             fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_recompensa = $10 AND id_establecimiento = $11
+         RETURNING id_recompensa, id_establecimiento, nombre, descripcion, puntos_requeridos, stock, stock_ilimitado, imagen, imagen AS imagen_url, estado, fecha_actualizacion`,
+        [
+          nom,
+          descripcion !== undefined ? descripcion : null,
+          pts,
+          isUnlim,
+          numStock,
+          img,
+          estado ?? null,
+          fecha_inicio !== undefined ? fecha_inicio : null,
+          fecha_fin !== undefined ? fecha_fin : null,
+          id,
+          estId,
+        ],
+      );
+
+      sendResponse(res, 200, result.rows[0], "Recompensa actualizada correctamente.");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /** Eliminar o desactivar recompensa del establecimiento */
+  async eliminarMiRecompensa(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const { id } = req.params;
+
+      const sucRes = await query(
+        `SELECT s.id_establecimiento
+         FROM usuario_sucursal us
+         JOIN sucursales s ON s.id_sucursal = us.id_sucursal
+         WHERE us.id_usuario = $1 AND us.estado = 1
+         LIMIT 1`,
+        [idUsuario],
+      );
+
+      const estId = sucRes.rows[0]?.id_establecimiento;
+      if (!estId) {
+        throw new ApiError(403, "No autorizado.");
+      }
+
+      const checkRec = await query(
+        `SELECT id_recompensa FROM recompensas WHERE id_recompensa = $1 AND id_establecimiento = $2`,
+        [id, estId],
+      );
+      if (!checkRec.rows.length) {
+        throw new ApiError(404, "Recompensa no encontrada o no pertenece a tu establecimiento.");
+      }
+
+      // Validar si tiene canjes pendientes
+      const pendingCanjes = await query(
+        `SELECT COUNT(*)::int AS total FROM canjes WHERE id_recompensa = $1 AND estado = 'PENDIENTE'`,
+        [id],
+      );
+
+      if (pendingCanjes.rows[0]?.total > 0) {
+        // Desactivar para no romper canjes pendientes
+        await query(
+          `UPDATE recompensas SET estado = 'INACTIVA', fecha_actualizacion = CURRENT_TIMESTAMP WHERE id_recompensa = $1 AND id_establecimiento = $2`,
+          [id, estId],
+        );
+        return sendResponse(res, 200, { id }, "Recompensa desactivada (tiene canjes pendientes por canjear).");
+      }
+
+      // Si no tiene canjes pendientes, intentar eliminación o cambio de estado
+      try {
+        await query(
+          `DELETE FROM recompensas WHERE id_recompensa = $1 AND id_establecimiento = $2`,
+          [id, estId],
+        );
+        sendResponse(res, 200, { id }, "Recompensa eliminada exitosamente.");
+      } catch {
+        // En caso de FK histórica en canjes confirmados, inactivar
+        await query(
+          `UPDATE recompensas SET estado = 'INACTIVA', fecha_actualizacion = CURRENT_TIMESTAMP WHERE id_recompensa = $1 AND id_establecimiento = $2`,
+          [id, estId],
+        );
+        sendResponse(res, 200, { id }, "Recompensa inactivada exitosamente.");
+      }
+    } catch (error) {
+      next(error);
+    }
+  },
+
   /** Canjes solicitados en este establecimiento */
   async misCanjes(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {

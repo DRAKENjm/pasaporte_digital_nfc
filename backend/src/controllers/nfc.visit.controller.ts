@@ -656,11 +656,6 @@ export const NfcVisitController = {
         throw new ApiError(400, "Este lugar no cuenta con coordenadas GPS configuradas");
       }
 
-      // Validar si requiere foto
-      if (suc.requiere_foto === 1 && !foto_evidencia) {
-        throw new ApiError(400, "Este lugar turístico requiere una foto comprobatoria para auto-sellar");
-      }
-
       // Cálculo de distancia Haversine en metros
       const R = 6371e3; // Radio de la Tierra en metros
       const lat1 = (latCliente * Math.PI) / 180;

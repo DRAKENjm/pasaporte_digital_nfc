@@ -13,11 +13,9 @@ import {
   Gift,
   Stamp,
   Sparkles,
-  Camera,
   CheckCircle2,
   RotateCw,
   AlertTriangle,
-  Upload,
 } from "lucide-react";
 import { DigitalStampBadge, resolveImageUrl } from "../../components/common/DigitalStampBadge";
 import api from "../../services/api";
@@ -43,10 +41,7 @@ export const LocalDetailPage: React.FC = () => {
   const [sellando, setSellando] = useState(false);
   const [mostrarModalAutosello, setMostrarModalAutosello] = useState(false);
   const [selloExitoso, setSelloExitoso] = useState<any | null>(null);
-  const [fotoEvidencia, setFotoEvidencia] = useState<string | null>(null);
-  const [subiendoFoto, setSubiendoFoto] = useState(false);
   const [distanciaDetectada, setDistanciaDetectada] = useState<number | null>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -91,37 +86,10 @@ export const LocalDetailPage: React.FC = () => {
 
   const permiteAutosellado = !!sucursal?.permite_autosellado;
   const radioTolerancia = sucursal?.radio_tolerancia_metros || 150;
-  const requiereFoto = !!sucursal?.requiere_foto;
-
-  const handleSubirFoto = async (file: File) => {
-    setSubiendoFoto(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("tipo", "autosellado");
-      const res = await api.post("/media/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const url = res.data?.data?.url || res.data?.url;
-      if (url) {
-        setFotoEvidencia(url);
-        showToast("Foto comprobatoria cargada", "success");
-      }
-    } catch {
-      showToast("Error al subir foto de comprobación", "error");
-    } finally {
-      setSubiendoFoto(false);
-    }
-  };
 
   const ejecutarAutosellado = () => {
     if (!navigator.geolocation) {
       showToast("Tu navegador no soporta geolocalización GPS", "error");
-      return;
-    }
-
-    if (requiereFoto && !fotoEvidencia) {
-      showToast("Este lugar requiere subir una foto comprobatoria para auto-sellar", "error");
       return;
     }
 
@@ -133,7 +101,6 @@ export const LocalDetailPage: React.FC = () => {
             id_sucursal: sucursal?.id_sucursal,
             latitud: pos.coords.latitude,
             longitud: pos.coords.longitude,
-            foto_evidencia: fotoEvidencia || undefined,
             id_programa: local?.id_programa || undefined,
           });
 
@@ -525,67 +492,34 @@ export const LocalDetailPage: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Subir foto comprobatoria si es requerida u opcional */}
-                <div className="bg-[#FAF8F5] border border-[#EFE7DE] rounded-2xl p-3 text-left space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#2D1A1E]">
-                    <span className="flex items-center gap-1.5">
-                      <Camera size={14} className="text-[#7C0A1E]" />
-                      Foto de evidencia {requiereFoto ? "(Obligatoria)" : "(Opcional)"}
-                    </span>
+                <div className="bg-[#FAF8F5] border border-[#EFE7DE] rounded-2xl p-4 text-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-[#7C0A1E]/10 text-[#7C0A1E] flex items-center justify-center mx-auto">
+                    <Navigation size={20} />
                   </div>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleSubirFoto(f);
-                    }}
-                  />
-
-                  {fotoEvidencia ? (
-                    <div className="relative w-full h-28 rounded-xl overflow-hidden border border-[#EFE7DE]">
-                      <img src={fotoEvidencia} alt="Evidencia" className="w-full h-full object-cover" />
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="absolute bottom-1.5 right-1.5 px-2.5 py-1 bg-black/60 text-white rounded-lg text-[10px] font-bold"
-                      >
-                        Cambiar foto
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={subiendoFoto}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-2.5 rounded-xl border border-dashed border-[#C5A059] bg-white text-[#7C0A1E] text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-50"
-                    >
-                      {subiendoFoto ? <RotateCw className="w-4 h-4 animate-spin" /> : <Camera size={14} />}
-                      <span>{subiendoFoto ? "Subiendo foto..." : "Tomar foto en el lugar"}</span>
-                    </button>
-                  )}
+                  <p className="text-xs font-semibold text-[#2D1A1E]">
+                    Validación satelital por GPS en curso
+                  </p>
+                  <p className="text-[11px] text-[#8E7D7D] leading-relaxed">
+                    Tu ubicación actual será contrastada con el punto geográfico del local (tolerancia: {radioTolerancia}m). No se requiere fotografía.
+                  </p>
                 </div>
 
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
-                    disabled={sellando || subiendoFoto}
+                    disabled={sellando}
                     onClick={() => {
                       setMostrarModalAutosello(false);
-                      setFotoEvidencia(null);
                     }}
-                    className="flex-1 py-3 rounded-xl border border-[#EFE7DE] text-xs font-bold text-[#8E7D7D] hover:bg-slate-50"
+                    className="flex-1 py-3 rounded-xl border border-[#EFE7DE] text-xs font-bold text-[#8E7D7D] hover:bg-slate-50 transition-colors"
                   >
                     Cancelar
                   </button>
                   <button
                     type="button"
-                    disabled={sellando || subiendoFoto || (requiereFoto && !fotoEvidencia)}
+                    disabled={sellando}
                     onClick={ejecutarAutosellado}
-                    className="flex-1 py-3 rounded-xl bg-[#7C0A1E] text-white text-xs font-black shadow-md hover:bg-[#600616] flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    className="flex-1 py-3 rounded-xl bg-[#7C0A1E] text-white text-xs font-black shadow-md hover:bg-[#600616] flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
                   >
                     {sellando ? (
                       <>
@@ -639,7 +573,6 @@ export const LocalDetailPage: React.FC = () => {
                   onClick={() => {
                     setMostrarModalAutosello(false);
                     setSelloExitoso(null);
-                    setFotoEvidencia(null);
                     navigate("/user/mis-sellos");
                   }}
                   className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-black shadow-md hover:bg-[#600616]"

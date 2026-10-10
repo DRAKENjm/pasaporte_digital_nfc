@@ -20,11 +20,24 @@ import {
   Info,
   RotateCcw,
   ExternalLink,
+  Layers,
+  ShoppingBag,
+  Landmark,
+  BookOpen,
+  GraduationCap,
+  Mountain,
+  Plane,
+  Hotel,
+  Store,
+  Tag,
+  Gift,
+  Award,
 } from "lucide-react";
 import {
   GoogleMap,
   useJsApiLoader,
   OverlayView,
+  TrafficLayer,
 } from "@react-google-maps/api";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
@@ -56,6 +69,37 @@ function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
       Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+/** Traduce y formatea instrucciones de navegación si Google Maps entrega términos en inglés */
+function traducirInstruccion(texto: string): string {
+  if (!texto) return "";
+  let t = texto;
+  t = t.replace(/Head south-west/gi, "Dirígete al suroeste");
+  t = t.replace(/Head south-east/gi, "Dirígete al sureste");
+  t = t.replace(/Head north-west/gi, "Dirígete al noroeste");
+  t = t.replace(/Head north-east/gi, "Dirígete al noreste");
+  t = t.replace(/Head south/gi, "Dirígete hacia el sur");
+  t = t.replace(/Head north/gi, "Dirígete hacia el norte");
+  t = t.replace(/Head east/gi, "Dirígete hacia el este");
+  t = t.replace(/Head west/gi, "Dirígete hacia el oeste");
+  t = t.replace(/Head/gi, "Avanza");
+  t = t.replace(/Turn right/gi, "Gira a la derecha");
+  t = t.replace(/Turn left/gi, "Gira a la izquierda");
+  t = t.replace(/Slight right/gi, "Gira levemente a la derecha");
+  t = t.replace(/Slight left/gi, "Gira levemente a la izquierda");
+  t = t.replace(/Sharp right/gi, "Giro pronunciado a la derecha");
+  t = t.replace(/Sharp left/gi, "Giro pronunciado a la izquierda");
+  t = t.replace(/Keep right/gi, "Mantente a la derecha");
+  t = t.replace(/Keep left/gi, "Mantente a la izquierda");
+  t = t.replace(/Continue onto/gi, "Continúa por");
+  t = t.replace(/Continue/gi, "Continúa");
+  t = t.replace(/towards/gi, "hacia");
+  t = t.replace(/Destination will be on the right/gi, "El destino estará a tu derecha");
+  t = t.replace(/Destination will be on the left/gi, "El destino estará a tu izquierda");
+  t = t.replace(/Destination will be/gi, "Llegarás a tu destino");
+  t = t.replace(/At the roundabout, take the (\d+)(st|nd|rd|th)? exit/gi, "En la rotonda, toma la salida $1");
+  return t;
 }
 
 /** Calcula el rumbo/bearing (0° a 360°) entre dos puntos geográficos */
@@ -133,6 +177,9 @@ export const ExplorarPage: React.FC = () => {
   const [tarjetaExpandidaEnRuta, setTarjetaExpandidaEnRuta] = useState(false);
   const [userHeading, setUserHeading] = useState<number | null>(null);
 
+  // Funcionalidades avanzadas de Google Maps
+  const [mostrarTrafico, setMostrarTrafico] = useState(false);
+
   // Referencias para animación Lerp estilo inDrive
   const targetCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const currentCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -151,37 +198,219 @@ export const ExplorarPage: React.FC = () => {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
   const watchIdRef = useRef<number | null>(null);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
+  const mainPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const casingPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const originConnectorPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const destConnectorPolylineRef = useRef<google.maps.Polyline | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: apiKey,
+    language: "es",
+    region: "PE",
   });
 
-  // Manejador directo y limpio de rutas para Google Maps (evita líneas huérfanas)
+  // Manejador visual avanzado de rutas: Peatonal (puntos azules) y Vehicular (línea sólida + puntos grises de acceso al local)
   useEffect(() => {
     if (!map || !window.google?.maps) return;
+
+    // Limpieza de polilíneas anteriores
+    const clearCustomPolylines = () => {
+      if (mainPolylineRef.current) {
+        mainPolylineRef.current.setMap(null);
+        mainPolylineRef.current = null;
+      }
+      if (casingPolylineRef.current) {
+        casingPolylineRef.current.setMap(null);
+        casingPolylineRef.current = null;
+      }
+      if (originConnectorPolylineRef.current) {
+        originConnectorPolylineRef.current.setMap(null);
+        originConnectorPolylineRef.current = null;
+      }
+      if (destConnectorPolylineRef.current) {
+        destConnectorPolylineRef.current.setMap(null);
+        destConnectorPolylineRef.current = null;
+      }
+    };
+
+    clearCustomPolylines();
 
     if (!directionsRendererRef.current) {
       directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
         map,
-        suppressMarkers: true, // Oculta los marcadores nativos 'A' y 'B' de Google para que no choquen con tu ubicación
-        preserveViewport: false,
-        polylineOptions: {
-          strokeColor: "#7C0A1E",
-          strokeWeight: 5,
-          strokeOpacity: 0.9,
-        },
+        suppressMarkers: true, // Oculta marcadores 'A' y 'B' nativos para usar nuestro radar y pin del local
+        suppressPolylines: true, // Renderizamos las polilíneas con precisión milimétrica (puntos vs sólido + accesos)
+        preserveViewport: true,
       });
     }
 
-    if (directions) {
+    if (directions && directions.routes?.[0]?.legs?.[0]) {
       directionsRendererRef.current.setMap(map);
       directionsRendererRef.current.setDirections(directions);
+
+      const leg = directions.routes[0].legs[0];
+      const overviewPath = directions.routes[0].overview_path;
+
+      // Coordenadas reales del local destino
+      const suc = localSeleccionado?.sucursales?.[0];
+      let destLat = Number(suc?.latitud);
+      let destLng = Number(suc?.longitud);
+      if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) {
+        const parsed = parseCoordsFromUrl(suc?.google_maps_url || localSeleccionado?.google_maps_url);
+        if (parsed) {
+          destLat = parsed.lat;
+          destLng = parsed.lng;
+        }
+      }
+
+      if (modoViaje === "WALKING") {
+        // --- 1. MODO A PIE: Círculos / puntos azules punteados a lo largo de toda la vereda/ruta ---
+        const walkingDotSymbol: google.maps.Symbol = {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillOpacity: 1,
+          scale: 4,
+          strokeColor: "#1A73E8",
+          fillColor: "#1A73E8",
+          strokeWeight: 1,
+        };
+
+        mainPolylineRef.current = new window.google.maps.Polyline({
+          path: overviewPath,
+          strokeOpacity: 0,
+          icons: [
+            {
+              icon: walkingDotSymbol,
+              offset: "0",
+              repeat: "13px",
+            },
+          ],
+          map,
+          zIndex: 50,
+        });
+
+        // Conector peatonal al punto exacto si el comercio está al interior de un centro comercial o predio
+        if (!isNaN(destLat) && !isNaN(destLng)) {
+          const destLatLng = new window.google.maps.LatLng(destLat, destLng);
+          const distDestKm = getDistanceKm(leg.end_location.lat(), leg.end_location.lng(), destLat, destLng);
+          if (distDestKm > 0.005) {
+            destConnectorPolylineRef.current = new window.google.maps.Polyline({
+              path: [leg.end_location, destLatLng],
+              strokeOpacity: 0,
+              icons: [
+                {
+                  icon: walkingDotSymbol,
+                  offset: "0",
+                  repeat: "13px",
+                },
+              ],
+              map,
+              zIndex: 55,
+            });
+          }
+        }
+
+        // Conector peatonal desde la posición del usuario si está en interior
+        if (userCoords) {
+          const userLatLng = new window.google.maps.LatLng(userCoords.lat, userCoords.lng);
+          const distOrigKm = getDistanceKm(userCoords.lat, userCoords.lng, leg.start_location.lat(), leg.start_location.lng());
+          if (distOrigKm > 0.005) {
+            originConnectorPolylineRef.current = new window.google.maps.Polyline({
+              path: [userLatLng, leg.start_location],
+              strokeOpacity: 0,
+              icons: [
+                {
+                  icon: walkingDotSymbol,
+                  offset: "0",
+                  repeat: "13px",
+                },
+              ],
+              map,
+              zIndex: 55,
+            });
+          }
+        }
+      } else {
+        // --- 2. MODO EN VEHÍCULO: Línea sólida azul en pistas + PUNTOS GRISES cuando el lugar no está pegado a la carretera ---
+        casingPolylineRef.current = new window.google.maps.Polyline({
+          path: overviewPath,
+          strokeColor: "#174EA6",
+          strokeWeight: 7.5,
+          strokeOpacity: 0.95,
+          map,
+          zIndex: 40,
+        });
+
+        mainPolylineRef.current = new window.google.maps.Polyline({
+          path: overviewPath,
+          strokeColor: "#4285F4",
+          strokeWeight: 5,
+          strokeOpacity: 1,
+          map,
+          zIndex: 45,
+        });
+
+        // Símbolo de puntos grises / acceso peatonal idéntico a Google Maps
+        const grayDotSymbol: google.maps.Symbol = {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillOpacity: 1,
+          scale: 3.2,
+          strokeColor: "#70757A",
+          fillColor: "#9AA0A6",
+          strokeWeight: 1,
+        };
+
+        // Si el local está dentro de un mall/pasaje o no está pegado a la pista: traza los puntos grises desde la pista hasta el pin
+        if (!isNaN(destLat) && !isNaN(destLng)) {
+          const destLatLng = new window.google.maps.LatLng(destLat, destLng);
+          const distDestKm = getDistanceKm(leg.end_location.lat(), leg.end_location.lng(), destLat, destLng);
+          if (distDestKm > 0.005) {
+            destConnectorPolylineRef.current = new window.google.maps.Polyline({
+              path: [leg.end_location, destLatLng],
+              strokeOpacity: 0,
+              icons: [
+                {
+                  icon: grayDotSymbol,
+                  offset: "0",
+                  repeat: "10px",
+                },
+              ],
+              map,
+              zIndex: 60,
+            });
+          }
+        }
+
+        // Si el origen del usuario está al interior de una edificación, traza puntos grises hasta la pista
+        if (userCoords) {
+          const userLatLng = new window.google.maps.LatLng(userCoords.lat, userCoords.lng);
+          const distOrigKm = getDistanceKm(userCoords.lat, userCoords.lng, leg.start_location.lat(), leg.start_location.lng());
+          if (distOrigKm > 0.005) {
+            originConnectorPolylineRef.current = new window.google.maps.Polyline({
+              path: [userLatLng, leg.start_location],
+              strokeOpacity: 0,
+              icons: [
+                {
+                  icon: grayDotSymbol,
+                  offset: "0",
+                  repeat: "10px",
+                },
+              ],
+              map,
+              zIndex: 60,
+            });
+          }
+        }
+      }
     } else {
       directionsRendererRef.current.setDirections({ routes: [] } as any);
       directionsRendererRef.current.setMap(null);
     }
-  }, [map, directions]);
+
+    return () => {
+      clearCustomPolylines();
+    };
+  }, [map, directions, modoViaje, localSeleccionado, userCoords]);
 
   // Bucle de animación fluida estilo inDrive (Interpolación lineal de posición 60fps)
   useEffect(() => {
@@ -370,9 +599,9 @@ export const ExplorarPage: React.FC = () => {
 
   // NO solicitar ubicación automáticamente al montar
   // Solo al presionar "Mi Ubicación"
-  // Solicitar ubicación al dispositivo con detección amigable de GPS apagado o bloqueado
+  // Solicitar ubicación al dispositivo con detección amigable y seguimiento en tiempo real continuo
   const solicitarPermisoUbicacion = useCallback(
-    (activarWatch = false, isSilent = false) => {
+    (activarWatch = true, isSilent = false) => {
       if (!("geolocation" in navigator)) {
         if (!isSilent) showToast("Tu dispositivo no soporta geolocalización", "info");
         return;
@@ -380,6 +609,7 @@ export const ExplorarPage: React.FC = () => {
 
       if (!isSilent) setSolicitandoGps(true);
 
+      // 1. Obtención inicial rápida de posición
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const coords = {
@@ -392,14 +622,18 @@ export const ExplorarPage: React.FC = () => {
           if (!isSilent) showToast("Ubicación detectada correctamente", "success");
 
           const dist = getDistanceKm(coords.lat, coords.lng, defaultCenter.lat, defaultCenter.lng);
-          if (dist <= 40) {
+          if (dist <= 60 && !localSeleccionadoRef.current) {
             setMapCenter(coords);
             map?.panTo(coords);
-            map?.setZoom(15);
           }
 
-          // Si estamos en el panel y se solicita, mantener ubicación en tiempo real
-          if (activarWatch && watchIdRef.current === null) {
+          // 2. Activar seguimiento GPS en tiempo real continuo (watchPosition cada paso/metro)
+          if (activarWatch) {
+            if (watchIdRef.current !== null) {
+              navigator.geolocation.clearWatch(watchIdRef.current);
+              watchIdRef.current = null;
+            }
+
             watchIdRef.current = navigator.geolocation.watchPosition(
               (p) => {
                 const newCoords = {
@@ -407,46 +641,47 @@ export const ExplorarPage: React.FC = () => {
                   lng: p.coords.longitude,
                 };
                 setGpsBlocked(false);
-                // Rumbo / Heading: Si el sensor lo entrega, usarlo; sino, calcularlo a partir de la trayectoria de avance
+
+                // Rumbo / Heading: Si el sensor del GPS lo entrega (en movimiento), usarlo
                 if (p.coords.heading !== null && !isNaN(p.coords.heading) && p.coords.heading >= 0) {
-                  setUserHeading(p.coords.heading);
+                  setUserHeading(Math.round(p.coords.heading));
                 } else if (userCoords) {
                   const dist = getDistanceKm(userCoords.lat, userCoords.lng, newCoords.lat, newCoords.lng);
-                  // Si se movió al menos 2 metros, calcular ángulo de dirección de marcha
-                  if (dist >= 0.002) {
+                  // Si se movió al menos 1 metro, calcular ángulo de dirección de avance
+                  if (dist >= 0.001) {
                     const calculatedAngle = calculateBearing(userCoords.lat, userCoords.lng, newCoords.lat, newCoords.lng);
-                    setUserHeading(calculatedAngle);
+                    setUserHeading(Math.round(calculatedAngle));
                   }
                 }
                 setUserCoords(newCoords);
 
-                // Navegación en tiempo real: auto-actualizar llegada y progreso de ruta
+                // Navegación en tiempo real: auto-actualizar llegada y recalcular ruta cada 5 metros
                 if (directionsRef.current && localSeleccionadoRef.current?.sucursales?.[0]) {
                   const suc = localSeleccionadoRef.current.sucursales[0];
                   if (suc.latitud && suc.longitud) {
                     const destDist = getDistanceKm(newCoords.lat, newCoords.lng, Number(suc.latitud), Number(suc.longitud));
-                    // Si ya estás a menos de 40 metros del destino
-                    if (destDist <= 0.04) {
+                    // Si ya estás a menos de 30 metros del destino
+                    if (destDist <= 0.03) {
                       showToast("🎉 ¡Has llegado a tu destino!", "success");
                     } else if (lastRouteOriginRef.current) {
-                      // Solo recalcular con Google Directions si el usuario se ha desviado significativamente (> 120 metros)
-                      // Esto ahorra cuota de Google Maps API manteniendo el trazado fluido con Lerp y Haversine
+                      // Auto-recalcular ruta en tiempo real cada 5 metros recorridos
                       const distMovida = getDistanceKm(
                         lastRouteOriginRef.current.lat,
                         lastRouteOriginRef.current.lng,
                         newCoords.lat,
                         newCoords.lng
                       );
-                      if (distMovida >= 0.12) {
+                      if (distMovida >= 0.005) { // 5 metros exactos
                         lastRouteOriginRef.current = newCoords;
                         calcularRutaSilenciosaRef.current(newCoords);
                       }
+                    } else {
+                      lastRouteOriginRef.current = newCoords;
                     }
                   }
                 }
               },
               (watchErr) => {
-                // Si el usuario apaga el GPS en pleno uso
                 if (watchErr.code === 2 || watchErr.code === 1) {
                   setGpsBlocked(true);
                   if (watchIdRef.current !== null) {
@@ -455,7 +690,7 @@ export const ExplorarPage: React.FC = () => {
                   }
                 }
               },
-              { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+              { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
             );
           }
         },
@@ -463,13 +698,10 @@ export const ExplorarPage: React.FC = () => {
           setSolicitandoGps(false);
           setGpsBlocked(true);
           if (err.code === 1) {
-            // PERMISSION_DENIED
             if (!isSilent) showToast("Permiso de ubicación denegado. Actívalo en los ajustes de tu navegador.", "info");
           } else if (err.code === 2) {
-            // POSITION_UNAVAILABLE (GPS del teléfono apagado o sin señal satelital)
             if (!isSilent) showToast("Tu GPS se encuentra apagado o sin señal. Por favor actívalo.", "info");
           } else {
-            // TIMEOUT u otro
             if (!isSilent) showToast("Tu GPS se encuentra apagado o tardó en responder. Por favor actívalo.", "info");
           }
         },
@@ -478,6 +710,38 @@ export const ExplorarPage: React.FC = () => {
     },
     [showToast, map]
   );
+
+  // Escuchar la brújula física del dispositivo (Giro 360° en tiempo real estando quieto o caminando)
+  useEffect(() => {
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      let compass = 0;
+      // En iOS safari existe webkitCompassHeading
+      if ((e as any).webkitCompassHeading !== undefined && (e as any).webkitCompassHeading !== null) {
+        compass = (e as any).webkitCompassHeading;
+      } else if (e.alpha !== null && e.alpha !== undefined) {
+        // En Android / estándar W3C, alpha mide 0 a 360 respecto al norte magnético
+        compass = (360 - e.alpha) % 360;
+      } else {
+        return;
+      }
+
+      if (!isNaN(compass) && compass >= 0) {
+        setUserHeading(Math.round(compass));
+      }
+    };
+
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener("deviceorientationabsolute" as any, handleOrientation, true);
+      window.addEventListener("deviceorientation", handleOrientation, true);
+    }
+
+    return () => {
+      if (window.DeviceOrientationEvent) {
+        window.removeEventListener("deviceorientationabsolute" as any, handleOrientation, true);
+        window.removeEventListener("deviceorientation", handleOrientation, true);
+      }
+    };
+  }, []);
 
   // Solicitar ubicación al entrar a la vista "Explorar"
   useEffect(() => {
@@ -496,10 +760,17 @@ export const ExplorarPage: React.FC = () => {
   }, []);
 
   const iconByName = (name?: string) => {
-    const n = (name || "").toLowerCase();
+    const n = (name || "").toLowerCase().trim();
     if (n.includes("coffee") || n.includes("café") || n.includes("cafe")) return Coffee;
-    if (n.includes("utensil") || n.includes("rest")) return Utensils;
-    if (n.includes("cake") || n.includes("croissant") || n.includes("postre")) return Cake;
+    if (n.includes("utensil") || n.includes("rest") || n.includes("comida") || n.includes("gastr")) return Utensils;
+    if (n.includes("cake") || n.includes("croissant") || n.includes("postre") || n.includes("dulce")) return Cake;
+    if (n.includes("turis") || n.includes("landmark") || n.includes("monument") || n.includes("cultura") || n.includes("museo")) return Landmark;
+    if (n.includes("educa") || n.includes("book") || n.includes("estudio") || n.includes("coleg") || n.includes("univer") || n.includes("acad")) return GraduationCap;
+    if (n.includes("moda") || n.includes("shop") || n.includes("boutique") || n.includes("ropa") || n.includes("calzado")) return ShoppingBag;
+    if (n.includes("hotel") || n.includes("hosped") || n.includes("aloj")) return Hotel;
+    if (n.includes("viaje") || n.includes("plane") || n.includes("vuelo")) return Plane;
+    if (n.includes("avent") || n.includes("mount") || n.includes("sender")) return Mountain;
+    if (n.includes("tienda") || n.includes("store") || n.includes("market") || n.includes("comerc")) return Store;
     if (n.includes("compass") || n.includes("todo")) return Compass;
     return MapPin;
   };
@@ -564,16 +835,18 @@ export const ExplorarPage: React.FC = () => {
   };
 
   const handleCenterUserLocation = () => {
+    // Si el navegador soporta permiso de orientación (iOS Safari 13+)
+    if (typeof (DeviceOrientationEvent as any)?.requestPermission === "function") {
+      (DeviceOrientationEvent as any).requestPermission().catch(() => {});
+    }
+
     if (userCoords) {
       map?.panTo(userCoords);
       map?.setZoom(16);
-      setLocalSeleccionado(null);
-      setDirections(null);
       showToast("Centrado en tu ubicación", "info");
-    } else {
-      // Solo aquí se activa la ubicación
-      solicitarPermisoUbicacion(true);
     }
+    // Asegurar que el seguimiento en tiempo real esté activo
+    solicitarPermisoUbicacion(true, false);
   };
 
   // Extraer coordenadas de cualquier formato de URL de Google Maps si la sucursal no tiene lat/lng
@@ -769,9 +1042,22 @@ export const ExplorarPage: React.FC = () => {
     // 1. Si ya se trazó una ruta con Google Maps (precisión exacta de calles y tráfico)
     if (directions?.routes?.[0]?.legs?.[0]) {
       const leg = directions.routes[0].legs[0];
+      const steps = (leg.steps || []).map((st) => {
+        const rawText = st.instructions ? st.instructions.replace(/<[^>]*>?/gm, "") : "";
+        return {
+          instruccion: traducirInstruccion(rawText),
+          distancia: st.distance?.text || "",
+          duracion: st.duration?.text || "",
+          maniobra: (st as any).maneuver || "straight",
+        };
+      });
+
       return {
         distancia: leg.distance?.text || "",
         tiempo: leg.duration?.text || "",
+        duracionEnTrafico: (leg as any).duration_in_traffic?.text || null,
+        pasos: steps,
+        siguientePaso: steps[0] || null,
         esRutaReal: true,
       };
     }
@@ -815,7 +1101,30 @@ export const ExplorarPage: React.FC = () => {
 
   const onLoad = useCallback((mapInstance: google.maps.Map) => {
     setMap(mapInstance);
-  }, []);
+    if (locales.length > 0 && !localSeleccionadoRef.current && !directionsRef.current) {
+      const bounds = new window.google.maps.LatLngBounds();
+      let validPoints = 0;
+      locales.forEach((loc) => {
+        const suc = loc.sucursales?.[0];
+        let lat = Number(suc?.latitud);
+        let lng = Number(suc?.longitud);
+        if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+          const parsed = parseCoordsFromUrl(suc?.google_maps_url || loc.google_maps_url);
+          if (parsed) {
+            lat = parsed.lat;
+            lng = parsed.lng;
+          }
+        }
+        if (!isNaN(lat) && !isNaN(lng)) {
+          bounds.extend({ lat, lng });
+          validPoints++;
+        }
+      });
+      if (validPoints > 0) {
+        mapInstance.fitBounds(bounds, { top: 70, bottom: 90, left: 40, right: 40 });
+      }
+    }
+  }, [locales]);
 
   const onUnmount = useCallback(() => {
     setMap(null);
@@ -844,7 +1153,20 @@ export const ExplorarPage: React.FC = () => {
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-bold text-[#2D1A1E]">Explorar locales</h1>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Botón Capa de Tráfico Google Maps */}
+            <button
+              onClick={() => setMostrarTrafico((v) => !v)}
+              className={`p-1.5 rounded-full border transition-all ${
+                mostrarTrafico
+                  ? "bg-[#7C0A1E] text-white border-[#7C0A1E] shadow-xs"
+                  : "bg-[#FAF8F5] border-[#EFE7DE] text-[#2D1A1E] hover:text-[#7C0A1E]"
+              }`}
+              title={mostrarTrafico ? "Ocultar tráfico en vivo" : "Mostrar tráfico en vivo"}
+            >
+              <Layers size={14} />
+            </button>
+
             <button
               onClick={handleRefreshMap}
               disabled={refrescando}
@@ -988,42 +1310,46 @@ export const ExplorarPage: React.FC = () => {
               streetViewControl: false,
               mapTypeControl: false,
               fullscreenControl: false,
-              clickableIcons: false,
+              clickableIcons: true,
               gestureHandling: "greedy",
             }}
           >
-            {/* Tu ubicación en tiempo real con efecto radar y rotación de rumbo suave estilo inDrive */}
+            {/* Capa de tráfico en tiempo real de Google Maps */}
+            {mostrarTrafico && <TrafficLayer />}
+
+            {/* Tu ubicación en tiempo real con efecto radar y rotación de rumbo suave 360° en color Vino */}
             {(smoothCoords || userCoords) && (
               <OverlayView
                 position={smoothCoords || userCoords!}
-                mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-                getPixelPositionOffset={() => ({ x: -20, y: -20 })}
-                zIndex={999}
+                mapPaneName={OverlayView.FLOAT_PANE}
+                getPixelPositionOffset={() => ({ x: -24, y: -24 })}
+                zIndex={9999}
               >
                 <div
                   title="Tu ubicación en tiempo real"
-                  className="relative flex items-center justify-center pointer-events-none"
-                  style={{ width: 40, height: 40 }}
+                  className="relative flex items-center justify-center pointer-events-none select-none"
+                  style={{ width: 48, height: 48 }}
                 >
-                  {/* Halo de radar expandible */}
-                  <span className="absolute w-10 h-10 rounded-full bg-blue-500/25 animate-ping" />
+                  {/* Halo de radar expandible color Vino/Dorado */}
+                  <span className="absolute w-12 h-12 rounded-full bg-[#7C0A1E]/30 animate-ping" />
+                  <span className="absolute w-8 h-8 rounded-full bg-[#C5A059]/35 animate-pulse" />
 
-                  {/* Puck / Navegador central con orientación en tiempo real */}
+                  {/* Puck / Navegador central con orientación 360° en tiempo real */}
                   <div
-                    className="relative w-8 h-8 rounded-full bg-white shadow-xl border-2 border-white flex items-center justify-center"
+                    className="relative w-9 h-9 rounded-full bg-gradient-to-br from-[#9B1B30] to-[#590715] shadow-2xl border-[2.5px] border-white ring-2 ring-[#C5A059]/60 flex items-center justify-center"
                     style={{
                       transform: `rotate(${userHeading || 0}deg)`,
-                      transition: "transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                      transition: "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
                   >
-                    {/* Cono o flecha de rumbo estilo navegación GPS / inDrive */}
+                    {/* Cono / Flecha de rumbo 360° apuntando en la dirección que mira el usuario */}
                     {userHeading !== null ? (
                       <div className="relative flex flex-col items-center justify-center w-full h-full">
-                        <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-b-[9px] border-l-transparent border-r-transparent border-b-[#1A73E8] mb-0.5" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-[#1A73E8]" />
+                        <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent border-b-[#FFDF80] mb-0.5 filter drop-shadow(0 1px 1px rgba(0,0,0,0.6))" />
+                        <div className="w-2.5 h-2.5 rounded-full bg-white shadow-xs" />
                       </div>
                     ) : (
-                      <div className="w-4 h-4 rounded-full bg-[#1A73E8] border-2 border-white shadow-sm" />
+                      <div className="w-3.5 h-3.5 rounded-full bg-white border-2 border-[#C5A059] shadow-xs animate-pulse" />
                     )}
                   </div>
                 </div>
@@ -1317,7 +1643,7 @@ export const ExplorarPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Botones de acción: Iniciar Ruta + Ver Perfil Directo */}
+                {/* Botones de acción: Iniciar Ruta + Ver Perfil + Maps */}
                 <div className="mt-3 flex items-center gap-2">
                   <button
                     type="button"
@@ -1339,7 +1665,7 @@ export const ExplorarPage: React.FC = () => {
                         className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 border border-red-200 active:scale-[0.98] transition-all cursor-pointer hover:bg-red-100"
                       >
                         <X size={16} />
-                        {t("cancelRoute") || "Cancelar ruta"}
+                        {t("cancelRoute") || "Cancelar"}
                       </button>
 
                       <button
@@ -1355,7 +1681,7 @@ export const ExplorarPage: React.FC = () => {
                         title="Abrir en Google Maps"
                       >
                         <ExternalLink size={15} />
-                        <span>Google Maps</span>
+                        <span>Maps</span>
                       </button>
                     </div>
                   ) : (

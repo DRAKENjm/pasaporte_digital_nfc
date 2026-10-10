@@ -1031,22 +1031,6 @@ export const AdminLocales = () => {
                 />
                 <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-amber-500/20">
-                <div>
-                  <span className="text-xs font-bold text-[#2D1A1E] dark:text-white block">
-                    ¿Requiere foto de evidencia?
-                  </span>
-                  <span className="text-[10px] text-muted">Exige foto en el lugar para auto-sellar</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={form.requiere_foto}
-                  onChange={(e) =>
-                    setForm({ ...form, requiere_foto: e.target.checked })
-                  }
-                  className="w-4 h-4 text-[#7C0A1E] rounded"
-                />
-              </div>
             </div>
           )}
         </div>
@@ -1594,22 +1578,6 @@ export const AdminLocales = () => {
                   className="input-base font-bold text-xs"
                 />
                 <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-amber-500/20">
-                <div>
-                  <span className="text-xs font-bold text-[#2D1A1E] dark:text-white block">
-                    ¿Requiere foto de evidencia?
-                  </span>
-                  <span className="text-[10px] text-muted">Exige foto en el lugar para auto-sellar</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={form.requiere_foto}
-                  onChange={(e) =>
-                    setForm({ ...form, requiere_foto: e.target.checked })
-                  }
-                  className="w-4 h-4 text-[#7C0A1E] rounded"
-                />
               </div>
             </div>
           )}
