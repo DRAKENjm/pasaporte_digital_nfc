@@ -73,12 +73,12 @@ export const RewardsController = {
 
       await client.query("BEGIN");
 
-      // Validar recompensa y stock (LEFT JOIN para permitir recompensas globales de plataforma)
+      // Validar recompensa y stock (especificamos FOR UPDATE OF r para evitar error con LEFT JOIN)
       const recRes = await client.query(
         `SELECT r.*, COALESCE(e.nombre_comercial, 'Pasaporte Digital Oficial') AS nombre_comercial 
          FROM recompensas r
          LEFT JOIN establecimientos e ON e.id_establecimiento = r.id_establecimiento
-         WHERE r.id_recompensa = $1 FOR UPDATE`,
+         WHERE r.id_recompensa = $1 FOR UPDATE OF r`,
         [id_recompensa],
       );
 

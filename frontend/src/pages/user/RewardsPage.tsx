@@ -13,6 +13,7 @@ export const RewardsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [canjeando, setCanjeando] = useState<string | null>(null);
   const [puntosActuales, setPuntosActuales] = useState<number>(0);
+  const [canjeExitoso, setCanjeExitoso] = useState<any | null>(null);
   const { user, refreshProfile } = useAuth();
   const { showToast } = useUI();
   const { t } = useLanguage();
@@ -43,8 +44,10 @@ export const RewardsPage: React.FC = () => {
     }
     setCanjeando(id);
     try {
-      await api.post("/rewards/canjear", { id_recompensa: id });
-      showToast("Su solicitud de canje ha sido registrada. Esté al pendiente de la confirmación en el establecimiento.", "success");
+      const res = await api.post("/rewards/canjear", { id_recompensa: id });
+      const data = res.data?.data;
+      setCanjeExitoso(data || { recompensa: { puntos_canjeados: ptsReq } });
+      showToast("¡Solicitud de canje registrada! Mantente al pendiente mientras se aprueba.", "success");
       setPuntosActuales((prev) => Math.max(0, prev - ptsReq));
       await refreshProfile();
     } catch (err: any) {
@@ -153,6 +156,51 @@ export const RewardsPage: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal Informativo de Canje Exitoso */}
+      {canjeExitoso && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-[#EFE7DE] shadow-2xl text-center space-y-5">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 border-2 border-emerald-500/20 flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 size={36} />
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                Solicitud Registrada
+              </span>
+              <h3 className="text-xl font-bold text-[#2D1A1E] pt-2">
+                ¡Recompensa Canjeada!
+              </h3>
+              <p className="text-xs text-[#8E7D7D] leading-relaxed">
+                Tu solicitud ha sido generada exitosamente. Mantente al pendiente mientras el local o administrador valida y aprueba tu canje.
+              </p>
+            </div>
+
+            {canjeExitoso?.canje?.codigo_canje && (
+              <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#EFE7DE] space-y-1">
+                <span className="text-[10px] font-bold text-[#8E7D7D] uppercase tracking-wider block">
+                  Código de Verificación
+                </span>
+                <span className="text-lg font-black font-mono tracking-widest text-[#7C0A1E]">
+                  {canjeExitoso.canje.codigo_canje}
+                </span>
+                <p className="text-[10px] text-[#8E7D7D]">
+                  Preséntalo en el mostrador para reclamar tu beneficio.
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setCanjeExitoso(null)}
+              className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-black hover:bg-[#600616] transition-all shadow-md"
+            >
+              ENTENDIDO
+            </button>
+          </div>
         </div>
       )}
     </div>
