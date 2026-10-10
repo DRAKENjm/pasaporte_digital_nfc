@@ -662,7 +662,7 @@ export const ExplorarPage: React.FC = () => {
                     const destDist = getDistanceKm(newCoords.lat, newCoords.lng, Number(suc.latitud), Number(suc.longitud));
                     // Si ya estás a menos de 30 metros del destino
                     if (destDist <= 0.03) {
-                      showToast("🎉 ¡Has llegado a tu destino!", "success");
+                      showToast(" ¡Has llegado a tu destino!", "success");
                     } else if (lastRouteOriginRef.current) {
                       // Auto-recalcular ruta en tiempo real cada 5 metros recorridos
                       const distMovida = getDistanceKm(
@@ -1317,26 +1317,26 @@ export const ExplorarPage: React.FC = () => {
             {/* Capa de tráfico en tiempo real de Google Maps */}
             {mostrarTrafico && <TrafficLayer />}
 
-            {/* Tu ubicación en tiempo real con efecto radar y rotación de rumbo suave 360° en color Vino */}
+            {/* Tu ubicación en tiempo real con efecto radar discreto y rotación de rumbo suave 360° en color Vino */}
             {(smoothCoords || userCoords) && (
               <OverlayView
                 position={smoothCoords || userCoords!}
                 mapPaneName={OverlayView.FLOAT_PANE}
-                getPixelPositionOffset={() => ({ x: -24, y: -24 })}
+                getPixelPositionOffset={() => ({ x: -16, y: -16 })}
                 zIndex={9999}
               >
                 <div
                   title="Tu ubicación en tiempo real"
                   className="relative flex items-center justify-center pointer-events-none select-none"
-                  style={{ width: 48, height: 48 }}
+                  style={{ width: 32, height: 32 }}
                 >
-                  {/* Halo de radar expandible color Vino/Dorado */}
-                  <span className="absolute w-12 h-12 rounded-full bg-[#7C0A1E]/30 animate-ping" />
-                  <span className="absolute w-8 h-8 rounded-full bg-[#C5A059]/35 animate-pulse" />
+                  {/* Halo de radar expandible suave */}
+                  <span className="absolute w-8 h-8 rounded-full bg-[#7C0A1E]/20 animate-ping" />
+                  <span className="absolute w-6 h-6 rounded-full bg-[#C5A059]/25 animate-pulse" />
 
-                  {/* Puck / Navegador central con orientación 360° en tiempo real */}
+                  {/* Puck central estilizado con orientación 360° */}
                   <div
-                    className="relative w-9 h-9 rounded-full bg-gradient-to-br from-[#9B1B30] to-[#590715] shadow-2xl border-[2.5px] border-white ring-2 ring-[#C5A059]/60 flex items-center justify-center"
+                    className="relative w-6 h-6 rounded-full bg-gradient-to-br from-[#9B1B30] to-[#590715] shadow-lg border-[1.5px] border-white ring-1 ring-[#C5A059]/50 flex items-center justify-center"
                     style={{
                       transform: `rotate(${userHeading || 0}deg)`,
                       transition: "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -1345,11 +1345,11 @@ export const ExplorarPage: React.FC = () => {
                     {/* Cono / Flecha de rumbo 360° apuntando en la dirección que mira el usuario */}
                     {userHeading !== null ? (
                       <div className="relative flex flex-col items-center justify-center w-full h-full">
-                        <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent border-b-[#FFDF80] mb-0.5 filter drop-shadow(0 1px 1px rgba(0,0,0,0.6))" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-white shadow-xs" />
+                        <div className="w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[7px] border-l-transparent border-r-transparent border-b-[#FFDF80] mb-0.5 filter drop-shadow(0 1px 1px rgba(0,0,0,0.5))" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-white shadow-xs" />
                       </div>
                     ) : (
-                      <div className="w-3.5 h-3.5 rounded-full bg-white border-2 border-[#C5A059] shadow-xs animate-pulse" />
+                      <div className="w-2.5 h-2.5 rounded-full bg-white border border-[#C5A059] shadow-xs animate-pulse" />
                     )}
                   </div>
                 </div>
@@ -1422,10 +1422,10 @@ export const ExplorarPage: React.FC = () => {
           >
             {directions && !tarjetaExpandidaEnRuta ? (
               /* BARRA COMPACTA FLOTANTE MODO NAVEGACIÓN ACTIVA */
-              <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl p-2.5 sm:p-3 border border-[#EFE7DE] shadow-2xl flex items-center justify-between gap-2.5 animate-fadeIn">
+              <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl p-2 sm:p-3 border border-[#EFE7DE] shadow-2xl flex items-center justify-between gap-2 animate-fadeIn">
                 {/* Logo e info de ruta */}
                 <div
-                  className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                  className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
                   onClick={() => setTarjetaExpandidaEnRuta(true)}
                   title="Toca para ver detalles completos"
                 >
@@ -1437,50 +1437,37 @@ export const ExplorarPage: React.FC = () => {
                       "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=100"
                     }
                     alt={localSeleccionado.nombre_comercial}
-                    className="w-10 h-10 rounded-full object-cover shrink-0 border border-[#EFE7DE] shadow-sm"
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover shrink-0 border border-[#EFE7DE] shadow-xs"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <h4 className="font-bold text-xs text-[#2D1A1E] truncate">
+                      <h4 className="font-bold text-xs text-[#2D1A1E] truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">
                         {localSeleccionado.nombre_comercial}
                       </h4>
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" title="En camino" />
                     </div>
                     {infoRuta && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-[#59494B] font-medium mt-0.5">
-                        <span className="font-bold text-[#7C0A1E]">{infoRuta.distancia}</span>
-                        <span>•</span>
-                        <span>{infoRuta.tiempo}</span>
-                        <span>•</span>
-                        <span className="text-[10px] text-[#8E7D7D]">
-                          {modoViaje === "WALKING" ? "A pie" : "En auto"}
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold mt-0.5">
+                        <span className="font-bold text-[#7C0A1E] bg-[#7C0A1E]/10 px-1.5 py-0.5 rounded shrink-0">
+                          {infoRuta.distancia}
+                        </span>
+                        <span className="text-[#59494B] bg-[#FAF8F5] border border-[#EFE7DE] px-1.5 py-0.5 rounded font-medium shrink-0">
+                          {infoRuta.tiempo}
                         </span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Acciones compactas: ver ficha + selector rápido + cancelar + expandir */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
-                      if (idLoc) navigate(`/user/locales/${idLoc}`);
-                    }}
-                    className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] hover:bg-[#EFE7DE] transition-colors"
-                    title="Ver ficha del local"
-                  >
-                    <Info size={15} />
-                  </button>
-
+                {/* Acciones compactas: selector rápido + maps + cancelar + expandir */}
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => cambiarModoViaje(modoViaje === "DRIVING" ? "WALKING" : "DRIVING")}
-                    className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] hover:bg-[#EFE7DE] transition-colors"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#7C0A1E] hover:bg-[#EFE7DE] active:scale-95 transition-all cursor-pointer"
                     title={`Cambiar a ${modoViaje === "DRIVING" ? "Caminando" : "En auto"}`}
                   >
-                    {modoViaje === "DRIVING" ? <Car size={15} /> : <Footprints size={15} />}
+                    {modoViaje === "DRIVING" ? <Car size={14} /> : <Footprints size={14} />}
                   </button>
 
                   <button
@@ -1492,28 +1479,29 @@ export const ExplorarPage: React.FC = () => {
                       const url = suc?.google_maps_url || localSeleccionado.google_maps_url || `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=${modoViaje.toLowerCase()}`;
                       window.open(url, "_blank");
                     }}
-                    className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center hover:bg-blue-100 active:scale-95 transition-all cursor-pointer"
                     title="Navegar en Google Maps app"
                   >
-                    <ExternalLink size={14} />
+                    <ExternalLink size={13} />
                   </button>
 
                   <button
                     type="button"
                     onClick={cancelarRuta}
-                    className="px-3 py-1.5 rounded-xl bg-red-50 text-red-700 font-bold text-xs border border-red-200 hover:bg-red-100 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                    className="h-7 sm:h-8 px-2 sm:px-2.5 rounded-xl bg-red-50 text-red-700 font-bold text-xs border border-red-200 hover:bg-red-100 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                    title="Cancelar ruta"
                   >
-                    <X size={14} />
-                    <span>{t("cancelRoute") || "Cancelar"}</span>
+                    <X size={13} />
+                    <span className="hidden sm:inline">{t("cancelRoute") || "Cancelar"}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setTarjetaExpandidaEnRuta(true)}
-                    className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#8E7D7D] hover:bg-[#EFE7DE] transition-colors"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#8E7D7D] hover:bg-[#EFE7DE] transition-colors cursor-pointer"
                     title="Expandir detalles"
                   >
-                    <ChevronUp size={16} />
+                    <ChevronUp size={15} />
                   </button>
                 </div>
               </div>
@@ -1651,10 +1639,10 @@ export const ExplorarPage: React.FC = () => {
                       const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
                       if (idLoc) navigate(`/user/locales/${idLoc}`);
                     }}
-                    className="py-2.5 px-3.5 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#EFE7DE] active:scale-[0.98] transition-all cursor-pointer shadow-2xs shrink-0"
+                    className="py-2.5 px-3 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-[#EFE7DE] active:scale-[0.98] transition-all cursor-pointer shadow-2xs shrink-0"
                     title="Ver toda la información del comercio"
                   >
-                    <Info size={15} className="text-[#7C0A1E]" />
+                    <Info size={14} className="text-[#7C0A1E]" />
                     <span>{t("viewLocal") || "Ver Local"}</span>
                   </button>
 
@@ -1664,7 +1652,7 @@ export const ExplorarPage: React.FC = () => {
                         onClick={cancelarRuta}
                         className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 border border-red-200 active:scale-[0.98] transition-all cursor-pointer hover:bg-red-100"
                       >
-                        <X size={16} />
+                        <X size={15} />
                         {t("cancelRoute") || "Cancelar"}
                       </button>
 
@@ -1680,7 +1668,7 @@ export const ExplorarPage: React.FC = () => {
                         className="py-2.5 px-3 rounded-2xl bg-blue-50 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-blue-200 hover:bg-blue-100 active:scale-[0.98] transition-all cursor-pointer"
                         title="Abrir en Google Maps"
                       >
-                        <ExternalLink size={15} />
+                        <ExternalLink size={14} />
                         <span>Maps</span>
                       </button>
                     </div>
@@ -1691,12 +1679,8 @@ export const ExplorarPage: React.FC = () => {
                         disabled={cargandoRuta}
                         className="flex-1 py-2.5 rounded-2xl bg-[#7C0A1E] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer hover:bg-[#630718] shadow-xs"
                       >
-                        <Navigation size={16} />
-                        {cargandoRuta
-                          ? t("calculating") || "Calculando..."
-                          : modoViaje === "WALKING"
-                          ? t("startRouteFoot") || "A pie"
-                          : t("startRouteCar") || "Auto"}
+                        <Navigation size={15} />
+                        <span>{cargandoRuta ? (t("calculating") || "Calculando...") : (t("startRoute") || "Iniciar Ruta")}</span>
                       </button>
 
                       <button
@@ -1711,7 +1695,7 @@ export const ExplorarPage: React.FC = () => {
                         className="py-2.5 px-3 rounded-2xl bg-[#FAF8F5] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 border border-[#EFE7DE] hover:bg-[#EFE7DE] active:scale-[0.98] transition-all cursor-pointer"
                         title="Abrir en Google Maps"
                       >
-                        <ExternalLink size={15} className="text-[#7C0A1E]" />
+                        <ExternalLink size={14} className="text-[#7C0A1E]" />
                         <span>Maps</span>
                       </button>
                     </div>
