@@ -372,6 +372,7 @@ export const AuthController = {
         id_cliente: user.id_cliente,
         codigo_cliente: user.codigo_cliente,
         puntos_actuales: user.puntos_actuales || 0,
+        puntos_historicos: user.puntos_historicos || 0,
         total_visitas: user.total_visitas || 0,
         total_sellos: user.total_sellos || 0,
         locales_visitados: user.locales_visitados || 0,

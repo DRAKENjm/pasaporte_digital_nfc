@@ -24,6 +24,11 @@ export const UserModel = {
                 WHERE id_cliente = c.id_cliente
               ) AS puntos_actuales,
               (
+                SELECT COALESCE(SUM(cantidad), 0)::int
+                FROM movimientos_puntos
+                WHERE id_cliente = c.id_cliente AND cantidad > 0
+              ) AS puntos_historicos,
+              (
                 SELECT COUNT(DISTINCT id_visita)::int
                 FROM visitas
                 WHERE id_cliente = c.id_cliente AND estado = 'CONFIRMADA'

@@ -202,7 +202,8 @@ export const Login: React.FC = () => {
             <GoogleLogin
               onSuccess={handleGoogleSuccess}
               onError={() => setErrorMsg("Error al conectar con Google")}
-              useOneTap={false}
+              useOneTap={true}
+              auto_select={true}
               shape="pill"
               text="continue_with"
               theme="outline"

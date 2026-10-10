@@ -74,6 +74,31 @@ export const RewardsPage: React.FC = () => {
     }
   };
 
+  const [cancelando, setCancelando] = useState<number | null>(null);
+
+  const cancelarCanjeCliente = async (idCanje: number) => {
+    if (!window.confirm("¿Seguro que deseas cancelar este canje? Tus puntos serán devueltos a tu saldo.")) {
+      return;
+    }
+    setCancelando(idCanje);
+    try {
+      await api.post("/rewards/cancelar", { id_canje: idCanje });
+      showToast("Canje cancelado y puntos devueltos", "success");
+      await Promise.all([
+        fetchCanjes(),
+        refreshProfile(),
+      ]);
+      const profRes = await api.get("/auth/profile");
+      setPuntosActuales(profRes.data?.data?.puntos_actuales ?? user?.puntos_globales ?? 0);
+      const rewRes = await api.get("/rewards");
+      setRecompensas(Array.isArray(rewRes.data?.data) ? rewRes.data.data : []);
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "No se pudo cancelar el canje", "error");
+    } finally {
+      setCancelando(null);
+    }
+  };
+
   const handleTabChange = (tab: "catalogo" | "historial") => {
     setActiveTab(tab);
     if (tab === "historial" && misCanjes.length === 0) {
@@ -189,21 +214,27 @@ export const RewardsPage: React.FC = () => {
                         <span className="text-base font-black text-[#7C0A1E]">{ptsReq} pts</span>
                       </div>
 
-                      <button
-                        onClick={() => canjear(r.id_recompensa || r.id, ptsReq)}
-                        disabled={!canAfford || canjeando === (r.id_recompensa || r.id)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
-                          canAfford
-                            ? "bg-[#7C0A1E] text-white hover:bg-[#600616]"
-                            : "bg-[#FAF8F5] border border-[#EFE7DE] text-[#8E7D7D] cursor-not-allowed opacity-60"
-                        }`}
-                      >
-                        {canjeando === (r.id_recompensa || r.id)
-                          ? "Canjeando..."
-                          : canAfford
-                          ? "Canjear ahora"
-                          : "Puntos insuficientes"}
-                      </button>
+                      {r.canjeado_hoy ? (
+                        <span className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 border border-amber-200 text-amber-800">
+                          Canjeado hoy
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => canjear(r.id_recompensa || r.id, ptsReq)}
+                          disabled={!canAfford || canjeando === (r.id_recompensa || r.id)}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
+                            canAfford
+                              ? "bg-[#7C0A1E] text-white hover:bg-[#600616]"
+                              : "bg-[#FAF8F5] border border-[#EFE7DE] text-[#8E7D7D] cursor-not-allowed opacity-60"
+                          }`}
+                        >
+                          {canjeando === (r.id_recompensa || r.id)
+                            ? "Canjeando..."
+                            : canAfford
+                            ? "Canjear ahora"
+                            : "Puntos insuficientes"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -277,7 +308,7 @@ export const RewardsPage: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Código de canje y fecha */}
+                  {/* Código de canje, fecha y botón cancelar si está pendiente */}
                   <div className="bg-[#FAF8F5] p-2.5 rounded-xl border border-[#EFE7DE] flex items-center justify-between text-xs">
                     <div>
                       <span className="text-[9px] text-[#8E7D7D] uppercase font-bold block">
@@ -287,16 +318,29 @@ export const RewardsPage: React.FC = () => {
                         {c.codigo_canje}
                       </span>
                     </div>
-                    <span className="text-[10px] text-[#8E7D7D]">
-                      {c.fecha_solicitud
-                        ? new Date(c.fecha_solicitud).toLocaleDateString("es-PE", {
-                            day: "2-digit",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : ""}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-[#8E7D7D]">
+                        {c.fecha_solicitud
+                          ? new Date(c.fecha_solicitud).toLocaleDateString("es-PE", {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : ""}
+                      </span>
+
+                      {esPendiente && (
+                        <button
+                          type="button"
+                          onClick={() => cancelarCanjeCliente(c.id_canje)}
+                          disabled={cancelando === c.id_canje}
+                          className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-[10px] font-bold transition-colors cursor-pointer"
+                        >
+                          {cancelando === c.id_canje ? "Cancelando..." : "Cancelar"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

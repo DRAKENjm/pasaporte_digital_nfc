@@ -28,14 +28,23 @@ export const RewardsController = {
           r.fecha_fin,
           r.estado,
           COALESCE(e.nombre_comercial, 'Pasaporte Digital Oficial') AS establecimiento_nombre,
-          e.logo AS establecimiento_logo
+          e.logo AS establecimiento_logo,
+          EXISTS (
+            SELECT 1 FROM canjes c
+            JOIN clientes cl ON cl.id_cliente = c.id_cliente
+            WHERE c.id_recompensa = r.id_recompensa
+              AND cl.id_usuario = $1
+              AND c.estado IN ('PENDIENTE', 'CANJEADO', 'CONFIRMADO', 'ENTREGADO')
+              AND c.fecha_solicitud >= CURRENT_DATE
+          ) AS canjeado_hoy
         FROM recompensas r
         LEFT JOIN establecimientos e ON e.id_establecimiento = r.id_establecimiento
         WHERE r.estado = 'ACTIVA'
           AND (r.fecha_fin IS NULL OR r.fecha_fin > CURRENT_TIMESTAMP)
       `;
 
-      const params: any[] = [];
+      const idUsuario = req.user?.id || 0;
+      const params: any[] = [idUsuario];
       if (id_establecimiento) {
         params.push(id_establecimiento);
         sql += ` AND r.id_establecimiento = $${params.length}`;
@@ -89,6 +98,21 @@ export const RewardsController = {
 
       if (recompensa.stock_ilimitado === 0 && (recompensa.stock === null || recompensa.stock <= 0)) {
         throw new ApiError(400, "Recompensa agotada temporalmente");
+      }
+
+      // Validar regla de negocio: Máximo 1 canje por día para la misma recompensa
+      const canjeHoyRes = await client.query(
+        `SELECT id_canje, estado FROM canjes 
+         WHERE id_cliente = $1 
+           AND id_recompensa = $2 
+           AND estado IN ('PENDIENTE', 'CANJEADO', 'CONFIRMADO', 'ENTREGADO')
+           AND fecha_solicitud >= CURRENT_DATE
+         LIMIT 1`,
+        [idCliente, id_recompensa],
+      );
+
+      if (canjeHoyRes.rows[0]) {
+        throw new ApiError(400, "Ya has canjeado esta recompensa el día de hoy. Podrás canjearla nuevamente mañana.");
       }
 
       // Validar saldo disponible (saldo total menos puntos en canjes PENDIENTES)
@@ -246,6 +270,75 @@ export const RewardsController = {
         puntos_descontados: canje.puntos_canje,
         saldo_restante: saldoPosterior,
       }, "Entrega de recompensa confirmada y puntos descontados definitivamente.");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      next(error);
+    } finally {
+      client.release();
+    }
+  },
+
+  /** 3. Cancelar Canje por parte del cliente (Solo si está PENDIENTE) */
+  async cancelarCanje(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    const client = await pool.connect();
+    try {
+      const { id_canje } = req.body;
+      const idUsuario = req.user!.id;
+
+      if (!id_canje) {
+        throw new ApiError(400, "id_canje es obligatorio");
+      }
+
+      // Obtener cliente
+      const clienteRes = await client.query(
+        `SELECT id_cliente FROM clientes WHERE id_usuario = $1`,
+        [idUsuario],
+      );
+      if (!clienteRes.rows[0]) {
+        throw new ApiError(403, "No autorizado");
+      }
+      const idCliente = clienteRes.rows[0].id_cliente;
+
+      await client.query("BEGIN");
+
+      const canjeRes = await client.query(
+        `SELECT c.*, r.nombre AS recompensa_nombre, r.stock_ilimitado
+         FROM canjes c
+         JOIN recompensas r ON r.id_recompensa = c.id_recompensa
+         WHERE c.id_canje = $1 AND c.id_cliente = $2 FOR UPDATE`,
+        [id_canje, idCliente],
+      );
+
+      const canje = canjeRes.rows[0];
+      if (!canje) {
+        throw new ApiError(404, "Canje no encontrado");
+      }
+
+      if (canje.estado !== "PENDIENTE") {
+        throw new ApiError(400, `No se puede cancelar un canje con estado: ${canje.estado}`);
+      }
+
+      // Actualizar estado a CANCELADO
+      await client.query(
+        `UPDATE canjes SET estado = 'CANCELADO', fecha_validacion = CURRENT_TIMESTAMP WHERE id_canje = $1`,
+        [canje.id_canje],
+      );
+
+      // Si la recompensa tenía stock finito, devolverlo
+      if (canje.stock_ilimitado === 0) {
+        await client.query(
+          `UPDATE recompensas SET stock = stock + 1 WHERE id_recompensa = $1`,
+          [canje.id_recompensa],
+        );
+      }
+
+      await client.query("COMMIT");
+
+      sendResponse(res, 200, {
+        id_canje: canje.id_canje,
+        estado: "CANCELADO",
+        puntos_liberados: canje.puntos_canje,
+      }, "Canje cancelado exitosamente. Tus puntos están disponibles de nuevo.");
     } catch (error) {
       await client.query("ROLLBACK");
       next(error);

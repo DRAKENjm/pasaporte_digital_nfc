@@ -58,6 +58,22 @@ function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   return R * c;
 }
 
+/** Calcula el rumbo/bearing (0° a 360°) entre dos puntos geográficos */
+function calculateBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toDeg = (rad: number) => (rad * 180) / Math.PI;
+
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lng2 - lng1);
+
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  const θ = Math.atan2(y, x);
+
+  return (toDeg(θ) + 360) % 360;
+}
+
 /** Marcador tipo pin: círculo + cola de ubicación */
 const CircularMarker: React.FC<{
   logo?: string;
@@ -103,6 +119,8 @@ export const ExplorarPage: React.FC = () => {
   const [map, setMap] = useState<google.maps.Map | null>(null);
 
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // Posición interpolada suavemente cuadro a cuadro estilo inDrive / Uber
+  const [smoothCoords, setSmoothCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [solicitandoGps, setSolicitandoGps] = useState(false);
   const [mapCenter, setMapCenter] = useState(defaultCenter);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
@@ -114,6 +132,11 @@ export const ExplorarPage: React.FC = () => {
   const [modoViaje, setModoViaje] = useState<"DRIVING" | "WALKING">("DRIVING");
   const [tarjetaExpandidaEnRuta, setTarjetaExpandidaEnRuta] = useState(false);
   const [userHeading, setUserHeading] = useState<number | null>(null);
+
+  // Referencias para animación Lerp estilo inDrive
+  const targetCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const currentCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const animFrameIdRef = useRef<number | null>(null);
 
   const lastRouteOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const directionsRef = useRef<google.maps.DirectionsResult | null>(null);
@@ -160,13 +183,54 @@ export const ExplorarPage: React.FC = () => {
     }
   }, [map, directions]);
 
+  // Bucle de animación fluida estilo inDrive (Interpolación lineal de posición 60fps)
   useEffect(() => {
+    if (!userCoords) return;
+    targetCoordsRef.current = userCoords;
+
+    if (!currentCoordsRef.current) {
+      currentCoordsRef.current = { ...userCoords };
+      setSmoothCoords(userCoords);
+      return;
+    }
+
+    const animate = () => {
+      if (!currentCoordsRef.current || !targetCoordsRef.current) return;
+      const curr = currentCoordsRef.current;
+      const target = targetCoordsRef.current;
+
+      const dLat = target.lat - curr.lat;
+      const dLng = target.lng - curr.lng;
+
+      // Si la distancia es mínima, fijar en target
+      if (Math.abs(dLat) < 0.000002 && Math.abs(dLng) < 0.000002) {
+        currentCoordsRef.current = { ...target };
+        setSmoothCoords(target);
+        return;
+      }
+
+      // Factor de deslizamiento suave (Lerp: 0.12 por frame ~ aprox 1.5s de transición fluida)
+      const factor = 0.12;
+      const nextLat = curr.lat + dLat * factor;
+      const nextLng = curr.lng + dLng * factor;
+
+      currentCoordsRef.current = { lat: nextLat, lng: nextLng };
+      setSmoothCoords({ lat: nextLat, lng: nextLng });
+
+      animFrameIdRef.current = requestAnimationFrame(animate);
+    };
+
+    if (animFrameIdRef.current) {
+      cancelAnimationFrame(animFrameIdRef.current);
+    }
+    animFrameIdRef.current = requestAnimationFrame(animate);
+
     return () => {
-      if (directionsRendererRef.current) {
-        directionsRendererRef.current.setMap(null);
+      if (animFrameIdRef.current) {
+        cancelAnimationFrame(animFrameIdRef.current);
       }
     };
-  }, []);
+  }, [userCoords]);
 
   const [refrescando, setRefrescando] = useState(false);
 
@@ -306,10 +370,11 @@ export const ExplorarPage: React.FC = () => {
 
   // NO solicitar ubicación automáticamente al montar
   // Solo al presionar "Mi Ubicación"
+  // Solicitar ubicación al dispositivo con detección amigable de GPS apagado o bloqueado
   const solicitarPermisoUbicacion = useCallback(
     (activarWatch = false, isSilent = false) => {
       if (!("geolocation" in navigator)) {
-        if (!isSilent) showToast("Tu navegador no soporta geolocalización", "info");
+        if (!isSilent) showToast("Tu dispositivo no soporta geolocalización", "info");
         return;
       }
 
@@ -322,8 +387,9 @@ export const ExplorarPage: React.FC = () => {
             lng: pos.coords.longitude,
           };
           setUserCoords(coords);
+          setGpsBlocked(false);
           setSolicitandoGps(false);
-          if (!isSilent) showToast("Ubicación detectada", "success");
+          if (!isSilent) showToast("Ubicación detectada correctamente", "success");
 
           const dist = getDistanceKm(coords.lat, coords.lng, defaultCenter.lat, defaultCenter.lng);
           if (dist <= 40) {
@@ -340,28 +406,38 @@ export const ExplorarPage: React.FC = () => {
                   lat: p.coords.latitude,
                   lng: p.coords.longitude,
                 };
-                setUserCoords(newCoords);
-                if (p.coords.heading !== null && !isNaN(p.coords.heading)) {
+                setGpsBlocked(false);
+                // Rumbo / Heading: Si el sensor lo entrega, usarlo; sino, calcularlo a partir de la trayectoria de avance
+                if (p.coords.heading !== null && !isNaN(p.coords.heading) && p.coords.heading >= 0) {
                   setUserHeading(p.coords.heading);
+                } else if (userCoords) {
+                  const dist = getDistanceKm(userCoords.lat, userCoords.lng, newCoords.lat, newCoords.lng);
+                  // Si se movió al menos 2 metros, calcular ángulo de dirección de marcha
+                  if (dist >= 0.002) {
+                    const calculatedAngle = calculateBearing(userCoords.lat, userCoords.lng, newCoords.lat, newCoords.lng);
+                    setUserHeading(calculatedAngle);
+                  }
                 }
+                setUserCoords(newCoords);
 
-                // Navegación en tiempo real: auto-actualizar ruta y distancia mientras avanzas
+                // Navegación en tiempo real: auto-actualizar llegada y progreso de ruta
                 if (directionsRef.current && localSeleccionadoRef.current?.sucursales?.[0]) {
                   const suc = localSeleccionadoRef.current.sucursales[0];
                   if (suc.latitud && suc.longitud) {
                     const destDist = getDistanceKm(newCoords.lat, newCoords.lng, Number(suc.latitud), Number(suc.longitud));
-                    // Si ya estás a menos de 50 metros del destino
-                    if (destDist <= 0.05) {
+                    // Si ya estás a menos de 40 metros del destino
+                    if (destDist <= 0.04) {
                       showToast("🎉 ¡Has llegado a tu destino!", "success");
                     } else if (lastRouteOriginRef.current) {
-                      // Actualización fluida al caminar o desplazarse (cada 10 metros)
+                      // Solo recalcular con Google Directions si el usuario se ha desviado significativamente (> 120 metros)
+                      // Esto ahorra cuota de Google Maps API manteniendo el trazado fluido con Lerp y Haversine
                       const distMovida = getDistanceKm(
                         lastRouteOriginRef.current.lat,
                         lastRouteOriginRef.current.lng,
                         newCoords.lat,
                         newCoords.lng
                       );
-                      if (distMovida >= 0.01) {
+                      if (distMovida >= 0.12) {
                         lastRouteOriginRef.current = newCoords;
                         calcularRutaSilenciosaRef.current(newCoords);
                       }
@@ -369,18 +445,32 @@ export const ExplorarPage: React.FC = () => {
                   }
                 }
               },
-              () => {},
+              (watchErr) => {
+                // Si el usuario apaga el GPS en pleno uso
+                if (watchErr.code === 2 || watchErr.code === 1) {
+                  setGpsBlocked(true);
+                  if (watchIdRef.current !== null) {
+                    navigator.geolocation.clearWatch(watchIdRef.current);
+                    watchIdRef.current = null;
+                  }
+                }
+              },
               { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
             );
           }
         },
         (err) => {
           setSolicitandoGps(false);
+          setGpsBlocked(true);
           if (err.code === 1) {
-            setGpsBlocked(true); // El usuario o el navegador denegó el permiso
-            if (!isSilent) showToast("Permiso de ubicación denegado", "info");
+            // PERMISSION_DENIED
+            if (!isSilent) showToast("Permiso de ubicación denegado. Actívalo en los ajustes de tu navegador.", "info");
+          } else if (err.code === 2) {
+            // POSITION_UNAVAILABLE (GPS del teléfono apagado o sin señal satelital)
+            if (!isSilent) showToast("Tu GPS se encuentra apagado o sin señal. Por favor actívalo.", "info");
           } else {
-            if (!isSilent) showToast("No se pudo obtener ubicación", "info");
+            // TIMEOUT u otro
+            if (!isSilent) showToast("Tu GPS se encuentra apagado o tardó en responder. Por favor actívalo.", "info");
           }
         },
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
@@ -902,29 +992,38 @@ export const ExplorarPage: React.FC = () => {
               gestureHandling: "greedy",
             }}
           >
-            {/* Tu ubicación en tiempo real con efecto radar y dirección */}
-            {userCoords && (
+            {/* Tu ubicación en tiempo real con efecto radar y rotación de rumbo suave estilo inDrive */}
+            {(smoothCoords || userCoords) && (
               <OverlayView
-                position={userCoords}
+                position={smoothCoords || userCoords!}
                 mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-                getPixelPositionOffset={() => ({ x: -16, y: -16 })}
+                getPixelPositionOffset={() => ({ x: -20, y: -20 })}
                 zIndex={999}
               >
                 <div
                   title="Tu ubicación en tiempo real"
                   className="relative flex items-center justify-center pointer-events-none"
-                  style={{ width: 32, height: 32 }}
+                  style={{ width: 40, height: 40 }}
                 >
-                  {/* Pulso de radar en vivo */}
-                  <span className="absolute w-7 h-7 rounded-full bg-blue-500/35 animate-ping" />
+                  {/* Halo de radar expandible */}
+                  <span className="absolute w-10 h-10 rounded-full bg-blue-500/25 animate-ping" />
 
-                  {/* Círculo central azul con borde blanco */}
-                  <div className="relative w-4 h-4 rounded-full bg-[#1A73E8] border-2 border-white shadow-md z-10 flex items-center justify-center">
-                    {userHeading !== null && (
-                      <div
-                        className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-l-transparent border-r-transparent border-b-white"
-                        style={{ transform: `rotate(${userHeading}deg)` }}
-                      />
+                  {/* Puck / Navegador central con orientación en tiempo real */}
+                  <div
+                    className="relative w-8 h-8 rounded-full bg-white shadow-xl border-2 border-white flex items-center justify-center"
+                    style={{
+                      transform: `rotate(${userHeading || 0}deg)`,
+                      transition: "transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}
+                  >
+                    {/* Cono o flecha de rumbo estilo navegación GPS / inDrive */}
+                    {userHeading !== null ? (
+                      <div className="relative flex flex-col items-center justify-center w-full h-full">
+                        <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-b-[9px] border-l-transparent border-r-transparent border-b-[#1A73E8] mb-0.5" />
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#1A73E8]" />
+                      </div>
+                    ) : (
+                      <div className="w-4 h-4 rounded-full bg-[#1A73E8] border-2 border-white shadow-sm" />
                     )}
                   </div>
                 </div>

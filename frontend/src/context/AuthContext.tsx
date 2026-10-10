@@ -29,12 +29,12 @@ export const AuthContext = createContext<AuthContextType | undefined>(
 );
 
 const getStoredToken = (): string | null => {
-  return sessionStorage.getItem("token");
+  return localStorage.getItem("token") || sessionStorage.getItem("token");
 };
 
 const getStoredUser = (): User | null => {
   try {
-    const raw = sessionStorage.getItem("user");
+    const raw = localStorage.getItem("user") || sessionStorage.getItem("user");
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -136,13 +136,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       rol: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
     };
 
-    // Almacenar exclusivamente en sessionStorage (aislado por pestaña y se destruye al cerrar la pestaña)
+    localStorage.setItem("token", res.token);
+    localStorage.setItem("user", JSON.stringify(normalizedUser));
     sessionStorage.setItem("token", res.token);
     sessionStorage.setItem("user", JSON.stringify(normalizedUser));
-
-    // Asegurar que no quede token activo persistente en localStorage
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
 
     setToken(res.token);
     setUser(normalizedUser);
@@ -168,11 +165,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       rol: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
     };
 
+    localStorage.setItem("token", res.token);
+    localStorage.setItem("user", JSON.stringify(normalizedUser));
     sessionStorage.setItem("token", res.token);
     sessionStorage.setItem("user", JSON.stringify(normalizedUser));
-
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
 
     setToken(res.token);
     setUser(normalizedUser);

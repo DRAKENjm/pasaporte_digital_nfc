@@ -23,6 +23,7 @@ import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
 
 interface DashboardData {
   puntos_actuales: number;
+  puntos_historicos?: number;
   total_visitas: number;
   total_sellos: number;
   locales_visitados: number;
@@ -130,10 +131,11 @@ export const HomePage: React.FC = () => {
   }, [locales.length]);
 
   // Puntos y progreso
-  const puntosActuales = data?.puntos_actuales ?? user?.puntos_globales ?? 0;
+  const puntosDisponibles = data?.puntos_actuales ?? user?.puntos_globales ?? 0;
+  const puntosHistoricos = data?.puntos_historicos ?? puntosDisponibles;
   const puntosMeta = 1000;
-  const puntosProgreso = Math.min(100, Math.round((puntosActuales / puntosMeta) * 100));
-  const puntosRestantes = Math.max(0, puntosMeta - puntosActuales);
+  const puntosProgreso = Math.min(100, Math.round((puntosHistoricos / puntosMeta) * 100));
+  const puntosRestantes = Math.max(0, puntosMeta - puntosHistoricos);
   const nivelActual = data?.nivel?.nombre || "Nivel Iniciador";
   const unreadNotifs = notificaciones.filter((n) => !n.leida).length;
 
@@ -338,7 +340,7 @@ export const HomePage: React.FC = () => {
             <ShieldCheck size={40} className="text-[#EFE7DE] absolute right-0 top-0 opacity-40 pointer-events-none" />
           </div>
 
-          {/* Barra de progreso redondeada color vino */}
+          {/* Barra de progreso redondeada color vino (Nivel basado en puntos históricos acumulados) */}
           <div className="w-full bg-[#FAF8F5] h-3.5 rounded-full overflow-hidden shadow-inner border border-[#EFE7DE]">
             <div
               className="bg-gradient-to-r from-[#7C0A1E] to-[#9B1B30] h-full rounded-full transition-all duration-1000 ease-out shadow-[inset_0_2px_4px_rgba(255,255,255,0.2)]"
@@ -347,13 +349,19 @@ export const HomePage: React.FC = () => {
           </div>
 
         {/* Metas en puntos debajo de la barra */}
-        <div className="flex items-center justify-between text-xs text-[#2D1A1E] mt-1.5 font-medium">
-          <span>
-            <strong className="text-[#7C0A1E] font-bold">{puntosActuales}</strong> / {puntosMeta} Pts
-          </span>
-          <span className="text-[#8E7D7D] font-medium text-[11px]">
-            {puntosRestantes > 0 ? `Faltan ${puntosRestantes} pts para el siguiente nivel` : "¡Meta alcanzada!"}
-          </span>
+        <div className="flex items-center justify-between text-xs text-[#2D1A1E] mt-2 font-medium">
+          <div>
+            <span className="text-[10px] text-[#8E7D7D] block uppercase font-bold">Progreso de Nivel</span>
+            <span>
+              <strong className="text-[#2D1A1E] font-bold">{puntosHistoricos}</strong> / {puntosMeta} Pts acumulados
+            </span>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-[#8E7D7D] block uppercase font-bold">Para Canjes</span>
+            <span className="bg-[#7C0A1E]/10 text-[#7C0A1E] font-black px-2.5 py-0.5 rounded-full text-xs">
+              {puntosDisponibles} pts disponibles
+            </span>
+          </div>
         </div>
       </div>
 
