@@ -65,6 +65,7 @@ router.get("/sellos/historial", AdminController.listarHistorialSellos);
 router.get("/sellos", AdminController.listarSellos);
 router.post("/sellos", AdminController.crearSello);
 router.post("/sellos/:id/restablecer", AdminController.restablecerSello);
+router.patch("/sellos/:id/nfc", AdminController.vincularSelloNfc);
 router.patch("/sellos/:id", AdminController.actualizarSello);
 router.put("/sellos/:id", AdminController.actualizarSello);
 router.delete("/sellos/:id", AdminController.eliminarSello);
@@ -96,6 +97,10 @@ router.get("/visitas", AdminController.listarVisitas);
 // ===== REPORTES Y ANALÍTICAS CONSOLIDADAS =====
 router.get("/reportes", AdminController.obtenerReportes);
 router.get("/reportes/exportar/:tipo", AdminController.exportarReporte);
+
+// ===== CONFIGURACIÓN DEL SISTEMA (Logo, Branding, etc.) =====
+router.get("/configuracion", AdminController.obtenerConfiguracion);
+router.put("/configuracion", AdminController.actualizarConfiguracion);
 
 // ===== SUBIDA DE ARCHIVOS / FOTOS (Locales, Recompensas, etc.) =====
 import multer from "multer";

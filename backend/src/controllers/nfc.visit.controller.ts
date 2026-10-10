@@ -875,5 +875,219 @@ export const NfcVisitController = {
       client?.release();
     }
   },
+
+  /**
+   * 6. ESTAMPAR SELLO FÍSICO NFC DEL LOCAL
+   * Permite que el cliente acerque su smartphone al Sello NFC físico del comercio
+   * para recibir su sello y puntos automáticamente en su pasaporte digital.
+   */
+  async estamparSelloLocal(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    let client;
+    try {
+      const { sello_nfc_uid } = req.body;
+      const idUsuario = req.user?.id;
+
+      if (!sello_nfc_uid || !String(sello_nfc_uid).trim()) {
+        throw new ApiError(400, "Código de Sello NFC no detectado");
+      }
+
+      const uidClean = String(sello_nfc_uid).trim().toUpperCase();
+
+      client = await pool.connect();
+      await client.query("BEGIN");
+
+      // 1. Obtener cliente
+      const clienteRes = await client.query(
+        `SELECT c.id_cliente, c.id_usuario, u.nombres, u.estado AS usuario_estado
+         FROM clientes c
+         JOIN usuarios u ON u.id_usuario = c.id_usuario
+         WHERE c.id_usuario = $1`,
+        [idUsuario],
+      );
+      if (!clienteRes.rows[0]) {
+        throw new ApiError(404, "Perfil de cliente no encontrado");
+      }
+      const cliente = clienteRes.rows[0];
+
+      // 2. Buscar programa de sellos y establecimiento por el chip NFC físico del local
+      const progRes = await client.query(
+        `SELECT ps.id_programa, ps.id_establecimiento, ps.nombre_sello, ps.imagen_sello,
+                ps.color_sello, ps.meta_sellos, ps.max_sellos_dia, ps.estado AS prog_estado,
+                COALESCE(ps.puntos_por_visita, 20) AS puntos_por_sello,
+                e.nombre_comercial, e.estado AS est_estado
+         FROM programas_sellos ps
+         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+         WHERE UPPER(ps.sello_nfc_uid) = $1 AND ps.estado = 'ACTIVO' AND e.estado = 'ACTIVO'
+         LIMIT 1`,
+        [uidClean],
+      );
+
+      if (!progRes.rows[0]) {
+        throw new ApiError(
+          404,
+          "El chip NFC escaneado no corresponde a ningún sello activo de la red",
+        );
+      }
+      const programa = progRes.rows[0];
+
+      // 3. Obtener sucursal principal del establecimiento
+      const sucRes = await client.query(
+        `SELECT id_sucursal, nombre FROM sucursales 
+         WHERE id_establecimiento = $1 AND estado = 1 
+         ORDER BY id_sucursal ASC LIMIT 1`,
+        [programa.id_establecimiento],
+      );
+      const idSucursal = sucRes.rows[0]?.id_sucursal || null;
+
+      // 4. Validar límite de sellos por día (evitar spam)
+      const hoyCheck = await client.query(
+        `SELECT COUNT(*)::int AS count_hoy
+         FROM sellos_digitales sd
+         JOIN visitas v ON v.id_visita = sd.id_visita
+         WHERE sd.id_programa = $1 
+           AND v.id_cliente = $2 
+           AND DATE(sd.fecha_otorgamiento AT TIME ZONE 'America/Lima') = DATE(CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')
+           AND sd.estado = 'OTORGADO'`,
+        [programa.id_programa, cliente.id_cliente],
+      );
+
+      const countHoy = Number(hoyCheck.rows[0]?.count_hoy || 0);
+      const maxDia = Number(programa.max_sellos_dia || 1);
+      if (countHoy >= maxDia) {
+        throw new ApiError(
+          400,
+          `Ya recibiste el sello de hoy en ${programa.nombre_comercial}. ¡Vuelve mañana para continuar tu pasaporte!`,
+        );
+      }
+
+      // 5. Crear registro de visita
+      const visitaRes = await client.query(
+        `INSERT INTO visitas (
+          id_cliente, id_sucursal, id_validador, fecha_hora, estado, metodo_validacion, observacion
+        ) VALUES (
+          $1, $2, $3, CURRENT_TIMESTAMP, 'COMPLETADA', 'NFC_SELLO_LOCAL', $4
+        ) RETURNING id_visita, fecha_hora`,
+        [
+          cliente.id_cliente,
+          idSucursal,
+          idUsuario,
+          `Estampado autónomo mediante Sello Físico NFC del local (${programa.nombre_comercial})`,
+        ],
+      );
+      const visitaId = visitaRes.rows[0].id_visita;
+
+      // 6. Contar orden de sello
+      const totalPrevios = await client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM sellos_digitales sd
+         WHERE sd.id_programa = $1 AND sd.estado = 'OTORGADO'
+           AND sd.id_visita IN (SELECT id_visita FROM visitas WHERE id_cliente = $2)`,
+        [programa.id_programa, cliente.id_cliente],
+      );
+      const ordenSello = (Number(totalPrevios.rows[0]?.total || 0) % Number(programa.meta_sellos || 8)) + 1;
+
+      // 7. Estampar sello digital
+      const selloRes = await client.query(
+        `INSERT INTO sellos_digitales (
+          id_visita, id_programa, numero_sello, cantidad, fecha_otorgamiento, estado,
+          nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot, meta_sellos_snapshot, puntos_sello_snapshot
+        ) VALUES (
+          $1, $2, $3, 1, CURRENT_TIMESTAMP, 'OTORGADO',
+          $4, $5, $6, $7, $8
+        ) RETURNING id_sello`,
+        [
+          visitaId,
+          programa.id_programa,
+          ordenSello,
+          programa.nombre_sello,
+          programa.imagen_sello,
+          programa.color_sello,
+          programa.meta_sellos,
+          programa.puntos_por_sello,
+        ],
+      );
+      const selloId = selloRes.rows[0].id_sello;
+
+      // 8. Acreditar puntos en ledger contable
+      const puntosOtorgados = Number(programa.puntos_por_sello || 20);
+      const saldoPrev = await client.query(
+        `SELECT COALESCE(SUM(cantidad), 0)::int AS saldo
+         FROM movimientos_puntos
+         WHERE id_cliente = $1`,
+        [cliente.id_cliente],
+      );
+      const saldoAnterior = Number(saldoPrev.rows[0]?.saldo || 0);
+      const saldoPosterior = saldoAnterior + puntosOtorgados;
+
+      await client.query(
+        `INSERT INTO movimientos_puntos (
+          id_cliente, tipo_movimiento, cantidad, saldo_anterior, saldo_posterior,
+          motivo, referencia_tipo, referencia_id, id_validador
+        ) VALUES (
+          $1, 'INGRESO', $2, $3, $4,
+          $5, 'VISITA', $6, $7
+        )`,
+        [
+          cliente.id_cliente,
+          puntosOtorgados,
+          saldoAnterior,
+          saldoPosterior,
+          `Sello NFC físico en ${programa.nombre_comercial} (+${puntosOtorgados} pts)`,
+          visitaId,
+          idUsuario,
+        ],
+      );
+
+      // 9. Notificación
+      await client.query(
+        `INSERT INTO notificaciones (
+          id_usuario, tipo_notificacion, titulo, mensaje, canal, estado_envio, referencia_tipo, referencia_id
+        ) VALUES (
+          $1, 'SELLO_OBTENIDO', '¡Sello NFC Estampado!', $2, 'APP', 'ENVIADA', 'VISITA', $3
+        )`,
+        [
+          idUsuario,
+          `Acercaste tu móvil al Sello NFC de ${programa.nombre_comercial} y recibiste el sello #${ordenSello} (+${puntosOtorgados} pts).`,
+          visitaId,
+        ],
+      );
+
+      await client.query("COMMIT");
+
+      sendResponse(
+        res,
+        201,
+        {
+          visita: {
+            id_visita: visitaId,
+            fecha_hora: visitaRes.rows[0].fecha_hora,
+            establecimiento: programa.nombre_comercial,
+          },
+          sello: {
+            id_sello: selloId,
+            numero_sello: ordenSello,
+            meta_sellos: programa.meta_sellos,
+            nombre_sello: programa.nombre_sello,
+            color_sello: programa.color_sello,
+            imagen_sello: programa.imagen_sello,
+          },
+          puntos: {
+            puntos_ganados: puntosOtorgados,
+            saldo_actual: saldoPosterior,
+          },
+        },
+        `¡Sello estampado con éxito en ${programa.nombre_comercial}!`,
+      );
+    } catch (error) {
+      if (client) await client.query("ROLLBACK");
+      next(error);
+    } finally {
+      client?.release();
+    }
+  },
 };
 

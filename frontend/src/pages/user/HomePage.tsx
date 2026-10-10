@@ -19,6 +19,7 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useLanguage } from "../../context/LanguageContext";
+import { useConfig } from "../../context/ConfigContext";
 import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
 
 interface DashboardData {
@@ -50,6 +51,7 @@ function getCachedHomeData() {
 export const HomePage: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { appLogo } = useConfig();
   const navigate = useNavigate();
 
   // Hidratación inmediata desde caché: CERO segundos en blanco
@@ -155,14 +157,14 @@ export const HomePage: React.FC = () => {
           {/* Logo con borde dorado y fondo blanco para no opacarse */}
           <Link
             to="/user/home"
-            className="w-12 h-12 rounded-full bg-white border-[3px] border-[#C5A059] p-1.5 flex items-center justify-center shadow-lg shadow-black/20 hover:scale-105 transition-transform"
+            className="w-12 h-12 rounded-full bg-white border-[3px] border-[#C5A059] p-1.5 flex items-center justify-center shadow-lg shadow-black/20 hover:scale-105 transition-transform overflow-hidden"
           >
             <img
-              src="/logo-icon.png"
+              src={appLogo}
               alt="Pasaporte Digital"
               className="w-full h-full object-contain"
               onError={(e) => {
-                (e.target as HTMLElement).style.display = "none";
+                (e.target as HTMLImageElement).src = "/logo-icon.png";
               }}
             />
           </Link>

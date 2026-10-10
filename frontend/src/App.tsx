@@ -7,6 +7,7 @@ import { LegalViewerPage } from "./pages/public/LegalViewerPage";
 import { FriendsPage } from "./pages/user/FriendsPage";
 import { AdminReclamaciones } from "./pages/admin/AdminReclamaciones";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ConfigProvider } from "./context/ConfigContext";
 import { AuthProvider } from "./context/AuthContext";
 import { UIProvider } from "./context/UIContext";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -95,9 +96,10 @@ export const App: React.FC = () => {
   return (
     <ThemeProvider>
       <LanguageProvider>
-      <AuthProvider>
-        <UIProvider>
-          <BrowserRouter>
+        <ConfigProvider>
+          <AuthProvider>
+            <UIProvider>
+              <BrowserRouter>
             <Routes>
               <Route path="/post/:id" element={<PublicPost />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
@@ -193,6 +195,7 @@ export const App: React.FC = () => {
           </BrowserRouter>
         </UIProvider>
       </AuthProvider>
+    </ConfigProvider>
     </LanguageProvider>
     </ThemeProvider>
   );

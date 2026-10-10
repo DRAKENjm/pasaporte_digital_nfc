@@ -26,10 +26,12 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { useConfig } from "../context/ConfigContext";
 import api from "../services/api";
 
 export const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const { appLogo } = useConfig();
   const navigate = useNavigate();
   // Por defecto extendido, pero permite colapsar al presionar el logo o botón
   const [collapsed, setCollapsed] = useState(false);
@@ -156,11 +158,14 @@ export const AdminLayout: React.FC = () => {
             className="flex items-center gap-3 overflow-hidden text-left group w-full cursor-pointer focus:outline-none"
             title={collapsed ? "Click para expandir menú" : "Click para contraer menú"}
           >
-            <div className="w-11 h-11 rounded-2xl overflow-hidden shrink-0 shadow-md group-hover:scale-105 transition-all duration-200 border border-[#C5A059]/30">
+            <div className="w-11 h-11 rounded-2xl overflow-hidden shrink-0 shadow-md group-hover:scale-105 transition-all duration-200 border border-[#C5A059]/30 bg-white/10 flex items-center justify-center p-1">
               <img
-                src="/logo-icon.png"
+                src={appLogo}
                 alt="Pasaporte Digital Logo"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/logo-icon.png";
+                }}
               />
             </div>
             {!collapsed && (

@@ -22,9 +22,11 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { useConfig } from "../context/ConfigContext";
 
 export const CommerceLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const { appLogo } = useConfig();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -69,11 +71,14 @@ export const CommerceLayout: React.FC = () => {
         {/* Brand / Local Header */}
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-2xl overflow-hidden shrink-0 shadow-md border border-[#C5A059]/30">
+            <div className="w-10 h-10 rounded-2xl overflow-hidden shrink-0 shadow-md border border-[#C5A059]/30 bg-white/10 flex items-center justify-center p-1">
               <img
-                src="/logo-icon.png"
+                src={appLogo}
                 alt="Pasaporte Digital"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/logo-icon.png";
+                }}
               />
             </div>
             {!collapsed && (

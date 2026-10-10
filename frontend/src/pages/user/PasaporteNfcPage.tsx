@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Wifi, Award, Info, CheckCircle2, QrCode, Upload, Eye, X, Copy, Check, CreditCard, Store, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Wifi, Award, Info, CheckCircle2, QrCode, Upload, Eye, X, Copy, Check, CreditCard, Store, ShieldAlert, Sparkles, Stamp, AlertCircle, Radio } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useLanguage } from "../../context/LanguageContext";
+import { useUI } from "../../hooks/useUI";
 
 function frameColorForLevel(nivel?: string) {
   const n = (nivel || "").toLowerCase();
@@ -92,6 +93,101 @@ export const PasaporteNfcPage: React.FC = () => {
       alert("No se pudo guardar la personalización. Verifica media upload y el endpoint NFC.");
     } finally {
       setGuardando(false);
+    }
+  };
+
+  const { showToast } = useUI();
+  
+  // Modal y estado para Estampar Sello Físico NFC del local
+  const [lectorNfcActivo, setLectorNfcActivo] = useState(false);
+  const [modalSelloExito, setModalSelloExito] = useState<any | null>(null);
+  const ndefControllerRef = useRef<AbortController | null>(null);
+
+  // Limpiar lector NFC al desmontar
+  useEffect(() => {
+    return () => {
+      if (ndefControllerRef.current) {
+        ndefControllerRef.current.abort();
+        ndefControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Activar Lector NFC para leer el Sello Físico del Local
+  const activarLectorNfc = async () => {
+    if (!("NDEFReader" in window)) {
+      // Si el navegador no soporta Web NFC (ej: iOS o escritorio), ofrecer opción manual amigable
+      const uidManual = window.prompt("Ingresa el código o UID del Sello NFC del local:");
+      if (uidManual && uidManual.trim()) {
+        await procesarSelloNfc(uidManual.trim());
+      }
+      return;
+    }
+
+    try {
+      if (ndefControllerRef.current) {
+        ndefControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      ndefControllerRef.current = controller;
+
+      const ndef = new (window as any).NDEFReader();
+      await ndef.scan({ signal: controller.signal });
+      setLectorNfcActivo(true);
+      showToast("Lector NFC activado. Acerca tu teléfono al Sello NFC del local...", "info");
+
+      ndef.onreading = async (event: any) => {
+        const serial = event.serialNumber || "";
+        let payloadText = "";
+        try {
+          for (const record of event.message.records) {
+            const textDecoder = new TextDecoder(record.encoding || "utf-8");
+            payloadText = textDecoder.decode(record.data);
+            break;
+          }
+        } catch {}
+
+        const tokenFinal = serial || payloadText;
+        if (tokenFinal) {
+          controller.abort();
+          setLectorNfcActivo(false);
+          await procesarSelloNfc(tokenFinal);
+        }
+      };
+
+      ndef.onreadingerror = () => {
+        showToast("Error al leer la etiqueta NFC del local. Intenta acercarlo de nuevo.", "error");
+      };
+    } catch (err: any) {
+      setLectorNfcActivo(false);
+      if (err.name !== "AbortError") {
+        showToast("No se pudo iniciar el lector NFC: " + (err.message || "Permiso denegado"), "error");
+      }
+    }
+  };
+
+  const detenerLectorNfc = () => {
+    if (ndefControllerRef.current) {
+      ndefControllerRef.current.abort();
+      ndefControllerRef.current = null;
+    }
+    setLectorNfcActivo(false);
+  };
+
+  const procesarSelloNfc = async (uid: string) => {
+    setEscaneando(true);
+    try {
+      const res = await api.post("/nfc/estampar-sello-local", {
+        sello_nfc_uid: uid,
+      });
+      const data = res.data?.data;
+      setModalSelloExito(data);
+      showToast(res.data?.message || "¡Sello estampado con éxito en tu pasaporte!", "success");
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "No se pudo estampar el sello con este chip";
+      showToast(msg, "error");
+    } finally {
+      setEscaneando(false);
     }
   };
 
@@ -278,18 +374,58 @@ export const PasaporteNfcPage: React.FC = () => {
               <div className="mt-3 flex justify-center">
                 <button
                   onClick={() => setMostrarModalQr(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#EFE7DE] shadow-xs text-xs font-bold text-[#7C0A1E] hover:bg-[#FAF8F5]"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#EFE7DE] shadow-xs text-xs font-semibold text-[#7C0A1E] hover:bg-[#FAF8F5] transition-colors"
                 >
-                  <QrCode size={16} className="text-[#C5A059]" />
-                  <span>Ver QR de Respaldo en pantalla completa</span>
+                  <QrCode size={15} className="text-[#C5A059]" />
+                  <span>Ver QR de respaldo en pantalla completa</span>
                 </button>
               </div>
 
-              <p className="text-center text-xs text-[#8E7D7D] my-3 px-2">
-                Presenta este QR en el local si no tienes tu tarjeta NFC física a la mano.
-              </p>
+              {/* Botón Principal: Activar Lector NFC para Estampar en Local */}
+              <div className="mt-4 p-4 bg-white rounded-2xl border border-[#EFE7DE] shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-[#7C0A1E]/10 flex items-center justify-center text-[#7C0A1E]">
+                      <Radio size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-[#2D1A1E]">Sello NFC en Local</h4>
+                      <p className="text-[10px] text-[#8E7D7D]">Acerca tu móvil al chip físico del comercio</p>
+                    </div>
+                  </div>
+                  {lectorNfcActivo && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                      Leyendo...
+                    </span>
+                  )}
+                </div>
 
-              <div className="space-y-2.5 max-w-sm mx-auto w-full">
+                {lectorNfcActivo ? (
+                  <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 text-center space-y-2">
+                    <p className="text-xs font-medium text-amber-900">
+                      Acerca la parte trasera de tu teléfono al sello físico del local...
+                    </p>
+                    <button
+                      onClick={detenerLectorNfc}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-[11px] font-bold text-amber-900 hover:bg-amber-100 transition-colors"
+                    >
+                      Cancelar lectura
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={activarLectorNfc}
+                    disabled={escaneando}
+                    className="w-full py-3 px-4 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm hover:bg-[#600616] transition-colors disabled:opacity-50"
+                  >
+                    <Radio size={16} />
+                    <span>{escaneando ? "Validando sello..." : "Activar Lector NFC"}</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-2.5 max-w-sm mx-auto w-full mt-4">
                 <input
                   ref={fileRef}
                   type="file"
@@ -303,7 +439,7 @@ export const PasaporteNfcPage: React.FC = () => {
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={guardando}
-                  className="w-full py-3 rounded-2xl border border-dashed border-[#C5A059] bg-white text-[#7C0A1E] text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-50/40 transition-colors"
+                  className="w-full py-3 rounded-2xl border border-dashed border-[#C5A059] bg-white text-[#7C0A1E] text-xs font-medium flex items-center justify-center gap-2 hover:bg-amber-50/40 transition-colors"
                 >
                   <Upload size={16} />
                   {guardando ? "Guardando..." : imagenFondo ? "Cambiar foto de fondo" : "Personalizar fondo de tarjeta"}
@@ -311,10 +447,10 @@ export const PasaporteNfcPage: React.FC = () => {
 
                 <button
                   onClick={() => setVista("escanear")}
-                  className="w-full py-3.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#600616] transition-colors"
+                  className="w-full py-3 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] text-[#2D1A1E] text-xs font-medium flex items-center justify-center gap-2 hover:bg-white transition-colors"
                 >
-                  <Wifi size={16} className="rotate-90" />
-                  Probar lectura de chip NFC
+                  <Wifi size={15} className="rotate-90 text-[#7C0A1E]" />
+                  <span>Probar identificación con chip</span>
                 </button>
               </div>
             </>
@@ -406,6 +542,61 @@ export const PasaporteNfcPage: React.FC = () => {
               className="w-full py-3 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold shadow-md hover:bg-[#600616]"
             >
               Listo, cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Éxito de Sello NFC Estampado */}
+      {modalSelloExito && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative border border-[#EFE7DE]">
+            <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 mx-auto flex items-center justify-center">
+              <CheckCircle2 size={32} />
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                Sello Registrado
+              </span>
+              <h3 className="text-base font-bold text-[#2D1A1E] mt-2">
+                {modalSelloExito.programa?.nombre_local || modalSelloExito.programa?.nombre || "Comercio"}
+              </h3>
+              <p className="text-xs text-[#8E7D7D] mt-1">
+                {modalSelloExito.recompensa_desbloqueada ? (
+                  <span className="text-amber-700 font-semibold block">
+                    ¡Felicidades! Completaste tu tarjeta y desbloqueaste una recompensa.
+                  </span>
+                ) : (
+                  <span>Tu visita ha sido confirmada y tu sello digital se estampó correctamente.</span>
+                )}
+              </p>
+            </div>
+
+            <div className="bg-[#FAF8F5] border border-[#EFE7DE] rounded-2xl p-4 flex items-center justify-around">
+              <div>
+                <p className="text-[10px] text-[#8E7D7D] font-medium">Sellos Acumulados</p>
+                <p className="text-base font-bold text-[#7C0A1E] mt-0.5">
+                  {modalSelloExito.progreso?.sellos_actuales} / {modalSelloExito.progreso?.sellos_totales}
+                </p>
+              </div>
+              <div className="h-8 w-px bg-[#EFE7DE]" />
+              <div>
+                <p className="text-[10px] text-[#8E7D7D] font-medium">Puntos Ganados</p>
+                <p className="text-base font-bold text-emerald-600 mt-0.5">
+                  +{modalSelloExito.puntos_ganados || 0} pts
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setModalSelloExito(null);
+                navigate("/pasaporte");
+              }}
+              className="w-full py-3 rounded-xl bg-[#7C0A1E] text-white text-xs font-bold shadow-md hover:bg-[#600616] transition-colors"
+            >
+              Ver mi pasaporte actualizado
             </button>
           </div>
         </div>

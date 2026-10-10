@@ -2420,6 +2420,7 @@ export const AdminController = {
           ps.nombre,
           ps.descripcion,
           ps.nombre_sello,
+          ps.sello_nfc_uid,
           COALESCE(ps.imagen_sello, cat.icono_url, '🏛️') AS imagen_sello,
           COALESCE(ps.color_sello, '#7C0A1E') AS color_sello,
           COALESCE(ps.puntos_por_visita, 20) AS puntos_por_visita,
@@ -2706,6 +2707,65 @@ export const AdminController = {
     }
   },
 
+  /** Vincular o desvincular un chip NFC físico al sello del local */
+  async vincularSelloNfc(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id } = req.params;
+      const { sello_nfc_uid } = req.body;
+
+      const prog = await query(
+        `SELECT ps.id_programa, ps.nombre_sello, e.nombre_comercial 
+         FROM programas_sellos ps
+         JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+         WHERE ps.id_programa = $1`,
+        [id],
+      );
+      if (!prog.rows[0]) throw new ApiError(404, "Programa de sello no encontrado");
+
+      const uidClean = sello_nfc_uid ? String(sello_nfc_uid).trim().toUpperCase() : null;
+
+      // Verificar que el UID no esté asignado a otro sello
+      if (uidClean) {
+        const duplicado = await query(
+          `SELECT ps.id_programa, ps.nombre_sello, e.nombre_comercial
+           FROM programas_sellos ps
+           JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+           WHERE UPPER(ps.sello_nfc_uid) = $1 AND ps.id_programa != $2`,
+          [uidClean, id],
+        );
+        if (duplicado.rows[0]) {
+          throw new ApiError(
+            400,
+            `Este chip NFC ya está asignado al sello '${duplicado.rows[0].nombre_sello}' de ${duplicado.rows[0].nombre_comercial}`,
+          );
+        }
+      }
+
+      const updated = await query(
+        `UPDATE programas_sellos 
+         SET sello_nfc_uid = $1, fecha_actualizacion = CURRENT_TIMESTAMP 
+         WHERE id_programa = $2 
+         RETURNING id_programa, nombre_sello, sello_nfc_uid`,
+        [uidClean, id],
+      );
+
+      sendResponse(
+        res,
+        200,
+        updated.rows[0],
+        uidClean
+          ? `Sello NFC vinculado exitosamente al local (${uidClean})`
+          : "Chip NFC desvinculado del sello correctamente",
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+
   /** Historial detallado de sellos digitales otorgados en todo el sistema */
   async listarHistorialSellos(
     req: AuthenticatedRequest,
@@ -2983,6 +3043,89 @@ export const AdminController = {
       }
 
       sendResponse(res, 200, { filename, data: rows }, "Datos de exportación");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // ===== CONFIGURACIÓN DEL SISTEMA (Logo, Branding, etc.) =====
+  obtenerConfiguracion: async (req: any, res: Response, next: NextFunction) => {
+    try {
+      const result = await query("SELECT * FROM configuracion_sistema LIMIT 1");
+      let config = result.rows[0];
+      if (!config) {
+        const initResult = await query(`
+          INSERT INTO configuracion_sistema (nombre_proyecto, correo_soporte, telefono_soporte, color_primario, color_secundario)
+          VALUES ('Pasaporte Digital NFC', 'soporte@pasaporte.digital', '+51 999 888 777', '#9B1B30', '#D4AF37')
+          RETURNING *
+        `);
+        config = initResult.rows[0];
+      }
+      sendResponse(res, 200, config, "Configuración del sistema obtenida");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  actualizarConfiguracion: async (req: any, res: Response, next: NextFunction) => {
+    try {
+      const {
+        nombre_proyecto,
+        logo_principal,
+        logo_reducido,
+        correo_soporte,
+        telefono_soporte,
+        color_primario,
+        color_secundario,
+      } = req.body;
+
+      const current = await query("SELECT id_configuracion FROM configuracion_sistema LIMIT 1");
+      let updated;
+      if (current.rows.length === 0) {
+        const insertRes = await query(
+          `INSERT INTO configuracion_sistema (
+            nombre_proyecto, logo_principal, logo_reducido, correo_soporte, telefono_soporte, color_primario, color_secundario, fecha_actualizacion
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *`,
+          [
+            nombre_proyecto || "Pasaporte Digital NFC",
+            logo_principal || null,
+            logo_reducido || null,
+            correo_soporte || "soporte@pasaporte.digital",
+            telefono_soporte || "+51 999 888 777",
+            color_primario || "#9B1B30",
+            color_secundario || "#D4AF37",
+          ]
+        );
+        updated = insertRes.rows[0];
+      } else {
+        const id = current.rows[0].id_configuracion;
+        const updateRes = await query(
+          `UPDATE configuracion_sistema SET
+            nombre_proyecto = COALESCE($1, nombre_proyecto),
+            logo_principal = COALESCE($2, logo_principal),
+            logo_reducido = COALESCE($3, logo_reducido),
+            correo_soporte = COALESCE($4, correo_soporte),
+            telefono_soporte = COALESCE($5, telefono_soporte),
+            color_primario = COALESCE($6, color_primario),
+            color_secundario = COALESCE($7, color_secundario),
+            fecha_actualizacion = NOW()
+          WHERE id_configuracion = $8
+          RETURNING *`,
+          [
+            nombre_proyecto,
+            logo_principal,
+            logo_reducido,
+            correo_soporte,
+            telefono_soporte,
+            color_primario,
+            color_secundario,
+            id,
+          ]
+        );
+        updated = updateRes.rows[0];
+      }
+
+      sendResponse(res, 200, updated, "Configuración actualizada exitosamente");
     } catch (error) {
       next(error);
     }

@@ -37,6 +37,7 @@ import {
   Award,
   Calendar,
   CheckCircle2,
+  AlertCircle,
   Smartphone,
   QrCode,
   UserCheck,
@@ -67,6 +68,17 @@ const isValidGoogleMapsUrl = (url: string): boolean => {
   return /^(https?:\/\/)?([a-zA-Z0-9.-]+\.)?(google\.com(\.[a-z]+)?|goo\.gl)\/(maps|maps\/place|maps\/search|search\/|\?|app)?/i.test(
     url.trim(),
   ) || url.includes("maps.app.goo.gl") || url.includes("google.com/maps");
+};
+
+const isValidImageUrl = (url: string): boolean => {
+  if (!url || !url.trim()) return false;
+  const trimmed = url.trim().toLowerCase();
+  return (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("/uploads/") ||
+    trimmed.startsWith("data:image/")
+  );
 };
 
 const parseGoogleMapsUrl = (url: string): { lat: number; lng: number } | null => {
@@ -137,9 +149,13 @@ export const AdminLocales = () => {
   const [searchHistorialLocal, setSearchHistorialLocal] = useState("");
   const [localHistorialSeleccionado, setLocalHistorialSeleccionado] = useState<Establecimiento | null>(null);
 
-  // Verificador interactivo de URL de Google Maps
+  // Verificador interactivo de URL de Google Maps y Foto
   const [validandoMaps, setValidandoMaps] = useState(false);
   const mapsTimeoutRef = React.useRef<any>(null);
+
+  // Verificador de imagen en tiempo real ('idle' | 'validando' | 'ok' | 'error')
+  const [estadoImagen, setEstadoImagen] = useState<"idle" | "validando" | "ok" | "error">("idle");
+  const imgTimeoutRef = React.useRef<any>(null);
 
   const { showToast } = useUI();
 
@@ -219,9 +235,11 @@ export const AdminLocales = () => {
       const url = res.data?.data?.url || res.data?.url;
       if (url) {
         setForm((prev) => ({ ...prev, imagen_url: url }));
-        showToast("Imagen subida con éxito", "success");
+        setEstadoImagen("ok");
+        showToast("Imagen subida con éxito y verificada", "success");
       }
     } catch (err: any) {
+      setEstadoImagen("error");
       showToast(
         err.response?.data?.message || "No se pudo subir la imagen",
         "error",
@@ -448,10 +466,12 @@ export const AdminLocales = () => {
       setModalCrear(false);
       await load();
     } catch (err: any) {
-      showToast(
-        err.response?.data?.message || "No se pudo crear el registro",
-        "error",
-      );
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "No se pudo crear el registro. Verifica los campos e inténtalo nuevamente.";
+      showToast(msg, "error");
     } finally {
       setBusy(false);
     }
@@ -484,14 +504,16 @@ export const AdminLocales = () => {
         radio_tolerancia_metros: Number(form.radio_tolerancia_metros) || 150,
         requiere_foto: form.requiere_foto,
       });
-      showToast("Registro actualizado", "success");
+      showToast("Registro actualizado con éxito", "success");
       setModalEditar(false);
       await load();
     } catch (err: any) {
-      showToast(
-        err.response?.data?.message || "No se pudo guardar",
-        "error",
-      );
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "No se pudo guardar la actualización. Verifica la conexión o los datos ingresados.";
+      showToast(msg, "error");
     } finally {
       setBusy(false);
     }
@@ -1074,16 +1096,69 @@ export const AdminLocales = () => {
 
           <div className="sm:col-span-1 text-center text-xs font-bold text-[#8E7D7D]">o</div>
 
-          <div className="sm:col-span-6">
+          <div className="sm:col-span-6 relative flex items-center">
             <input
               type="text"
               placeholder="O pega una URL de imagen..."
               value={form.imagen_url}
-              onChange={(e) => setForm({ ...form, imagen_url: e.target.value })}
-              className="input-base"
+              onChange={(e) => {
+                const val = e.target.value;
+                setForm({ ...form, imagen_url: val });
+                if (val.trim()) {
+                  if (isValidImageUrl(val)) {
+                    setEstadoImagen("validando");
+                    if (imgTimeoutRef.current) clearTimeout(imgTimeoutRef.current);
+                    imgTimeoutRef.current = setTimeout(() => {
+                      const img = new window.Image();
+                      img.onload = () => setEstadoImagen("ok");
+                      img.onerror = () => setEstadoImagen("error");
+                      img.src = val.trim();
+                    }, 400);
+                  } else {
+                    setEstadoImagen("error");
+                  }
+                } else {
+                  setEstadoImagen("idle");
+                }
+              }}
+              className={`input-base pr-9 w-full ${
+                estadoImagen === "ok"
+                  ? "border-emerald-500 focus:border-emerald-600 bg-emerald-50/20"
+                  : estadoImagen === "error"
+                  ? "border-amber-400 focus:border-amber-500 bg-amber-50/20"
+                  : ""
+              }`}
             />
+            {/* Pequeño check verde o indicador discreto según solicitud */}
+            <div className="absolute right-2.5 flex items-center pointer-events-none">
+              {estadoImagen === "validando" ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[#7C0A1E]" />
+              ) : estadoImagen === "ok" ? (
+                <div className="flex items-center text-emerald-600 animate-fadeIn" title="Imagen cargada y verificada">
+                  <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                </div>
+              ) : estadoImagen === "error" ? (
+                <div className="flex items-center text-amber-500" title="Enlace de imagen no accesible o formato no válido">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
+
+        {/* Mensaje de estado discreto para la foto */}
+        {estadoImagen === "ok" && (
+          <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1 animate-fadeIn">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>✓ Fotografía verificada y lista para mostrarse</span>
+          </p>
+        )}
+        {estadoImagen === "error" && form.imagen_url && (
+          <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1 animate-fadeIn">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>⚠️ No pudimos previsualizar la imagen desde esta URL. Verifica que sea un enlace público directo.</span>
+          </p>
+        )}
 
         {form.imagen_url.trim() && (
           <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-[#D9D0C7] dark:border-slate-700 bg-slate-900/10 mt-3 group">
@@ -1414,17 +1489,62 @@ export const AdminLocales = () => {
               onChange={(e) => setForm({ ...form, horario: e.target.value })}
             />
           )}
-          <Input
-            label="Enlace Google Maps (Recomendado para GPS)"
-            placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
-            value={form.google_maps_url}
-            error={errors.google_maps_url}
-            onChange={(e) => {
-              setForm({ ...form, google_maps_url: e.target.value });
-              if (errors.google_maps_url)
-                setErrors({ ...errors, google_maps_url: "" });
-            }}
-          />
+          <div className="space-y-1">
+            <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+              Enlace Google Maps (Recomendado para GPS)
+            </label>
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
+                value={form.google_maps_url}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm({ ...form, google_maps_url: val });
+                  if (errors.google_maps_url) setErrors({ ...errors, google_maps_url: "" });
+                  if (val.trim()) {
+                    setValidandoMaps(true);
+                    if (mapsTimeoutRef.current) clearTimeout(mapsTimeoutRef.current);
+                    mapsTimeoutRef.current = setTimeout(() => {
+                      setValidandoMaps(false);
+                    }, 400);
+                  } else {
+                    setValidandoMaps(false);
+                  }
+                }}
+                className={`input-base pr-12 font-mono text-xs w-full transition-all ${
+                  form.google_maps_url && isValidGoogleMapsUrl(form.google_maps_url)
+                    ? "border-emerald-500 focus:border-emerald-600 bg-emerald-50/20"
+                    : form.google_maps_url && !validandoMaps
+                    ? "border-amber-300 focus:border-amber-500"
+                    : ""
+                }`}
+              />
+              {/* Ícono de Estado en el lado derecho del input */}
+              <div className="absolute right-3 flex items-center pointer-events-none">
+                {validandoMaps ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-[#7C0A1E]" />
+                ) : form.google_maps_url && isValidGoogleMapsUrl(form.google_maps_url) ? (
+                  <div className="flex items-center justify-center text-emerald-600 animate-fadeIn" title="Enlace de Google Maps Verificado">
+                    <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                ) : form.google_maps_url ? (
+                  <div className="flex items-center justify-center text-amber-500" title="Verifica que sea un enlace válido de Google Maps">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {errors.google_maps_url && (
+              <p className="text-[11px] text-red-600 font-semibold">{errors.google_maps_url}</p>
+            )}
+            {form.google_maps_url && isValidGoogleMapsUrl(form.google_maps_url) && (
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1 animate-fadeIn mt-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>✓ Enlace verificado y reconocido correctamente</span>
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Configuración de Auto-sellado para Lugares Turísticos */}
@@ -1540,16 +1660,69 @@ export const AdminLocales = () => {
 
           <div className="sm:col-span-1 text-center text-xs font-bold text-[#8E7D7D]">o</div>
 
-          <div className="sm:col-span-6">
+          <div className="sm:col-span-6 relative flex items-center">
             <input
               type="text"
               placeholder="O pega una URL de imagen..."
               value={form.imagen_url}
-              onChange={(e) => setForm({ ...form, imagen_url: e.target.value })}
-              className="input-base"
+              onChange={(e) => {
+                const val = e.target.value;
+                setForm({ ...form, imagen_url: val });
+                if (val.trim()) {
+                  if (isValidImageUrl(val)) {
+                    setEstadoImagen("validando");
+                    if (imgTimeoutRef.current) clearTimeout(imgTimeoutRef.current);
+                    imgTimeoutRef.current = setTimeout(() => {
+                      const img = new window.Image();
+                      img.onload = () => setEstadoImagen("ok");
+                      img.onerror = () => setEstadoImagen("error");
+                      img.src = val.trim();
+                    }, 400);
+                  } else {
+                    setEstadoImagen("error");
+                  }
+                } else {
+                  setEstadoImagen("idle");
+                }
+              }}
+              className={`input-base pr-9 w-full ${
+                estadoImagen === "ok"
+                  ? "border-emerald-500 focus:border-emerald-600 bg-emerald-50/20"
+                  : estadoImagen === "error"
+                  ? "border-amber-400 focus:border-amber-500 bg-amber-50/20"
+                  : ""
+              }`}
             />
+            {/* Pequeño check verde o indicador discreto */}
+            <div className="absolute right-2.5 flex items-center pointer-events-none">
+              {estadoImagen === "validando" ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[#7C0A1E]" />
+              ) : estadoImagen === "ok" ? (
+                <div className="flex items-center text-emerald-600 animate-fadeIn" title="Imagen cargada y verificada">
+                  <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                </div>
+              ) : estadoImagen === "error" ? (
+                <div className="flex items-center text-amber-500" title="Enlace de imagen no accesible o formato no válido">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
+
+        {/* Mensaje de estado discreto para la foto en modo edición */}
+        {estadoImagen === "ok" && (
+          <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1 animate-fadeIn">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>✓ Fotografía verificada y lista para mostrarse</span>
+          </p>
+        )}
+        {estadoImagen === "error" && form.imagen_url && (
+          <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1 animate-fadeIn">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>⚠️ No pudimos previsualizar la imagen desde esta URL. Verifica que sea un enlace público directo.</span>
+          </p>
+        )}
 
         {form.imagen_url.trim() && (
           <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-[#D9D0C7] dark:border-slate-700 bg-slate-900/10 mt-3 group">
