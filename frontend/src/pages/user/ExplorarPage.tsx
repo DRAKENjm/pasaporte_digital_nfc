@@ -235,6 +235,13 @@ export const ExplorarPage: React.FC = () => {
   const modoNavegacionRef = useRef<boolean>(modoNavegacion);
   modoNavegacionRef.current = modoNavegacion;
 
+  // Referencias estables de navegación para evitar reinicios de GPS y anuncios duplicados
+  const currentStepIndexRef = useRef<number>(currentStepIndex);
+  currentStepIndexRef.current = currentStepIndex;
+  const hasAnnouncedArrivalRef = useRef<boolean>(false);
+  const hasAnnouncedNearRef = useRef<boolean>(false);
+  const announcedStepIndexRef = useRef<number>(-1);
+
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
   const watchIdRef = useRef<number | null>(null);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
@@ -512,12 +519,12 @@ export const ExplorarPage: React.FC = () => {
     };
   }, [userCoords]);
 
-  // Seguimiento de cámara en modo navegación activa (Auto-Follow con centrado inteligente)
+  // Seguimiento de cámara en modo navegación activa (Auto-Follow fluido con actualización por desplazamiento GPS)
   useEffect(() => {
-    if (modoNavegacion && autoFollow && map && smoothCoords) {
-      map.panTo(smoothCoords);
+    if (modoNavegacion && autoFollow && map && userCoords) {
+      map.panTo(userCoords);
     }
-  }, [modoNavegacion, autoFollow, map, smoothCoords]);
+  }, [modoNavegacion, autoFollow, map, userCoords]);
 
   // Cargar locales + categorías desde DB
   const fetchLocales = useCallback(async () => {
@@ -740,18 +747,39 @@ export const ExplorarPage: React.FC = () => {
                   const leg = directionsRef.current.routes[0].legs[0];
                   const steps = leg.steps || [];
 
-                  // Verificar llegada al destino final (< 25 metros)
-                  const destLoc = leg.end_location;
-                  const distDestKm = getDistanceKm(filtered.lat, filtered.lng, destLoc.lat(), destLoc.lng());
-                  if (distDestKm <= 0.025) {
-                    speakInstruction("¡Has llegado a tu destino!");
-                    showToast("¡Has llegado a tu destino!", "success");
+                  // Verificar destino final con coordenadas reales del local
+                  const suc = localSeleccionadoRef.current?.sucursales?.[0];
+                  let realDestLat = suc ? Number(suc.latitud) : NaN;
+                  let realDestLng = suc ? Number(suc.longitud) : NaN;
+                  if (isNaN(realDestLat) || isNaN(realDestLng)) {
+                    const destLoc = leg.end_location;
+                    realDestLat = destLoc.lat();
+                    realDestLng = destLoc.lng();
+                  }
+                  const distDestKm = getDistanceKm(filtered.lat, filtered.lng, realDestLat, realDestLng);
+
+                  // Aviso previo de aproximación (< 45 metros)
+                  if (distDestKm <= 0.045 && !hasAnnouncedNearRef.current && !hasAnnouncedArrivalRef.current) {
+                    hasAnnouncedNearRef.current = true;
+                    const venueName = localSeleccionadoRef.current?.nombre_comercial || "tu destino";
+                    speakInstruction(`Estás llegando a ${venueName}`);
+                  }
+
+                  // Verificar llegada al destino (< 20 metros) - Anuncio único
+                  if (distDestKm <= 0.02) {
+                    if (!hasAnnouncedArrivalRef.current) {
+                      hasAnnouncedArrivalRef.current = true;
+                      const venueName = localSeleccionadoRef.current?.nombre_comercial || "tu destino";
+                      speakInstruction(`¡Has llegado a ${venueName}!`);
+                      showToast(`¡Has llegado a ${venueName}!`, "success");
+                    }
                     return;
                   }
 
-                  // Verificar llegada a la siguiente intersección / maniobra
-                  if (steps.length > 0) {
-                    const currentStep = steps[currentStepIndex];
+                  // Verificar llegada a la siguiente intersección / maniobra secuencialmente
+                  const currIdx = currentStepIndexRef.current;
+                  if (steps.length > 0 && currIdx < steps.length) {
+                    const currentStep = steps[currIdx];
                     if (currentStep?.end_location) {
                       const distStepKm = getDistanceKm(
                         filtered.lat,
@@ -760,15 +788,19 @@ export const ExplorarPage: React.FC = () => {
                         currentStep.end_location.lng()
                       );
 
-                      // A menos de 25 metros del giro: avanzar automáticamente al siguiente paso
-                      if (distStepKm <= 0.025 && currentStepIndex < steps.length - 1) {
-                        const nextIdx = currentStepIndex + 1;
+                      // A menos de 22 metros de la maniobra: avanzar al siguiente paso
+                      if (distStepKm <= 0.022 && currIdx < steps.length - 1) {
+                        const nextIdx = currIdx + 1;
+                        currentStepIndexRef.current = nextIdx;
                         setCurrentStepIndex(nextIdx);
-                        const nextStepObj = steps[nextIdx];
-                        const cleanInst = traducirInstruccion(
-                          nextStepObj.instructions?.replace(/<[^>]*>?/gm, "") || ""
-                        );
-                        speakInstruction(cleanInst);
+                        if (announcedStepIndexRef.current !== nextIdx) {
+                          announcedStepIndexRef.current = nextIdx;
+                          const nextStepObj = steps[nextIdx];
+                          const cleanInst = traducirInstruccion(
+                            nextStepObj.instructions?.replace(/<[^>]*>?/gm, "") || ""
+                          );
+                          speakInstruction(cleanInst);
+                        }
                       }
                     }
                   }
@@ -804,7 +836,7 @@ export const ExplorarPage: React.FC = () => {
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     },
-    [showToast, map, currentStepIndex, speakInstruction]
+    [showToast, map, speakInstruction]
   );
 
   // Escuchar brújula física con filtro angular amortiguado (elimina temblor en reposo)
@@ -941,10 +973,15 @@ export const ExplorarPage: React.FC = () => {
     return list;
   }, [locales, busqueda, categoriaActiva, filtroRapido, userCoords]);
 
-  // Traza la ruta en el mapa inmediatamente al seleccionar cualquier local
-  const trazarRutaLocal = useCallback(
-    (loc: any, travelMode: "DRIVING" | "WALKING" = modoViaje) => {
-      if (!loc || !window.google?.maps) return;
+  // CÁLCULO DE RUTA UNIFICADO (Vista previa o Navegación Turn-by-Turn activa)
+  const calcularRuta = useCallback(
+    (
+      travelMode: "DRIVING" | "WALKING" = modoViaje,
+      iniciarNavegacion: boolean = false,
+      targetLocal?: any
+    ) => {
+      const loc = targetLocal || localSeleccionado;
+      if (!loc) return;
 
       const suc = loc.sucursales?.[0];
       let destLat = suc ? Number(suc.latitud) : NaN;
@@ -959,17 +996,40 @@ export const ExplorarPage: React.FC = () => {
         }
       }
 
-      if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) return;
+      if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) {
+        const mapsUrl = suc?.google_maps_url || loc.google_maps_url;
+        if (mapsUrl) {
+          showToast("Abriendo ubicación en Google Maps...", "info");
+          window.open(mapsUrl, "_blank");
+        } else {
+          const dir = suc?.direccion || loc.direccion || "este establecimiento";
+          showToast(`Este local aún no cuenta con coordenadas GPS (${dir})`, "info");
+        }
+        return;
+      }
 
       if (!userCoords) {
-        map?.panTo({ lat: destLat, lng: destLng });
-        map?.setZoom(16);
+        if (!iniciarNavegacion) {
+          map?.panTo({ lat: destLat, lng: destLng });
+          map?.setZoom(16);
+          return;
+        }
+        showToast("Activa tu ubicación para iniciar la navegación", "info");
+        solicitarPermisoUbicacion(true);
+        return;
+      }
+
+      if (!window.google?.maps) {
+        showToast("Cargando servicios de mapa...", "info");
         return;
       }
 
       setCargandoRuta(true);
+      lastRouteOriginRef.current = userCoords;
+
       const directionsService = new window.google.maps.DirectionsService();
       const destino = { lat: destLat, lng: destLng };
+
       const gTravelMode =
         travelMode === "WALKING"
           ? window.google.maps.TravelMode.WALKING
@@ -986,21 +1046,70 @@ export const ExplorarPage: React.FC = () => {
           if (status === window.google.maps.DirectionsStatus.OK && result) {
             setDirections(result);
             setCurrentStepIndex(0);
-            setModoNavegacion(false); // Vista previa en mapa con ruta trazada
-            setTarjetaExpandidaEnRuta(true);
-            if (result.routes[0]?.bounds && map) {
-              map.fitBounds(result.routes[0].bounds, {
-                top: 80,
-                bottom: 240,
-                left: 50,
-                right: 50,
-              });
+            currentStepIndexRef.current = 0;
+            hasAnnouncedArrivalRef.current = false;
+            hasAnnouncedNearRef.current = false;
+            announcedStepIndexRef.current = iniciarNavegacion ? 0 : -1;
+
+            if (iniciarNavegacion) {
+              setModoNavegacion(true);
+              setAutoFollow(true);
+              if (map && userCoords) {
+                map.panTo(userCoords);
+                map.setZoom(18);
+              }
+
+              const firstStep = result.routes[0]?.legs?.[0]?.steps?.[0];
+              const firstInstr = firstStep
+                ? traducirInstruccion(firstStep.instructions?.replace(/<[^>]*>?/gm, "") || "")
+                : `Navegando hacia ${loc.nombre_comercial}`;
+              speakInstruction(`Iniciando ruta hacia ${loc.nombre_comercial}. ${firstInstr}`);
+              showToast("Navegación paso a paso iniciada", "success");
+            } else {
+              setModoNavegacion(false);
+              setTarjetaExpandidaEnRuta(true);
+              if (result.routes[0]?.bounds && map) {
+                map.fitBounds(result.routes[0].bounds, {
+                  top: 80,
+                  bottom: 240,
+                  left: 40,
+                  right: 40,
+                });
+              }
             }
+
+            try {
+              sessionStorage.setItem(
+                ACTIVE_ROUTE_STORAGE_KEY,
+                JSON.stringify({
+                  localId: loc.id_establecimiento || loc.id,
+                  modoViaje: travelMode,
+                  destLat,
+                  destLng,
+                  savedAt: Date.now(),
+                })
+              );
+            } catch {}
+          } else {
+            showToast("No se pudo calcular la ruta. Abriendo Google Maps...", "info");
+            const mapsUrl =
+              suc?.google_maps_url ||
+              loc.google_maps_url ||
+              `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+            window.open(mapsUrl, "_blank");
           }
         }
       );
     },
-    [userCoords, modoViaje, map]
+    [localSeleccionado, userCoords, map, modoViaje, showToast, solicitarPermisoUbicacion, speakInstruction]
+  );
+
+  // Traza la ruta en el mapa inmediatamente al seleccionar cualquier local delegando a calcularRuta
+  const trazarRutaLocal = useCallback(
+    (loc: any, travelMode: "DRIVING" | "WALKING" = modoViaje) => {
+      calcularRuta(travelMode, false, loc);
+    },
+    [calcularRuta, modoViaje]
   );
 
   const handleSelectLocal = (loc: any) => {
@@ -1073,6 +1182,11 @@ export const ExplorarPage: React.FC = () => {
     if (directions && localSeleccionado) {
       setModoNavegacion(true);
       setAutoFollow(true);
+      setCurrentStepIndex(0);
+      currentStepIndexRef.current = 0;
+      hasAnnouncedArrivalRef.current = false;
+      hasAnnouncedNearRef.current = false;
+      announcedStepIndexRef.current = 0;
       if (map) {
         const pos = smoothCoords || userCoords;
         if (pos) {
@@ -1091,124 +1205,6 @@ export const ExplorarPage: React.FC = () => {
     }
   };
 
-  // CÁLCULO DE RUTA + INICIO DE NAVEGACIÓN TURN-BY-TURN
-  const calcularRuta = (
-    travelMode: "DRIVING" | "WALKING" = modoViaje,
-    iniciarNavegacion: boolean = true
-  ) => {
-    if (!localSeleccionado) return;
-
-    const suc = localSeleccionado.sucursales?.[0];
-    let destLat = suc ? Number(suc.latitud) : NaN;
-    let destLng = suc ? Number(suc.longitud) : NaN;
-
-    if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) {
-      const mapsUrl = suc?.google_maps_url || localSeleccionado.google_maps_url;
-      const parsed = parseCoordsFromUrl(mapsUrl);
-      if (parsed) {
-        destLat = parsed.lat;
-        destLng = parsed.lng;
-      }
-    }
-
-    if (isNaN(destLat) || isNaN(destLng) || (destLat === 0 && destLng === 0)) {
-      const mapsUrl = suc?.google_maps_url || localSeleccionado.google_maps_url;
-      if (mapsUrl) {
-        showToast("Abriendo ubicación en Google Maps...", "info");
-        window.open(mapsUrl, "_blank");
-      } else {
-        const dir = suc?.direccion || localSeleccionado.direccion || "este establecimiento";
-        showToast(`Este local aún no cuenta con coordenadas GPS (${dir})`, "info");
-      }
-      return;
-    }
-
-    if (!userCoords) {
-      showToast("Activa tu ubicación para iniciar la navegación", "info");
-      solicitarPermisoUbicacion(true);
-      return;
-    }
-
-    if (!window.google?.maps) {
-      showToast("Cargando servicios de mapa...", "info");
-      return;
-    }
-
-    setCargandoRuta(true);
-    lastRouteOriginRef.current = userCoords;
-
-    const directionsService = new window.google.maps.DirectionsService();
-    const destino = { lat: destLat, lng: destLng };
-
-    const gTravelMode =
-      travelMode === "WALKING"
-        ? window.google.maps.TravelMode.WALKING
-        : window.google.maps.TravelMode.DRIVING;
-
-    directionsService.route(
-      {
-        origin: userCoords,
-        destination: destino,
-        travelMode: gTravelMode,
-      },
-      (result, status) => {
-        setCargandoRuta(false);
-        if (status === window.google.maps.DirectionsStatus.OK && result) {
-          setDirections(result);
-          setCurrentStepIndex(0);
-
-          if (iniciarNavegacion) {
-            // Activamos la experiencia Turn-by-Turn real de Google Maps
-            setModoNavegacion(true);
-            setAutoFollow(true);
-            if (map && userCoords) {
-              map.panTo(userCoords);
-              map.setZoom(18);
-            }
-
-            // Anuncio por voz del primer paso
-            const firstStep = result.routes[0]?.legs?.[0]?.steps?.[0];
-            const firstInstr = firstStep
-              ? traducirInstruccion(firstStep.instructions?.replace(/<[^>]*>?/gm, "") || "")
-              : `Navegando hacia ${localSeleccionado.nombre_comercial}`;
-            speakInstruction(`Iniciando ruta hacia ${localSeleccionado.nombre_comercial}. ${firstInstr}`);
-            showToast("Navegación paso a paso iniciada", "success");
-          } else {
-            // Vista general previa de la ruta
-            if (result.routes[0]?.bounds && map) {
-              map.fitBounds(result.routes[0].bounds, {
-                top: 80,
-                bottom: 240,
-                left: 40,
-                right: 40,
-              });
-            }
-          }
-
-          try {
-            sessionStorage.setItem(
-              ACTIVE_ROUTE_STORAGE_KEY,
-              JSON.stringify({
-                localId: localSeleccionado.id_establecimiento || localSeleccionado.id,
-                modoViaje: travelMode,
-                destLat,
-                destLng,
-                savedAt: Date.now(),
-              })
-            );
-          } catch {}
-        } else {
-          showToast("No se pudo calcular la ruta. Abriendo Google Maps...", "info");
-          const mapsUrl =
-            suc?.google_maps_url ||
-            localSeleccionado.google_maps_url ||
-            `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
-          window.open(mapsUrl, "_blank");
-        }
-      }
-    );
-  };
-
   const cambiarModoViaje = (nuevoModo: "DRIVING" | "WALKING") => {
     setModoViaje(nuevoModo);
     if (localSeleccionado) {
@@ -1220,7 +1216,7 @@ export const ExplorarPage: React.FC = () => {
     }
   };
 
-  // Información y pasos de la ruta calculada
+  // Información y pasos de la ruta calculada (dinámicos según avance paso a paso)
   const infoRuta = useMemo(() => {
     if (!localSeleccionado?.sucursales?.[0]) return null;
     const suc = localSeleccionado.sucursales[0];
@@ -1241,8 +1237,31 @@ export const ExplorarPage: React.FC = () => {
         };
       });
 
-      // Cálculo de hora de llegada exacta sumando segundos de duración
-      const duracionSegundos = leg.duration?.value || 0;
+      // Cálculo dinámico de distancia y tiempo restantes según el paso actual de navegación
+      const pasosRestantes =
+        modoNavegacion && currentStepIndex > 0 ? steps.slice(currentStepIndex) : steps;
+
+      const duracionSegundos =
+        modoNavegacion && currentStepIndex > 0
+          ? pasosRestantes.reduce((acc: number, s: any) => acc + (s.duracionValor || 0), 0)
+          : (leg.duration?.value || 0);
+
+      const distanciaMetros =
+        modoNavegacion && currentStepIndex > 0
+          ? pasosRestantes.reduce((acc: number, s: any) => acc + (s.distanciaValor || 0), 0)
+          : (leg.distance?.value || 0);
+
+      const tiempoFormateado =
+        duracionSegundos >= 3600
+          ? `${Math.floor(duracionSegundos / 3600)} h ${Math.round((duracionSegundos % 3600) / 60)} min`
+          : `${Math.max(1, Math.round(duracionSegundos / 60))} min`;
+
+      const distanciaFormateada =
+        distanciaMetros >= 1000
+          ? `${(distanciaMetros / 1000).toFixed(1)} km`
+          : `${Math.round(distanciaMetros)} m`;
+
+      // Cálculo de hora de llegada exacta sumando segundos de duración restante
       const horaLlegada = new Date(Date.now() + duracionSegundos * 1000);
       const horaLlegadaTexto = horaLlegada.toLocaleTimeString("es-PE", {
         hour: "numeric",
@@ -1251,8 +1270,8 @@ export const ExplorarPage: React.FC = () => {
       });
 
       return {
-        distancia: leg.distance?.text || "",
-        tiempo: leg.duration?.text || "",
+        distancia: distanciaFormateada,
+        tiempo: tiempoFormateado,
         horaLlegadaTexto,
         pasos: steps,
         esRutaReal: true,
@@ -1276,7 +1295,7 @@ export const ExplorarPage: React.FC = () => {
     }
 
     return null;
-  }, [localSeleccionado, directions, userCoords, modoViaje]);
+  }, [localSeleccionado, directions, userCoords, modoViaje, modoNavegacion, currentStepIndex]);
 
   // Pasos y datos del HUD Turn-by-Turn
   const navCurrentStep = useMemo<NavStepInfo | null>(() => {
@@ -1314,6 +1333,10 @@ export const ExplorarPage: React.FC = () => {
     setModoNavegacion(false);
     setAutoFollow(true);
     setCurrentStepIndex(0);
+    currentStepIndexRef.current = 0;
+    hasAnnouncedArrivalRef.current = false;
+    hasAnnouncedNearRef.current = false;
+    announcedStepIndexRef.current = -1;
     if (window.speechSynthesis) window.speechSynthesis.cancel();
   };
 

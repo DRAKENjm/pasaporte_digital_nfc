@@ -52,6 +52,8 @@ scratch_img/
 web_pasaporte/
 cambios_en_frontend_src/
 test_*.js
+GUIA_*.md
+guia_*.md
 
 # Archivos temporales del SO
 .DS_Store
