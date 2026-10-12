@@ -6,6 +6,8 @@ import { Button } from "../../components/common/Button";
 import { Input } from "../../components/common/Input";
 import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
 import { getStampIcon, STAMP_ICONS } from "../../utils/stampIcons";
+import { Modal } from "../../components/common/Modal";
+import { ImageCropModal } from "../../components/common/ImageCropModal";
 import {
   Stamp,
   Upload,
@@ -23,6 +25,8 @@ import {
   Archive,
   Trash2,
   AlertCircle,
+  Wifi,
+  Crop,
 } from "lucide-react";
 
 // Paleta oficial de tintas notariales y de pasaportes históricos
@@ -77,7 +81,127 @@ export const CommerceSello: React.FC = () => {
   // Interactive stamping test effect
   const [isStamping, setIsStamping] = useState(false);
 
+  // Estados para Sello Físico NFC del Local (Recuadro Verde)
+  const [modalNfcLocal, setModalNfcLocal] = useState(false);
+  const [nfcUidInput, setNfcUidInput] = useState("");
+  const [savingNfc, setSavingNfc] = useState(false);
+  const [escaneandoNfc, setEscaneandoNfc] = useState(false);
+
+  // Estados para Recortador / Ajustador Circular de Imagen
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropTarget, setCropTarget] = useState<"sello" | "insignia">("sello");
+
   const { showToast } = useUI();
+
+  const escanearNfcSello = async () => {
+    if (!("NDEFReader" in window)) {
+      showToast("Tu navegador o dispositivo no soporta lectura NFC directa. Puedes ingresar el UID manualmente.", "info");
+      return;
+    }
+    try {
+      setEscaneandoNfc(true);
+      const ndef = new (window as any).NDEFReader();
+      await ndef.scan();
+      showToast("Acerca el chip NFC físico a la parte trasera de tu teléfono...", "info");
+      ndef.onreading = (event: any) => {
+        const serialNumber = event.serialNumber;
+        if (serialNumber) {
+          setNfcUidInput(serialNumber.toUpperCase());
+          showToast(`Chip detectado: ${serialNumber.toUpperCase()}`, "success");
+          setEscaneandoNfc(false);
+        }
+      };
+      ndef.onreadingerror = () => {
+        showToast("Error al leer el chip NFC. Intenta nuevamente.", "error");
+        setEscaneandoNfc(false);
+      };
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || "Error al iniciar el lector NFC", "error");
+      setEscaneandoNfc(false);
+    }
+  };
+
+  const handleGuardarNfc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingNfc(true);
+    try {
+      const res = await api.patch("/establishments/me/sello/nfc", {
+        sello_nfc_uid: nfcUidInput.trim() || null,
+        id_programa: selectedId,
+        id_sucursal: selectedSucursal,
+      });
+      showToast(res.data?.message || "Chip NFC físico actualizado con éxito", "success");
+      setModalNfcLocal(false);
+      setSello((prev: any) => prev ? { ...prev, sello_nfc_uid: nfcUidInput.trim() || null } : prev);
+      setSellos((prev: any[]) => prev.map(s => String(s.id_programa) === selectedId ? { ...s, sello_nfc_uid: nfcUidInput.trim() || null } : s));
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Error al vincular el Sello NFC", "error");
+    } finally {
+      setSavingNfc(false);
+    }
+  };
+
+  // Abrir recortador cuando el usuario selecciona un archivo
+  const handleSelectFileForCrop = (file: File, target: "sello" | "insignia") => {
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"].includes(file.type)) {
+      showToast("Usa una imagen JPG, PNG, WebP, GIF o AVIF", "error");
+      return;
+    }
+    if (file.size === 0 || file.size > 8 * 1024 * 1024) {
+      showToast("La imagen debe pesar como máximo 8 MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropImageSrc(reader.result as string);
+      setCropTarget(target);
+      setCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    setCropModalOpen(false);
+    setCropImageSrc(null);
+
+    const croppedFile = new File([croppedBlob], `sello-${Date.now()}.png`, { type: "image/png" });
+
+    if (cropTarget === "insignia") {
+      setArchivoInsignia(croppedFile);
+      showToast("Imagen ajustada para la insignia. Completa el nombre y guárdala.", "success");
+      return;
+    }
+
+    // Direct upload for sello
+    busy.current = true;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", croppedFile);
+      const { data } = await api.post("/media/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const url = data?.data?.url || data?.url;
+      const filename = data?.data?.filename || data?.filename;
+      if (typeof url !== "string" || !/^https?:\/\//.test(url) || url.length > 255) {
+        throw new Error("El servidor no devolvió una URL válida");
+      }
+      const previousFilename = pendingUploadedFilename.current;
+      pendingUploadedFilename.current = typeof filename === "string" ? filename : null;
+      if (previousFilename && previousFilename !== filename) {
+        void api.delete(`/media/upload/${encodeURIComponent(previousFilename)}`).catch(() => {});
+      }
+      setImagenSello(url);
+      showToast("Imagen recortada y subida. Pulsa Guardar Diseño de Sello para aplicarla.", "success");
+    } catch (error: any) {
+      showToast(error.response?.data?.message || error.message || "No se pudo subir la imagen", "error");
+    } finally {
+      busy.current = false;
+      setUploading(false);
+    }
+  };
 
   const applyDesign = (d: any) => {
     setNombreSello(d.nombre_sello || "");
@@ -880,7 +1004,11 @@ export const CommerceSello: React.FC = () => {
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                      onChange={handleUploadImage}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleSelectFileForCrop(file, "sello");
+                        e.target.value = "";
+                      }}
                       className="hidden"
                     />
                   </label>
@@ -938,13 +1066,17 @@ export const CommerceSello: React.FC = () => {
                         key={archivoInsignia ? `${archivoInsignia.name}-${archivoInsignia.lastModified}` : "new-insignia-file"}
                         type="file"
                         accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                        onChange={(e) => setArchivoInsignia(e.target.files?.[0] || null)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleSelectFileForCrop(file, "insignia");
+                          e.target.value = "";
+                        }}
                         className="block w-full text-[11px] text-[#736868] file:mr-2 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-[#7C0A1E]"
                       />
                     </label>
                   </div>
                   {archivoInsignia && (
-                    <p className="text-[10px] text-[#8E7D7D] truncate">Seleccionada: {archivoInsignia.name}</p>
+                    <p className="text-[10px] text-emerald-700 font-bold truncate">✓ Imagen ajustada: {archivoInsignia.name}</p>
                   )}
                   <button
                     type="button"
@@ -1365,8 +1497,192 @@ export const CommerceSello: React.FC = () => {
               Al acumular los <strong>{metaSellos} sellos</strong> requeridos en su ciclo ({tipoReinicio}), el cliente completa su cartilla y recibe el bono de <strong>+{puntosCompletadoMeta} pts extra</strong>.
             </p>
           </div>
+
+          {/* Tarjeta de Estado del Sello Físico NFC del Local (Recuadro Verde indicado por el usuario) */}
+          <div className="bg-white rounded-3xl p-5 border-2 border-[#EFE7DE] shadow-xs space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${
+                  sello?.sello_nfc_uid
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                }`}>
+                  <Wifi className="w-4 h-4 rotate-90" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-bold text-[#2D1A1E] text-xs truncate">
+                    Sello Físico NFC del Local
+                  </h4>
+                  <p className="text-[10px] text-[#8E7D7D] truncate">
+                    Para autosellado de clientes en mostrador
+                  </p>
+                </div>
+              </div>
+              
+              {sello?.sello_nfc_uid ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black tracking-wide shrink-0 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                  CHIP ACTIVO
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black tracking-wide shrink-0">
+                  SIN CHIP VINCULADO
+                </span>
+              )}
+            </div>
+
+            {sello?.sello_nfc_uid ? (
+              <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#EFE7DE] space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#8E7D7D] font-medium text-[11px]">UID del Chip Físico:</span>
+                  <span className="font-mono font-bold text-[#2D1A1E] bg-white px-2.5 py-1 rounded-lg border border-[#EFE7DE] shadow-2xs">
+                    {sello.sello_nfc_uid}
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-[#8E7D7D] leading-tight">
+                  Tus clientes reciben este sello digital y sus puntos automáticamente al acercar su smartphone a este chip en tu local.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-200/70 text-[11px] text-amber-900 leading-tight">
+                No tienes un chip NFC vinculado a este local. Vincula una tarjeta, llavero o sticker NFC para que tus clientes puedan autosellarse directamente en tu mostrador.
+              </div>
+            )}
+
+            <Button
+              type="button"
+              variant={sello?.sello_nfc_uid ? "secondary" : "primary"}
+              fullWidth
+              onClick={() => {
+                setNfcUidInput(sello?.sello_nfc_uid || "");
+                setEscaneandoNfc(false);
+                setModalNfcLocal(true);
+              }}
+            >
+              <span className="flex items-center justify-center gap-2">
+                <Wifi className="w-4 h-4 rotate-90" />
+                {sello?.sello_nfc_uid ? "Cambiar o Desvincular Chip NFC" : "Vincular Sello Físico NFC"}
+              </span>
+            </Button>
+          </div>
         </div>
       </div>
+
+      {/* Modal para Vincular Chip NFC Físico del Local */}
+      <Modal
+        open={modalNfcLocal}
+        onClose={() => {
+          setEscaneandoNfc(false);
+          setModalNfcLocal(false);
+        }}
+        title="Vincular Sello Físico NFC del Local"
+        subtitle="Asigna un chip NFC físico para que tus clientes puedan autosellarse en el mostrador"
+        size="md"
+      >
+        <form onSubmit={handleGuardarNfc} className="space-y-4">
+          <div className="flex items-center gap-3.5 p-3.5 bg-[#FAF8F5] border border-[#EFE7DE] rounded-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-[#7C0A1E]/10 text-[#7C0A1E] flex items-center justify-center shrink-0">
+              <Wifi className="w-6 h-6 rotate-90" />
+            </div>
+            <div className="space-y-0.5 text-xs min-w-0 flex-1">
+              <p className="font-black text-[#2D1A1E] text-sm truncate">
+                {nombreSello || "Sello Comercial"}
+              </p>
+              <p className="text-[#8E7D7D] truncate">
+                Local: <strong className="text-[#2D1A1E]">{sello?.establecimiento_nombre || "Establecimiento"}</strong>
+              </p>
+              <p className="text-[#8E7D7D] text-[11px]">
+                Estado actual:{" "}
+                {sello?.sello_nfc_uid ? (
+                  <span className="font-mono font-bold text-emerald-700">
+                    Vinculado ({sello.sello_nfc_uid})
+                  </span>
+                ) : (
+                  <span className="font-semibold text-amber-700">Sin chip físico vinculado</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#736868]">
+                UID del Chip NFC
+              </label>
+              <button
+                type="button"
+                onClick={escanearNfcSello}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  escaneandoNfc
+                    ? "bg-[#7C0A1E] text-white animate-pulse shadow-xs"
+                    : "bg-[#7C0A1E]/10 text-[#7C0A1E] hover:bg-[#7C0A1E]/20"
+                }`}
+                title="Escanear chip acercándolo a tu dispositivo móvil"
+              >
+                <Wifi className={`w-3.5 h-3.5 rotate-90 ${escaneandoNfc ? "animate-spin" : ""}`} />
+                <span>{escaneandoNfc ? "Acerca el chip..." : "Escanear con Lector NFC"}</span>
+              </button>
+            </div>
+
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="Ej: 04:A1:B2:C3:D4:E5:67 o TOKEN-SELLO-01"
+                value={nfcUidInput}
+                onChange={(e) => setNfcUidInput(e.target.value.toUpperCase())}
+                className="input-base font-mono uppercase text-xs w-full pr-8"
+              />
+              {nfcUidInput && (
+                <button
+                  type="button"
+                  onClick={() => setNfcUidInput("")}
+                  className="absolute right-2.5 text-[#8E7D7D] hover:text-red-600 text-xs p-1"
+                  title="Limpiar"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <span className="text-[10.5px] text-[#8E7D7D] block leading-tight">
+              Puedes acercar el chip NFC físico a la parte trasera de tu teléfono (con Chrome) o escribir el UID manualmente. Deja el campo vacío si deseas desvincularlo.
+            </span>
+          </div>
+
+          <div className="flex gap-2.5 pt-2">
+            <Button
+              type="submit"
+              variant="primary"
+              fullWidth
+              loading={savingNfc}
+            >
+              Guardar Vinculación NFC
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              fullWidth
+              onClick={() => {
+                setEscaneandoNfc(false);
+                setModalNfcLocal(false);
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal de Recorte y Ajuste Circular de Imagen antes de Subir */}
+      <ImageCropModal
+        open={cropModalOpen}
+        imageSrc={cropImageSrc}
+        onClose={() => {
+          setCropModalOpen(false);
+          setCropImageSrc(null);
+        }}
+        onCropComplete={handleCropComplete}
+        title={cropTarget === "insignia" ? "Ajustar Imagen de la Insignia" : "Ajustar Imagen Central del Sello"}
+      />
     </div>
   );
 };

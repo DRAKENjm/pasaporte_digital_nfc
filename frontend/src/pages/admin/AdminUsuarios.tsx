@@ -23,6 +23,8 @@ import {
   Coins,
   Calendar,
   KeyRound,
+  Copy,
+  Check,
 } from "lucide-react";
 import { initials } from "../../utils/levels";
 
@@ -40,6 +42,8 @@ interface URow {
   estado?: string;
   created_at?: string;
   avatar_url?: string;
+  codigo_cliente?: string;
+  id_cliente?: number;
 }
 
 interface AdminUsuariosProps {
@@ -122,11 +126,15 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
     }
     if (q.trim()) {
       const ql = q.toLowerCase();
+      const rawNumber = ql.replace(/^#/, "");
       result = result.filter(
         (u) =>
           u.email?.toLowerCase().includes(ql) ||
           u.nombres?.toLowerCase().includes(ql) ||
-          u.apellidos?.toLowerCase().includes(ql),
+          u.apellidos?.toLowerCase().includes(ql) ||
+          u.codigo_cliente?.toLowerCase().includes(ql) ||
+          String(u.id).toLowerCase() === rawNumber ||
+          String(u.id).toLowerCase().includes(rawNumber),
       );
     }
     return result;
@@ -662,6 +670,7 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-[#EFE7DE]/70 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-900/40 text-muted font-bold uppercase">
+                    <th className="p-3.5 w-32">ID / Código</th>
                     <th className="p-3.5">Usuario / Nombre</th>
                     <th className="p-3.5">Correo Electrónico</th>
                     <th className="p-3.5">Rol de Sistema</th>
@@ -673,6 +682,31 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
                 <tbody className="divide-y divide-[#EFE7DE]/60 dark:divide-slate-800/60">
                   {rowsPaginados.map((u) => (
                     <tr key={u.id} className="hover:bg-slate-500/5 transition">
+                      <td className="p-3.5 font-mono">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">
+                              #{u.id}
+                            </span>
+                            {u.codigo_cliente ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(u.codigo_cliente!);
+                                  showToast("Código copiado al portapapeles", "success");
+                                }}
+                                title="Clic para copiar código de cliente"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-[10.5px] font-bold border border-indigo-200/60 dark:border-indigo-500/20 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 cursor-pointer transition"
+                              >
+                                <span>{u.codigo_cliente}</span>
+                                <Copy className="w-2.5 h-2.5 opacity-60" />
+                              </button>
+                            ) : (
+                              <span className="text-muted text-[10px] italic">—</span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
                       <td className="p-3.5">
                         <div className="flex items-center gap-3">
                           {u.avatar_url ? (
@@ -894,6 +928,40 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
 
             {/* Ficha de Detalles */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3 sm:col-span-2">
+                <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    ID de Usuario & Código de Pasaporte
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-slate-900 dark:text-white px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                      ID: #{usuarioSeleccionado.id}
+                    </span>
+                    {usuarioSeleccionado.codigo_cliente ? (
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200/60 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-mono text-xs font-black">
+                        <span>Código: {usuarioSeleccionado.codigo_cliente}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(usuarioSeleccionado.codigo_cliente!);
+                            showToast("Código copiado al portapapeles", "success");
+                          }}
+                          className="p-1 hover:text-indigo-900 dark:hover:text-white rounded transition"
+                          title="Copiar código"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">Sin código cliente asignado</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start gap-3">
                 <div className="w-9 h-9 rounded-lg bg-teal-50 dark:bg-teal-500/10 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0 mt-0.5">
                   <Award className="w-4 h-4" />

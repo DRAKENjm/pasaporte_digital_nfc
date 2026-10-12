@@ -76,61 +76,90 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   // Si es sello especial dorado, usamos paleta dorada de certificación consular
   const activeColor = es_sello_especial ? "#B45309" : color_sello;
 
-  // Dimensiones según el tamaño
+  // Función auxiliar para adaptar el tamaño y espaciado del texto según la longitud del nombre del local (evita "...")
+  const getTopTextConfig = (
+    text: string,
+    badgeSize: "sm" | "md" | "lg" | "xl" | "xxl"
+  ) => {
+    const len = text.length;
+
+    switch (badgeSize) {
+      case "sm":
+        if (len > 24) return { textClass: "text-[5.5px] tracking-tight leading-[1.05]", maxLines: 2 };
+        if (len > 16) return { textClass: "text-[6.5px] tracking-tight leading-[1.1]", maxLines: 2 };
+        if (len > 11) return { textClass: "text-[7px] tracking-normal leading-[1.15]", maxLines: 2 };
+        return { textClass: "text-[7.5px] tracking-wider leading-tight", maxLines: 1 };
+
+      case "md":
+        if (len > 26) return { textClass: "text-[6.5px] tracking-tight leading-[1.05]", maxLines: 2 };
+        if (len > 18) return { textClass: "text-[7.5px] tracking-normal leading-[1.1]", maxLines: 2 };
+        if (len > 12) return { textClass: "text-[8.5px] tracking-wider leading-[1.15]", maxLines: 2 };
+        return { textClass: "text-[9px] tracking-widest leading-tight", maxLines: 1 };
+
+      case "lg":
+        if (len > 26) return { textClass: "text-[8.5px] tracking-tight leading-[1.1]", maxLines: 2 };
+        if (len > 18) return { textClass: "text-[9.5px] tracking-normal leading-[1.15]", maxLines: 2 };
+        if (len > 12) return { textClass: "text-[11px] tracking-wider leading-[1.2]", maxLines: 2 };
+        return { textClass: "text-[12px] tracking-widest leading-tight", maxLines: 1 };
+
+      case "xl":
+        if (len > 26) return { textClass: "text-[11px] tracking-normal leading-[1.15]", maxLines: 2 };
+        if (len > 18) return { textClass: "text-[12.5px] tracking-wider leading-[1.2]", maxLines: 2 };
+        return { textClass: "text-[14px] tracking-widest leading-tight", maxLines: 1 };
+
+      case "xxl":
+      default:
+        if (len > 26) return { textClass: "text-[13px] tracking-normal leading-[1.2]", maxLines: 2 };
+        if (len > 18) return { textClass: "text-[15px] tracking-wider leading-[1.2]", maxLines: 2 };
+        return { textClass: "text-[17px] tracking-widest leading-tight", maxLines: 1 };
+    }
+  };
+
+  // Dimensiones según el tamaño (Aro exterior + Círculo central adaptativo equilibrado: "ni tan ancho ni tan delgado")
   const sizeMap = {
     sm: {
       box: "w-24 h-24",
       borderOuter: "border-2",
       borderInner: "border",
-      textTop: "text-[7.5px]",
-      textBottom: "text-[6.5px]",
-      centerIcon: "text-xl",
-      centerVector: "w-10 h-10",
-      centerImg: "w-11 h-11 max-h-11",
+      centerDisk: "w-15 h-15",
+      centerVector: "w-8 h-8",
+      catIconSize: 26,
       numberBadge: "text-[7.5px] px-1 py-0.2",
     },
     md: {
       box: "w-28 h-28",
       borderOuter: "border-[2px]",
       borderInner: "border-[1.5px]",
-      textTop: "text-[9px]",
-      textBottom: "text-[7.5px]",
-      centerIcon: "text-3xl",
-      centerVector: "w-13 h-13",
-      centerImg: "w-14 h-14 max-h-14",
+      centerDisk: "w-18 h-18",
+      centerVector: "w-10 h-10",
+      catIconSize: 34,
       numberBadge: "text-[8.5px] px-1.5 py-0.5",
     },
     lg: {
       box: "w-36 h-36",
       borderOuter: "border-[2.5px]",
       borderInner: "border-2",
-      textTop: "text-[11px]",
-      textBottom: "text-[9px]",
-      centerIcon: "text-4xl",
-      centerVector: "w-18 h-18",
-      centerImg: "w-20 h-20 max-h-20",
+      centerDisk: "w-24 h-24",
+      centerVector: "w-14 h-14",
+      catIconSize: 46,
       numberBadge: "text-[10px] px-2.5 py-0.5",
     },
     xl: {
       box: "w-48 h-48",
       borderOuter: "border-4",
       borderInner: "border-2",
-      textTop: "text-[13.5px]",
-      textBottom: "text-[11px]",
-      centerIcon: "text-6xl",
-      centerVector: "w-26 h-26",
-      centerImg: "w-28 h-28 max-h-28",
+      centerDisk: "w-32 h-32",
+      centerVector: "w-20 h-20",
+      catIconSize: 62,
       numberBadge: "text-xs px-3 py-1",
     },
     xxl: {
       box: "w-72 h-72",
       borderOuter: "border-4",
       borderInner: "border-[3px]",
-      textTop: "text-[17px]",
-      textBottom: "text-[13.5px]",
-      centerIcon: "text-8xl",
-      centerVector: "w-44 h-44",
-      centerImg: "w-46 h-46 max-h-46",
+      centerDisk: "w-50 h-50 sm:w-52 sm:h-52",
+      centerVector: "w-32 h-32",
+      catIconSize: 96,
       numberBadge: "text-sm px-3.5 py-1",
     },
   };
@@ -152,6 +181,9 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
         year: "numeric",
       })
     : null;
+
+  const topTitle = es_sello_especial ? "★ META COMPLETADA ★" : establecimiento_nombre;
+  const { textClass: topTextClass, maxLines: topMaxLines } = getTopTextConfig(topTitle, size);
 
   return (
     <div
@@ -202,46 +234,57 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
         </>
       )}
 
-      {/* 2. Cabecera Curva o Superior del Sello */}
-      <div className="absolute top-1.5 inset-x-0 text-center px-2 z-10">
+      {/* 2. Cabecera Superior del Sello con Adaptación Dinámica al Nombre (Sin "...") */}
+      <div className="absolute top-1.5 inset-x-0 text-center px-2.5 z-10 flex items-center justify-center min-h-[1.25rem]">
         <span
-          className={`font-black uppercase tracking-widest block truncate ${s.textTop} ${
-            es_sello_especial ? "text-[#92400E] font-black" : "opacity-90"
-          }`}
+          className={`font-black uppercase break-words block ${topTextClass} ${
+            topMaxLines > 1 ? "line-clamp-2" : ""
+          } ${es_sello_especial ? "text-[#92400E]" : "opacity-90"}`}
+          title={topTitle}
         >
-          {es_sello_especial ? "★ META COMPLETADA ★" : establecimiento_nombre}
+          {topTitle}
         </span>
       </div>
 
-      {/* 3. Centro: Insignia, Imagen o Icono vectorial */}
-      <div className="relative z-10 flex flex-col items-center justify-center my-auto w-full px-2">
-        {isImage ? (
-          <img
-            src={resolvedImg}
-            alt={nombre_sello}
-            onError={() => setImgError(true)}
-            className={`${s.centerImg} object-contain rounded-full transition-transform duration-300 filter drop-shadow-[0_1px_2px_rgba(0,0,0,0.12)]`}
-            style={{
-              mixBlendMode: "multiply",
-              opacity: 0.95,
-            }}
-          />
-        ) : StampIcon ? (
-          <StampIcon
-            className={`${s.centerVector} drop-shadow-xs transition-transform`}
-            strokeWidth={es_sello_especial ? 2 : 1.7}
-          />
-        ) : (
-          <div
-            className="flex items-center justify-center drop-shadow-xs"
-            style={{ color: activeColor }}
-          >
-            <CategoryIcon
-              icon={imagen_sello || "coffee"}
-              size={size === "sm" ? 22 : size === "md" ? 32 : size === "lg" ? 44 : 58}
+      {/* 3. Centro: Medallón Circular Adaptativo Inteligente para Imagen o Icono */}
+      <div className="relative z-10 flex items-center justify-center my-auto">
+        <div
+          style={{ borderColor: activeColor }}
+          className={`
+            ${s.centerDisk} rounded-full flex items-center justify-center overflow-hidden
+            border border-current/25 bg-white/45 backdrop-blur-[1px]
+            shadow-[inset_0_1px_3px_rgba(0,0,0,0.06)]
+            transition-transform duration-300
+          `}
+        >
+          {isImage ? (
+            <img
+              src={resolvedImg}
+              alt={nombre_sello}
+              onError={() => setImgError(true)}
+              className="w-full h-full object-contain object-center p-1 transition-transform duration-300 filter drop-shadow-[0_1px_2px_rgba(0,0,0,0.12)]"
+              style={{
+                mixBlendMode: "multiply",
+                opacity: 0.95,
+              }}
             />
-          </div>
-        )}
+          ) : StampIcon ? (
+            <StampIcon
+              className={`${s.centerVector} drop-shadow-xs transition-transform`}
+              strokeWidth={es_sello_especial ? 2 : 1.7}
+            />
+          ) : (
+            <div
+              className="flex items-center justify-center drop-shadow-xs"
+              style={{ color: activeColor }}
+            >
+              <CategoryIcon
+                icon={imagen_sello || "coffee"}
+                size={s.catIconSize}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 4. Etiqueta Inferior: Número de Sello / Fecha / Corona de Certificación */}
@@ -257,26 +300,27 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
           >
             SELLO DORADO
           </span>
-        ) : numero_sello ? (
+        ) : formattedDate ? (
           <span
             style={{
               backgroundColor: `${color_sello}15`,
-              borderColor: `${color_sello}40`,
+              borderColor: `${color_sello}35`,
               color: color_sello,
             }}
-            className={`inline-block font-black uppercase tracking-wider rounded-md border ${s.numberBadge}`}
+            className={`inline-block font-mono font-black uppercase tracking-wider rounded-md border ${s.numberBadge}`}
           >
-            Sello #{numero_sello}
-          </span>
-        ) : formattedDate ? (
-          <span className={`font-mono font-bold uppercase tracking-wider opacity-80 ${s.textBottom}`}>
             {formattedDate}
           </span>
         ) : (
           <span
-            className={`font-mono font-black uppercase tracking-widest block truncate opacity-75 ${s.textBottom}`}
+            style={{
+              backgroundColor: `${color_sello}15`,
+              borderColor: `${color_sello}35`,
+              color: color_sello,
+            }}
+            className={`inline-block font-mono font-black uppercase tracking-widest rounded-md border ${s.numberBadge}`}
           >
-            {subtitulo || "CERTIFICADO"}
+            {subtitulo || "★ CERTIFICADO ★"}
           </span>
         )}
       </div>

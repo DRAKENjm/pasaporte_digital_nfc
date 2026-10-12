@@ -5,6 +5,7 @@ import { Modal } from "../../components/common/Modal";
 import { Button } from "../../components/common/Button";
 import { Spinner } from "../../components/common/Spinner";
 import { EmptyState } from "../../components/common/EmptyState";
+import { ImageCropModal } from "../../components/common/ImageCropModal";
 import {
   DigitalStampBadge,
   resolveImageUrl,
@@ -104,6 +105,8 @@ export const AdminSellos: React.FC = () => {
   const [customIconModeEdit, setCustomIconModeEdit] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
   const { showToast } = useUI();
   const ITEMS_PER_PAGE = 8;
@@ -351,17 +354,32 @@ export const AdminSellos: React.FC = () => {
     }
   };
 
-  const handleUploadSelloImg = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadSelloImg = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
     if (!["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"].includes(file.type)) {
       showToast("Formato no soportado. Usa JPG, PNG, WebP o AVIF", "error");
       return;
     }
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("tipo", "sello");
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropImageSrc(reader.result as string);
+      setCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropCompleteAdmin = async (croppedBlob: Blob) => {
+    setCropModalOpen(false);
+    setCropImageSrc(null);
     setUploadingImg(true);
+
+    const croppedFile = new File([croppedBlob], `sello-admin-${Date.now()}.png`, { type: "image/png" });
+    const formData = new FormData();
+    formData.append("file", croppedFile);
+    formData.append("tipo", "sello");
+
     try {
       const res = await api.post("/media/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -369,7 +387,7 @@ export const AdminSellos: React.FC = () => {
       const url = res.data?.data?.url || res.data?.url;
       if (url) {
         setEditImagenSello(url);
-        showToast("Imagen de insignia subida correctamente", "success");
+        showToast("Imagen de insignia recortada y subida correctamente", "success");
       }
     } catch (err: any) {
       showToast(err.response?.data?.message || "Error al subir la imagen", "error");
@@ -1742,6 +1760,18 @@ export const AdminSellos: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Modal de Recorte y Ajuste Circular de Imagen antes de Subir */}
+      <ImageCropModal
+        open={cropModalOpen}
+        imageSrc={cropImageSrc}
+        onClose={() => {
+          setCropModalOpen(false);
+          setCropImageSrc(null);
+        }}
+        onCropComplete={handleCropCompleteAdmin}
+        title="Ajustar Imagen Central del Sello"
+      />
     </div>
   );
 };

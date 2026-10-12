@@ -129,16 +129,17 @@ export const StampShareModal: React.FC<StampShareModalProps> = ({
     <Modal
       open={open}
       onClose={onClose}
-      title="Tarjeta Digital de Fidelización"
-      size="lg"
+      title="Tarjeta Digital"
+      size="sm"
+      bodyClassName="p-3.5 sm:p-4"
     >
-      <div className="space-y-4">
-        {/* Selector de Estilo / Tema en Español */}
+      <div className="space-y-3">
+        {/* Selector de Estilo / Tema compacto */}
         <div>
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8E7D7D] mb-2 text-center">
-            Selecciona el estilo de tu tarjeta para compartir
+          <label className="block text-[10.5px] font-bold uppercase tracking-wider text-[#8E7D7D] mb-1.5 text-center">
+            Estilo de tarjeta
           </label>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] rounded-xl border border-[#EFE7DE]">
             {THEME_OPTIONS.map((t) => {
               const isSelected = selectedTheme === t.id;
               return (
@@ -146,94 +147,84 @@ export const StampShareModal: React.FC<StampShareModalProps> = ({
                   key={t.id}
                   type="button"
                   onClick={() => setSelectedTheme(t.id)}
-                  className={`p-2.5 sm:p-3 rounded-2xl text-left transition-all border flex flex-col justify-between ${
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     isSelected
-                      ? "ring-2 ring-[#7C0A1E] shadow-sm bg-white border-[#7C0A1E]"
-                      : "bg-[#FAF8F5] border-[#EFE7DE] hover:bg-white"
+                      ? "bg-white text-[#7C0A1E] shadow-xs border border-[#E5DACD]"
+                      : "text-[#6E5D53] hover:text-[#2D1A1E]"
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
-                      style={{ backgroundColor: t.color }}
-                    />
-                    <span className="text-xs font-black text-[#2D1A1E] truncate">
-                      {t.name}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-[#8E7D7D] line-clamp-1 leading-tight">
-                    {t.desc}
-                  </span>
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-black/15 shrink-0"
+                    style={{ backgroundColor: t.color }}
+                  />
+                  <span className="truncate text-[11px] sm:text-xs">{t.name}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Vista previa en tamaño grande, alto y nítido */}
-        <div className="bg-[#121214] rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden min-h-[480px] max-h-[580px] shadow-inner">
+        {/* Vista previa en tamaño proporcionado y nítido para móvil */}
+        <div className="bg-[#121214] rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center relative overflow-hidden h-[240px] sm:h-[270px] shadow-inner">
           {generating ? (
-            <div className="flex flex-col items-center gap-3 py-28 text-center">
-              <div className="w-10 h-10 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
-              <span className="text-xs font-bold text-amber-200">
-                Diseñando tarjeta en alta resolución...
+            <div className="flex flex-col items-center gap-2 text-center">
+              <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-[11px] font-semibold text-amber-200">
+                Diseñando tarjeta HD...
               </span>
             </div>
           ) : previewUrl ? (
-            <div className="flex flex-col items-center w-full">
+            <div className="flex flex-col items-center justify-center h-full w-full">
               <img
                 src={previewUrl}
                 alt="Tarjeta Digital del Local"
-                className="max-h-[490px] sm:max-h-[520px] w-auto rounded-2xl shadow-2xl border border-white/20 object-contain transition-transform hover:scale-[1.01]"
+                className="max-h-[220px] sm:max-h-[250px] w-auto rounded-xl shadow-lg border border-white/15 object-contain"
               />
-              <span className="text-[10.5px] text-zinc-400 mt-2 font-mono">
-                Sello Oficial del Local • Formato Vertical HD (1080 × 1540)
-              </span>
             </div>
           ) : (
             <div className="text-xs text-zinc-400">No se pudo cargar la vista previa</div>
           )}
         </div>
 
-        {/* Botones de acción principales */}
-        <div className="space-y-2 pt-1">
-          {/* Botón Compartir universal (WhatsApp, Estados, Instagram, etc.) */}
+        {/* Botones de acción accesibles de un solo vistazo */}
+        <div className="space-y-2 pt-0.5">
+          {/* Botón Compartir universal (WhatsApp, Redes) */}
           <button
             type="button"
             onClick={handleShareUniversal}
             disabled={generating || sharing}
-            className="w-full py-3.5 px-4 rounded-xl bg-[#7C0A1E] hover:bg-[#620616] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+            className="w-full py-2.5 sm:py-3 px-3.5 rounded-xl bg-[#7C0A1E] hover:bg-[#620616] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
           >
-            <Share2 size={17} />
+            <Share2 size={16} />
             <span>Compartir Tarjeta</span>
           </button>
 
-          {/* Opciones secundarias */}
+          {/* Opciones secundarias: Guardar en Galería y Copiar Enlace */}
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={handleDownload}
               disabled={generating || !previewUrl}
-              className="py-2.5 px-3 rounded-xl bg-[#FAF8F5] hover:bg-[#F2ECE4] border border-[#E5DACD] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              className="py-2 px-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#F2ECE4] border border-[#E5DACD] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
             >
-              <Download size={14} className="text-[#7C0A1E]" />
-              <span>Guardar en Galería</span>
+              <Download size={13} className="text-[#7C0A1E]" />
+              <span className="truncate">Guardar en galería</span>
             </button>
 
             <button
               type="button"
               onClick={handleCopyLink}
-              className="py-2.5 px-3 rounded-xl bg-[#FAF8F5] hover:bg-[#F2ECE4] border border-[#E5DACD] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              className="py-2 px-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#F2ECE4] border border-[#E5DACD] text-[#2D1A1E] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             >
               {copied ? (
                 <>
-                  <Check size={14} className="text-emerald-600" />
-                  <span className="text-emerald-700">¡Copiado!</span>
+                  <Check size={13} className="text-emerald-600" />
+                  <span className="text-emerald-700 truncate">¡Copiado!</span>
                 </>
               ) : (
                 <>
-                  <Copy size={14} className="text-[#7C0A1E]" />
-                  <span>Copiar Enlace</span>
+                  <Copy size={13} className="text-[#7C0A1E]" />
+                  <span className="truncate">Copiar enlace</span>
                 </>
               )}
             </button>

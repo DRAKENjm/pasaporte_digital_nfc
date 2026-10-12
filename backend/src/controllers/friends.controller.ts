@@ -284,17 +284,18 @@ export class FriendsController {
     }
   }
 
-  // 6. Buscar usuarios para agregar (por nombre o código de cliente)
+  // 6. Buscar usuarios para agregar (por nombre, código de cliente o ID)
   static async buscarUsuarios(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
       const q = String(req.query.q || "").trim();
 
-      if (!q || q.length < 2) {
+      if (!q || q.length < 1) {
         return sendResponse(res, 200, []);
       }
 
-      const searchTerm = `%${q}%`;
+      const cleanQ = q.replace(/^#/, "");
+      const searchTerm = `%${cleanQ}%`;
       const result = await query(
         `SELECT u.id_usuario, u.nombres, u.apellidos, u.foto_perfil,
                 c.id_cliente, c.codigo_cliente,
@@ -311,9 +312,10 @@ export class FriendsController {
            AND (
              LOWER(u.nombres || ' ' || u.apellidos) ILIKE LOWER($2)
              OR UPPER(c.codigo_cliente) ILIKE UPPER($2)
+             OR u.id_usuario::text = $3
            )
          LIMIT 20`,
-        [userId, searchTerm],
+        [userId, searchTerm, cleanQ],
       );
 
       return sendResponse(res, 200, result.rows);

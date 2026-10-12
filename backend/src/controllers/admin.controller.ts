@@ -308,8 +308,16 @@ export const AdminController = {
         sql += ` AND u.estado = $${params.length}`;
       }
       if (q && String(q).trim()) {
-        params.push(`%${String(q).trim()}%`);
-        sql += ` AND (u.email ILIKE $${params.length} OR u.nombres ILIKE $${params.length} OR u.apellidos ILIKE $${params.length})`;
+        const rawQ = String(q).trim().replace(/^#/, "");
+        params.push(`%${rawQ}%`);
+        const searchIdx = params.length;
+        sql += ` AND (
+          u.email ILIKE $${searchIdx} 
+          OR u.nombres ILIKE $${searchIdx} 
+          OR u.apellidos ILIKE $${searchIdx}
+          OR c.codigo_cliente ILIKE $${searchIdx}
+          OR u.id_usuario::text ILIKE $${searchIdx}
+        )`;
       }
 
       sql += " ORDER BY u.fecha_creacion DESC LIMIT 200";

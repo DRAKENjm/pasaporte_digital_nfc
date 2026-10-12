@@ -18,6 +18,7 @@ router.delete("/me/recompensas/:id", authMiddleware, EstablishmentsController.el
 router.get("/me/canjes", authMiddleware, EstablishmentsController.misCanjes);
 router.get("/me/sello", authMiddleware, EstablishmentsController.miSello);
 router.put("/me/sello", authMiddleware, EstablishmentsController.actualizarMiSello);
+router.patch("/me/sello/nfc", authMiddleware, EstablishmentsController.vincularSelloNfc);
 
 // Diseños de sello: varios por establecimiento (CRUD + activar/desactivar + entrega actual)
 router.get("/me/sellos", authMiddleware, EstablishmentsController.misSellos);

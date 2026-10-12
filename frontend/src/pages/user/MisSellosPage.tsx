@@ -107,6 +107,42 @@ export const MisSellosPage: React.FC = () => {
     setPaginaActualLibro(nuevaPagina);
   };
 
+  // Soporte de gestos táctiles (Swipe con el dedo para pasar páginas en móvil)
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+    setTouchStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || touchStartY === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const deltaX = touchEndX - touchStartX;
+    const deltaY = touchEndY - touchStartY;
+
+    // Umbral de swipe horizontal: mínimo 45px y mayor que el desplazamiento vertical
+    if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+      if (deltaX < 0) {
+        // Deslizar hacia la izquierda -> Siguiente página
+        if (paginaActualLibro <= conSellos.length) {
+          cambiarPagina(paginaActualLibro + 1, "next");
+        } else {
+          cambiarPagina(0, "next");
+        }
+      } else {
+        // Deslizar hacia la derecha -> Página anterior
+        if (paginaActualLibro > 0) {
+          cambiarPagina(paginaActualLibro - 1, "prev");
+        }
+      }
+    }
+    setTouchStartX(null);
+    setTouchStartY(null);
+  };
+
   const [ocultarFechas, setOcultarFechas] = useState(
     () => localStorage.getItem("pd_ocultar_fechas_sellos") === "1"
   );
@@ -477,8 +513,12 @@ export const MisSellosPage: React.FC = () => {
              EXPERIENCIA PASAPORTE / LIBRO REAL DE SELLOS CON HOJAS PASABLES
              ========================================================================= */
           <div className="relative">
-            {/* Lomo y contenedor exterior del libro */}
-            <div className="bg-[#48050E] rounded-3xl p-1.5 shadow-xl border border-[#C5A059]/40 relative overflow-hidden">
+            {/* Lomo y contenedor exterior del libro con soporte de gestos táctiles */}
+            <div
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              className="bg-[#48050E] rounded-3xl p-1.5 shadow-xl border border-[#C5A059]/40 relative overflow-hidden select-none touch-pan-y"
+            >
               {/* Costura / relieve lateral del lomo de la libreta */}
               <div className="absolute left-0 top-0 bottom-0 w-3 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none z-20" />
               <div className="absolute left-2.5 top-0 bottom-0 w-[1px] border-r border-dashed border-[#C5A059]/40 pointer-events-none z-20" />
@@ -633,6 +673,24 @@ export const MisSellosPage: React.FC = () => {
                       <ChevronRight size={16} className="text-[#3B030B]" />
                     </button>
                   </div>
+
+                  {/* Esquina interactiva para pasar página en computadoras / clic */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cambiarPagina(1, "next");
+                    }}
+                    title="Pasar a la siguiente hoja"
+                    aria-label="Abrir siguiente página"
+                    className="absolute bottom-0 right-0 w-14 h-14 z-30 group flex items-end justify-end select-none cursor-pointer p-0"
+                  >
+                    <div className="w-12 h-12 relative overflow-hidden">
+                      <div className="absolute bottom-0 right-0 w-10 h-10 bg-gradient-to-tl from-[#8C6826] via-[#F3E2B8] to-[#C5A059] origin-bottom-right rounded-tl-2xl shadow-[-3px_-3px_8px_rgba(0,0,0,0.5)] border-t border-l border-[#FFF0D4]/80 transition-transform duration-200 group-hover:scale-115 flex items-center justify-center">
+                        <ChevronRight size={14} className="text-[#3B030B] ml-1 mt-1 font-black group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
+                  </button>
                 </div>
               )}
 
@@ -684,6 +742,24 @@ export const MisSellosPage: React.FC = () => {
                       <ChevronRight size={16} />
                     </button>
                   </div>
+
+                  {/* Esquina izquierda para volver a la última hoja */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cambiarPagina(conSellos.length, "prev");
+                    }}
+                    title="Volver a la hoja anterior"
+                    aria-label="Hoja anterior"
+                    className="absolute bottom-0 left-0 w-14 h-14 z-30 group flex items-end justify-start select-none cursor-pointer p-0"
+                  >
+                    <div className="w-12 h-12 relative overflow-hidden">
+                      <div className="absolute bottom-0 left-0 w-10 h-10 bg-gradient-to-tr from-[#8C6826] via-[#F3E2B8] to-[#C5A059] origin-bottom-left rounded-tr-2xl shadow-[3px_-3px_8px_rgba(0,0,0,0.5)] border-t border-r border-[#FFF0D4]/80 transition-transform duration-200 group-hover:scale-115 flex items-center justify-center">
+                        <ChevronLeft size={14} className="text-[#3B030B] mr-1 mt-1 font-black group-hover:-translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
+                  </button>
                 </div>
               )}
 
@@ -870,36 +946,39 @@ export const MisSellosPage: React.FC = () => {
                                 return (
                                   <div
                                     key={`slot-empty-${item.numero}`}
-                                    className={`aspect-square rounded-2xl border-2 flex flex-col items-center justify-center p-1.5 text-center select-none relative transition-all ${
+                                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center p-1 text-center select-none relative transition-all ${
                                       item.isMetaSlot
-                                        ? "border-dashed border-amber-400 bg-amber-50/50 text-amber-900"
-                                        : "border-dashed border-[#DCD3C7] bg-[#F7F4EE]/50 text-[#A8988B]"
+                                        ? "border-2 border-dashed border-amber-400/80 bg-amber-50/40 text-amber-800"
+                                        : "border border-dashed border-[#D5CFC7] bg-[#FAF8F5]/40 text-[#A8988B]"
                                     }`}
                                     title={item.isMetaSlot ? `Meta: Bono de +${localActual.puntos_completado_meta || 50} pts` : `Visita #${item.numero} pendiente`}
                                   >
-                                    <div
-                                      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-dashed flex flex-col items-center justify-center mb-0.5 opacity-60 ${
-                                        item.isMetaSlot ? "border-amber-400 bg-amber-100/40 text-amber-700" : "border-[#DCD3C7] text-[#A8988B]"
-                                      }`}
-                                    >
+                                    {/* Relieve troquelado de casilla de pasaporte en papel */}
+                                    <div className="flex flex-col items-center justify-center opacity-40">
                                       {item.isMetaSlot ? (
-                                        <Award className="w-5 h-5 text-amber-600 shrink-0" strokeWidth={1.8} />
-                                      ) : StampIconComp ? (
-                                        <StampIconComp className="w-4 h-4 shrink-0 text-[#A8988B]" strokeWidth={1.5} />
+                                        <div className="w-8 h-8 rounded-full border border-dashed border-amber-400 flex items-center justify-center text-amber-600 mb-0.5">
+                                          <Award className="w-4 h-4" strokeWidth={1.8} />
+                                        </div>
                                       ) : (
-                                        <CategoryIcon icon={localActual.imagen_sello || "coffee"} className="w-4 h-4 text-[#A8988B]" />
+                                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-dashed border-[#D5CFC7] flex items-center justify-center text-[#B0A398] mb-0.5">
+                                          <span className="text-[10px] font-mono font-bold">{item.numero}</span>
+                                        </div>
                                       )}
-                                      <span className="text-[7.5px] font-bold mt-0.5">#{item.numero}</span>
                                     </div>
 
-                                    <span className={`text-[7.5px] font-bold truncate max-w-full leading-tight ${
-                                      item.isMetaSlot ? "text-amber-800" : "text-[#8E7D7D]"
-                                    }`}>
-                                      {item.isMetaSlot ? `+${localActual.puntos_completado_meta || 50} pts` : "Por visitar"}
-                                    </span>
+                                    {item.isMetaSlot && (
+                                      <span className="text-[7.5px] font-black text-amber-800 uppercase tracking-tight mt-0.5">
+                                        +{localActual.puntos_completado_meta || 50} pts
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               }
+
+                              const rotation = ((item.numero * 7) % 9) - 4; // Rotación orgánica entre -4° y +4°
+                              const fechaFormato = item.fechaGanado
+                                ? new Date(item.fechaGanado).toLocaleDateString("es-PE", { day: "2-digit", month: "short" }).toUpperCase()
+                                : null;
 
                               return (
                                 <button
@@ -908,61 +987,74 @@ export const MisSellosPage: React.FC = () => {
                                   onClick={() =>
                                     setSelloDetalle({ sello: item.selloDet, local: localActual })
                                   }
-                                  className={`aspect-square rounded-2xl flex flex-col items-center justify-center p-1.5 text-center shadow-xs active:scale-95 transition-all relative group border ${
-                                    item.esEspecial
-                                      ? "bg-gradient-to-b from-amber-50 to-amber-100/70 border-amber-400 ring-2 ring-amber-400/20"
-                                      : "bg-white border-[#E5DACD] hover:border-[#7C0A1E]"
-                                  }`}
-                                  title={item.esEspecial ? "Sello Dorado de Meta Cumplida" : `${item.nombreSello} (#${item.numero})`}
+                                  style={{ transform: `rotate(${rotation}deg)` }}
+                                  className="aspect-square flex items-center justify-center p-0.5 relative group cursor-pointer transition-transform duration-200 active:scale-95 hover:scale-105"
+                                  title={`${item.nombreSello} (Toca para ver detalles de certificación)`}
                                 >
-                                  {item.esEspecial && (
-                                    <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white p-0.5 rounded-full shadow-xs">
-                                      <Award size={10} strokeWidth={2.5} />
-                                    </span>
-                                  )}
-
+                                  {/* SELLO DE TINTA NOTARIAL ESTAMPADO SOBRE EL PAPEL */}
                                   <div
-                                    className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full border-2 flex flex-col items-center justify-center p-0.5 relative transition-transform group-hover:scale-105 ${
-                                      item.esEspecial ? "border-amber-500 bg-amber-50/50" : "border-dashed bg-[#FAF8F5]/80"
+                                    className={`w-full h-full max-w-[70px] max-h-[70px] rounded-full flex flex-col items-center justify-between p-1 relative shadow-2xs select-none transition-shadow ${
+                                      item.esEspecial
+                                        ? "border-2 border-double border-amber-500 bg-amber-50/70 text-amber-900 drop-shadow-[0_2px_6px_rgba(217,119,6,0.3)]"
+                                        : "border-[1.8px] border-dashed bg-[#FAF8F5]/90 drop-shadow-[0_1.5px_3px_rgba(0,0,0,0.06)]"
                                     }`}
                                     style={{
                                       borderColor: item.esEspecial ? "#D97706" : item.colorSello,
-                                      color: item.esEspecial ? "#B45309" : item.colorSello,
+                                      color: item.esEspecial ? "#92400E" : item.colorSello,
                                     }}
                                   >
+                                    {/* Anillo concéntrico interior de seguridad */}
                                     <div
-                                      className="absolute inset-0.5 rounded-full border opacity-40 pointer-events-none"
-                                      style={{ borderColor: item.esEspecial ? "#D97706" : item.colorSello }}
+                                      className="absolute inset-1 rounded-full border opacity-50 pointer-events-none"
+                                      style={{ borderColor: item.esEspecial ? "#F59E0B" : item.colorSello }}
                                     />
 
-                                    {StampIconComp ? (
-                                      <StampIconComp className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" strokeWidth={2} />
-                                    ) : isImg ? (
-                                      <img
-                                        src={imgUrl}
-                                        alt=""
-                                        className="w-5 h-5 sm:w-6 sm:h-6 object-contain rounded-full"
-                                      />
-                                    ) : (
-                                      <CategoryIcon icon={item.imagenSello || "coffee"} className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+                                    {/* Insignia dorada de meta lograda */}
+                                    {item.esEspecial && (
+                                      <span className="absolute -top-1 -right-1 bg-gradient-to-tr from-amber-600 to-amber-400 text-white p-0.5 rounded-full shadow-xs">
+                                        <Award size={9} strokeWidth={2.5} />
+                                      </span>
                                     )}
 
-                                    <span className="text-[7.5px] font-black leading-none mt-0.5">
-                                      #{item.numero}
-                                    </span>
+                                    {/* Arco superior: Estrellas de certificación */}
+                                    <div className="relative z-10 text-[7px] tracking-widest font-black opacity-80 pt-0.5 leading-none">
+                                      {item.esEspecial ? "★ META ★" : "★★★"}
+                                    </div>
+
+                                    {/* Centro: Medallón Circular Adaptativo Inteligente */}
+                                    <div className="relative z-10 my-auto flex items-center justify-center">
+                                      <div
+                                        style={{ borderColor: item.esEspecial ? "#F59E0B" : item.colorSello }}
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center overflow-hidden border border-current/25 bg-white/45 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] p-0.5"
+                                      >
+                                        {StampIconComp ? (
+                                          <StampIconComp className="w-5 h-5 sm:w-5.5 sm:h-5.5 shrink-0" strokeWidth={2} />
+                                        ) : isImg ? (
+                                          <img
+                                            src={imgUrl}
+                                            alt=""
+                                            className="w-full h-full object-contain object-center rounded-full filter drop-shadow-2xs"
+                                            style={{ mixBlendMode: "multiply" }}
+                                          />
+                                        ) : (
+                                          <CategoryIcon icon={item.imagenSello || "coffee"} className="w-5 h-5 sm:w-5.5 sm:h-5.5 shrink-0" />
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Pie del sello: Fechador postal o certificación oficial (sin Sello #1 ni textos cortados) */}
+                                    <div className="relative z-10 pb-0.5 leading-none">
+                                      {!ocultarFechas && fechaFormato ? (
+                                        <span className="text-[6.5px] font-mono font-bold tracking-tight opacity-90 block">
+                                          {fechaFormato}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[6px] font-mono font-black tracking-widest opacity-80 block uppercase">
+                                          {item.esEspecial ? "DORADO" : "OFICIAL"}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-
-                                  <span className={`text-[7.5px] font-bold truncate max-w-full mt-1 leading-tight ${
-                                    item.esEspecial ? "text-amber-900" : "text-[#2D1A1E]"
-                                  }`}>
-                                    {item.nombreSello}
-                                  </span>
-
-                                  {!ocultarFechas && item.fechaGanado && (
-                                    <span className="text-[6.5px] text-[#8E7D7D] font-mono leading-tight mt-0.5 truncate max-w-full">
-                                      {new Date(item.fechaGanado).toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}
-                                    </span>
-                                  )}
                                 </button>
                               );
                             })}
@@ -984,8 +1076,8 @@ export const MisSellosPage: React.FC = () => {
                       ) : null}
                     </div>
 
-                    {/* REDES SOCIALES Y CONTACTO AL PIE DE LA HOJA */}
-                    <div className="relative z-10 pt-2.5 border-t border-[#E5DACD] flex flex-wrap items-center justify-between gap-2">
+                    {/* REDES SOCIALES Y CONTACTO AL PIE DE LA HOJA (con espacio para las esquinas interactivas) */}
+                    <div className="relative z-10 pt-2.5 border-t border-[#E5DACD] flex flex-wrap items-center justify-between gap-2 px-9">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {/* WhatsApp / Teléfono */}
                         {localActual.telefono && (
@@ -1039,65 +1131,72 @@ export const MisSellosPage: React.FC = () => {
                         <ExternalLink size={12} />
                       </Link>
                     </div>
+
+                    {/* Esquina interactiva izquierda para volver a la hoja anterior (Laptop / Clic) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cambiarPagina(paginaActualLibro - 1, "prev");
+                      }}
+                      title={paginaActualLibro === 1 ? "Volver a la Portada" : "Volver a la hoja anterior"}
+                      aria-label="Hoja anterior"
+                      className="absolute bottom-0 left-0 w-11 h-11 z-30 group flex items-end justify-start select-none cursor-pointer p-0"
+                    >
+                      <div className="w-9 h-9 relative overflow-hidden">
+                        <div className="absolute bottom-0 left-0 w-7 h-7 bg-gradient-to-tr from-[#D5B26E] via-[#F3E2B8] to-[#FFF5DB] origin-bottom-left rounded-tr-lg shadow-[2px_-2px_5px_rgba(0,0,0,0.18)] border-t border-r border-[#FFF0D4] transition-transform duration-200 group-hover:scale-115 flex items-center justify-center">
+                          <ChevronLeft size={12} className="text-[#3B030B] mr-0.5 mt-0.5 font-black group-hover:-translate-x-0.5 transition-transform" />
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Esquina interactiva derecha para pasar a la siguiente hoja (Laptop / Clic) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cambiarPagina(paginaActualLibro + 1, "next");
+                      }}
+                      title={paginaActualLibro === conSellos.length ? "Ir a la Contraportada" : "Pasar a la siguiente hoja"}
+                      aria-label="Siguiente hoja"
+                      className="absolute bottom-0 right-0 w-11 h-11 z-30 group flex items-end justify-end select-none cursor-pointer p-0"
+                    >
+                      <div className="w-9 h-9 relative overflow-hidden">
+                        <div className="absolute bottom-0 right-0 w-7 h-7 bg-gradient-to-tl from-[#D5B26E] via-[#F3E2B8] to-[#FFF5DB] origin-bottom-right rounded-tl-lg shadow-[-2px_-2px_5px_rgba(0,0,0,0.18)] border-t border-l border-[#FFF0D4] transition-transform duration-200 group-hover:scale-115 flex items-center justify-center">
+                          <ChevronRight size={12} className="text-[#3B030B] ml-0.5 mt-0.5 font-black group-hover:translate-x-0.5 transition-transform" />
+                        </div>
+                      </div>
+                    </button>
                   </div>
               )}
             </div>
 
-            {/* CONTROLES PARA PASAR PÁGINAS DEL LIBRO (Siguiente / Anterior / Portada / Contraportada) */}
-            <div className="mt-3 flex items-center justify-between bg-white rounded-2xl border border-[#E5DACD] p-2 shadow-xs">
-              <button
-                type="button"
-                onClick={() => cambiarPagina(Math.max(0, paginaActualLibro - 1), "prev")}
-                className="px-3 py-1.5 rounded-xl bg-[#FAF8F5] border border-[#E5DACD] text-xs font-semibold text-[#2D1A1E] hover:bg-[#F2ECE4] active:scale-95 transition-all flex items-center gap-1"
-              >
-                <ChevronLeft size={16} />
-                <span>
-                  {paginaActualLibro === 1
-                    ? "Portada"
-                    : paginaActualLibro > conSellos.length
-                    ? "Última Hoja"
-                    : "Anterior"}
-                </span>
-              </button>
-
-              {/* Indicador de página, portada o contraportada */}
-              <div className="text-center min-w-0 px-2">
-                <span className="text-[11px] font-bold text-[#2D1A1E] block truncate">
+            {/* Barra informativa minimalista (sin botones toscos de navegación) */}
+            <div className="mt-3 bg-white/95 backdrop-blur-xs rounded-2xl border border-[#E5DACD] px-4 py-2.5 shadow-2xs flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-[#7C0A1E] shrink-0" />
+                <span className="font-bold text-[#2D1A1E] truncate text-[11.5px]">
                   {paginaActualLibro === 0
                     ? "Portada del Pasaporte"
                     : paginaActualLibro > conSellos.length
-                    ? "Contraportada"
-                    : `Pág. ${paginaActualLibro} de ${conSellos.length}`}
-                </span>
-                <span className="text-[9px] text-[#8E7D7D] font-mono block truncate">
-                  {paginaActualLibro === 0
-                    ? `${conSellos.length} locales en tu libro`
-                    : paginaActualLibro > conSellos.length
-                    ? "Cierre del pasaporte"
-                    : localActual?.nombre_comercial}
+                    ? "Contraportada Final"
+                    : `Pág. ${paginaActualLibro} de ${conSellos.length} · ${localActual?.nombre_comercial || ""}`}
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (paginaActualLibro > conSellos.length) {
-                    cambiarPagina(0, "next");
-                  } else {
-                    cambiarPagina(paginaActualLibro + 1, "next");
-                  }
-                }}
-                className="px-3 py-1.5 rounded-xl bg-[#FAF8F5] border border-[#E5DACD] text-xs font-semibold text-[#2D1A1E] hover:bg-[#F2ECE4] active:scale-95 transition-all flex items-center gap-1"
-              >
-                <span>
-                  {paginaActualLibro === conSellos.length
-                    ? "Contraportada"
-                    : paginaActualLibro > conSellos.length
-                    ? "Portada"
-                    : "Siguiente"}
+              {/* Guía contextual limpia para móvil vs laptop */}
+              <div className="flex items-center gap-1.5 text-[#8E7D7D] text-[10.5px] font-medium shrink-0">
+                {/* En móvil (touch) */}
+                <span className="inline-flex sm:hidden items-center gap-1 text-[#7C0A1E] font-semibold">
+                  <span>Desliza para pasar</span>
+                  <span className="text-xs">👉</span>
                 </span>
-                <ChevronRight size={16} />
-              </button>
+                {/* En laptop / desktop (clic en esquina) */}
+                <span className="hidden sm:inline-flex items-center gap-1">
+                  <span>Clic en esquina para pasar</span>
+                  <ChevronRight size={12} className="text-[#7C0A1E]" />
+                </span>
+              </div>
             </div>
           </div>
         ) : (
@@ -1279,7 +1378,7 @@ export const MisSellosPage: React.FC = () => {
                 {selloDetalle.local?.nombre_comercial || "Establecimiento"}
               </h3>
               <p className="text-xs font-semibold text-[#7C0A1E]">
-                Sello #{selloDetalle.sello.numero_sello} de {selloDetalle.local?.meta_sellos || 5}
+                Visita Certificada · Progreso {selloDetalle.sello.numero_sello} de {selloDetalle.local?.meta_sellos || 5}
               </p>
 
               {selloDetalle.sello.periodo_referencia && (

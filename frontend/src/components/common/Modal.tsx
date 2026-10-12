@@ -8,6 +8,7 @@ interface Props {
   subtitle?: string;
   children: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl" | "2xl";
+  bodyClassName?: string;
 }
 
 const sizes = {
@@ -25,6 +26,7 @@ export const Modal: React.FC<Props> = ({
   subtitle,
   children,
   size = "md",
+  bodyClassName,
 }) => {
   useEffect(() => {
     if (open) {
@@ -77,7 +79,7 @@ export const Modal: React.FC<Props> = ({
         )}
 
         {/* Body con scroll suave */}
-        <div className="p-5 sm:p-7 overflow-y-auto overflow-x-hidden flex-1">
+        <div className={`overflow-y-auto overflow-x-hidden flex-1 ${bodyClassName || "p-5 sm:p-7"}`}>
           {children}
         </div>
       </div>

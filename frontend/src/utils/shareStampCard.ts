@@ -238,12 +238,15 @@ export async function generatePassportCardBlob(
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillStyle = theme.textPrimary;
-  ctx.font = "900 48px 'Inter', sans-serif";
-
-  const brandTitle = data.nombreEstablecimiento.length > 24
-    ? `${data.nombreEstablecimiento.slice(0, 24)}...`
-    : data.nombreEstablecimiento;
-  ctx.fillText(brandTitle, cardX + cardW / 2, headY);
+  const brandLen = data.nombreEstablecimiento.length;
+  if (brandLen > 30) {
+    ctx.font = "900 32px 'Inter', sans-serif";
+  } else if (brandLen > 22) {
+    ctx.font = "900 38px 'Inter', sans-serif";
+  } else {
+    ctx.font = "900 48px 'Inter', sans-serif";
+  }
+  ctx.fillText(data.nombreEstablecimiento, cardX + cardW / 2, headY);
 
   ctx.fillStyle = theme.accent;
   ctx.font = "bold 16px 'Inter', sans-serif";

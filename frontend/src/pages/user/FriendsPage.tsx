@@ -21,6 +21,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import QRCode from "qrcode";
 import api from "../../services/api";
 import { useUI } from "../../hooks/useUI";
+import { useAuth } from "../../hooks/useAuth";
 import { Spinner } from "../../components/common/Spinner";
 import { initials } from "../../utils/levels";
 
@@ -50,6 +51,7 @@ interface Solicitud {
 }
 
 export const FriendsPage: React.FC = () => {
+  const { user } = useAuth();
   const { showToast } = useUI();
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") === "invitar" ? "invitar" : "amigos";
@@ -67,6 +69,7 @@ export const FriendsPage: React.FC = () => {
   const [enviando, setEnviando] = useState(false);
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<any[]>([]);
   const [buscandoUsuarios, setBuscandoUsuarios] = useState(false);
+  const [codigoPropioCopiado, setCodigoPropioCopiado] = useState(false);
 
   // Invitar amigos / Referidos
   const [inviteData, setInviteData] = useState<{ codigo: string; link: string } | null>(null);
@@ -332,12 +335,25 @@ export const FriendsPage: React.FC = () => {
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="font-bold text-xs text-[#2D1A1E] truncate">
-                            {a.nombres} {a.apellidos}
-                          </p>
-                          <p className="text-[11px] text-[#8E7D7D] font-mono">
-                            {a.codigo_cliente || "Viajero"}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-bold text-xs text-[#2D1A1E] truncate">
+                              {a.nombres} {a.apellidos}
+                            </p>
+                            {a.amigo_id && (
+                              <span className="text-[10px] font-mono text-[#8E7D7D] font-bold">
+                                #{a.amigo_id}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {a.codigo_cliente ? (
+                              <span className="inline-flex px-1.5 py-0.2 rounded bg-[#FAF8F5] border border-[#E5DACD] text-[10px] font-mono font-bold text-[#7C0A1E]">
+                                {a.codigo_cliente}
+                              </span>
+                            ) : (
+                              <span className="text-[10.5px] text-[#8E7D7D] font-mono">Viajero</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] font-bold text-[#7C0A1E] bg-[#7C0A1E]/10 px-1.5 py-0.5 rounded-md">
                               {a.puntos_actuales ?? 0} pts
@@ -537,18 +553,67 @@ export const FriendsPage: React.FC = () => {
           {/* TAB 4: AGREGAR AMIGO (BÚSQUEDA) */}
           {tab === "agregar" && (
             <div className="space-y-4">
+              {/* Tarjeta personal: Mi Código e ID de Viajero para compartir */}
+              <div className="bg-gradient-to-br from-[#7C0A1E] to-[#500613] text-white p-4 rounded-2xl shadow-sm border border-[#91162C]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#E8D3A2] block">
+                      Mi Identificador de Viajero
+                    </span>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="font-mono text-base sm:text-lg font-black text-white tracking-wide">
+                        {user?.codigo_cliente || `CLI-${user?.id || "000000"}`}
+                      </span>
+                      {user?.id && (
+                        <span className="text-[11px] font-mono text-[#E8D3A2] font-bold bg-black/25 px-2 py-0.5 rounded-md border border-[#E8D3A2]/20">
+                          ID: #{user.id}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const codeToCopy = user?.codigo_cliente || String(user?.id || "");
+                      navigator.clipboard.writeText(codeToCopy);
+                      setCodigoPropioCopiado(true);
+                      showToast("¡Tu código fue copiado al portapapeles!", "success");
+                      setTimeout(() => setCodigoPropioCopiado(false), 2500);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 border border-white/25 text-white text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-xs"
+                  >
+                    {codigoPropioCopiado ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-300">¡Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar Código</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[11px] text-[#E8D3A2]/80 mt-2 leading-tight">
+                  Pásale tu código a tus amigos para que te busquen y te agreguen al instante sin rodeos.
+                </p>
+              </div>
+
+              {/* Formulario de búsqueda por Código, ID o Nombre */}
               <form onSubmit={handleBuscarUsuarios} className="flex gap-2">
                 <input
                   type="text"
                   value={busquedaQuery}
                   onChange={(e) => setBusquedaQuery(e.target.value)}
-                  placeholder="Buscar por nombre o código de cliente..."
-                  className="input-base flex-1"
+                  placeholder="Ingresa código (ej. CLI-123456), ID (#14) o nombre..."
+                  className="input-base flex-1 text-xs sm:text-sm"
                 />
                 <button
                   type="submit"
                   disabled={buscandoUsuarios}
-                  className="px-5 py-2.5 bg-[#7C0A1E] hover:bg-[#650818] text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition"
+                  className="px-4 sm:px-5 py-2.5 bg-[#7C0A1E] hover:bg-[#650818] text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition cursor-pointer"
                 >
                   <Search className="w-4 h-4" /> Buscar
                 </button>
@@ -562,7 +627,7 @@ export const FriendsPage: React.FC = () => {
                     const esAmigo = u.relacion_estado === "ACEPTADA";
 
                     return (
-                      <div key={idDestino} className="p-3.5 flex items-center justify-between">
+                      <div key={idDestino} className="p-3.5 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
                           {u.foto_perfil ? (
                             <img
@@ -576,21 +641,32 @@ export const FriendsPage: React.FC = () => {
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="font-bold text-xs text-[#2D1A1E] truncate">
-                              {u.nombres} {u.apellidos}
-                            </p>
-                            <p className="text-[11px] text-[#8E7D7D] font-mono">
-                              {u.codigo_cliente || "Viajero"}
-                            </p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-xs text-[#2D1A1E] truncate">
+                                {u.nombres} {u.apellidos}
+                              </p>
+                              <span className="text-[10px] font-mono text-[#8E7D7D] font-bold">
+                                #{idDestino}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {u.codigo_cliente ? (
+                                <span className="inline-flex px-1.5 py-0.2 rounded bg-[#FAF8F5] border border-[#E5DACD] text-[10.5px] font-mono font-bold text-[#7C0A1E]">
+                                  {u.codigo_cliente}
+                                </span>
+                              ) : (
+                                <span className="text-[10.5px] text-[#8E7D7D] font-mono">Viajero</span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
                         {esAmigo ? (
-                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl">
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl shrink-0">
                             Ya son amigos
                           </span>
                         ) : esPendiente ? (
-                          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl">
+                          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl shrink-0">
                             Solicitud pendiente
                           </span>
                         ) : (
@@ -598,7 +674,7 @@ export const FriendsPage: React.FC = () => {
                             type="button"
                             onClick={() => handleEnviarSolicitud(idDestino)}
                             disabled={enviando}
-                            className="px-3.5 py-1.5 bg-[#7C0A1E] hover:bg-[#650818] disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shrink-0"
+                            className="px-3.5 py-1.5 bg-[#7C0A1E] hover:bg-[#650818] disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer"
                           >
                             <UserPlus className="w-3.5 h-3.5" /> Enviar Solicitud
                           </button>
@@ -608,8 +684,8 @@ export const FriendsPage: React.FC = () => {
                   })}
                 </div>
               ) : busquedaQuery && !buscandoUsuarios ? (
-                <div className="text-center py-8 text-xs text-[#8E7D7D]">
-                  No se encontraron viajeros con ese nombre o código de cliente.
+                <div className="text-center py-8 text-xs text-[#8E7D7D] bg-white rounded-2xl border border-[#EFE7DE] p-6">
+                  No se encontraron viajeros con ese código de cliente, ID o nombre.
                 </div>
               ) : null}
             </div>

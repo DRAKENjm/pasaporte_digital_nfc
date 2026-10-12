@@ -1242,6 +1242,7 @@ export const EstablishmentsController = {
       const result = await query(
         `SELECT ps.id_programa, ps.nombre_sello, ps.imagen_sello, ps.color_sello,
                 ps.descripcion, ps.meta_sellos, ps.estado, ps.fecha_actualizacion,
+                ps.sello_nfc_uid,
                 COALESCE(ps.es_activo_entrega, false) AS es_activo_entrega,
                 ps.mes_asignado, ps.temporada_nombre,
                 COALESCE(ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
@@ -1731,6 +1732,69 @@ export const EstablishmentsController = {
       next(error);
     } finally {
       client?.release();
+    }
+  },
+
+  /** Vincular o desvincular un chip NFC físico al programa de sellos del establecimiento */
+  async vincularSelloNfc(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const idUsuario = req.user!.id;
+      const { sello_nfc_uid, id_programa, id_sucursal } = req.body;
+      const est = await establecimientoDelUsuario(query, idUsuario, id_sucursal);
+
+      const uidClean = sello_nfc_uid ? String(sello_nfc_uid).trim().toUpperCase() : null;
+
+      // Si se asigna un UID, validar que ningún otro establecimiento lo esté usando
+      if (uidClean) {
+        const dup = await query(
+          `SELECT ps.id_programa, ps.nombre_sello, e.nombre_comercial 
+           FROM programas_sellos ps
+           JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+           WHERE UPPER(ps.sello_nfc_uid) = $1 AND ps.id_establecimiento != $2`,
+          [uidClean, est.id_establecimiento],
+        );
+        if (dup.rows[0]) {
+          throw new ApiError(
+            409,
+            `Este chip NFC ya está vinculado a "${dup.rows[0].nombre_sello}" de ${dup.rows[0].nombre_comercial}`,
+          );
+        }
+      }
+
+      let targetProgId = id_programa;
+      if (!targetProgId) {
+        const pRes = await query(
+          `SELECT id_programa FROM programas_sellos 
+           WHERE id_establecimiento = $1 
+           ORDER BY (CASE WHEN estado = 'ACTIVO' THEN 1 ELSE 0 END) DESC, id_programa DESC 
+           LIMIT 1`,
+          [est.id_establecimiento],
+        );
+        targetProgId = pRes.rows[0]?.id_programa;
+      }
+
+      if (!targetProgId) {
+        throw new ApiError(404, "No hay programa de sellos registrado para vincular");
+      }
+
+      const result = await query(
+        `UPDATE programas_sellos
+         SET sello_nfc_uid = $1, fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_programa = $2 AND id_establecimiento = $3
+         RETURNING id_programa, nombre_sello, sello_nfc_uid`,
+        [uidClean, targetProgId, est.id_establecimiento],
+      );
+
+      sendResponse(
+        res,
+        200,
+        result.rows[0],
+        uidClean
+          ? `Chip físico NFC (${uidClean}) vinculado exitosamente a tu sello`
+          : "Chip físico NFC desvinculado del sello",
+      );
+    } catch (e) {
+      next(e);
     }
   },
 };
