@@ -85,33 +85,34 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
 
     switch (badgeSize) {
       case "sm":
-        if (len > 24) return { textClass: "text-[5.5px] tracking-tight leading-[1.05]", maxLines: 2 };
-        if (len > 16) return { textClass: "text-[6.5px] tracking-tight leading-[1.1]", maxLines: 2 };
-        if (len > 11) return { textClass: "text-[7px] tracking-normal leading-[1.15]", maxLines: 2 };
+        if (len > 20) return { textClass: "text-[5.5px] tracking-tight leading-none", maxLines: 2 };
+        if (len > 14) return { textClass: "text-[6px] tracking-tight leading-tight", maxLines: 1 };
+        if (len > 9) return { textClass: "text-[6.5px] tracking-normal leading-tight", maxLines: 1 };
         return { textClass: "text-[7.5px] tracking-wider leading-tight", maxLines: 1 };
 
       case "md":
-        if (len > 26) return { textClass: "text-[6.5px] tracking-tight leading-[1.05]", maxLines: 2 };
-        if (len > 18) return { textClass: "text-[7.5px] tracking-normal leading-[1.1]", maxLines: 2 };
-        if (len > 12) return { textClass: "text-[8.5px] tracking-wider leading-[1.15]", maxLines: 2 };
-        return { textClass: "text-[9px] tracking-widest leading-tight", maxLines: 1 };
+        if (len > 24) return { textClass: "text-[6px] tracking-tight leading-none", maxLines: 2 };
+        if (len > 15) return { textClass: "text-[7px] tracking-tight leading-tight", maxLines: 1 };
+        if (len > 10) return { textClass: "text-[7.5px] tracking-normal leading-tight", maxLines: 1 };
+        return { textClass: "text-[8.5px] tracking-widest leading-tight", maxLines: 1 };
 
       case "lg":
-        if (len > 26) return { textClass: "text-[8.5px] tracking-tight leading-[1.1]", maxLines: 2 };
-        if (len > 18) return { textClass: "text-[9.5px] tracking-normal leading-[1.15]", maxLines: 2 };
-        if (len > 12) return { textClass: "text-[11px] tracking-wider leading-[1.2]", maxLines: 2 };
-        return { textClass: "text-[12px] tracking-widest leading-tight", maxLines: 1 };
+        if (len > 26) return { textClass: "text-[7.5px] tracking-tight leading-none", maxLines: 2 };
+        if (len > 18) return { textClass: "text-[8.5px] tracking-tight leading-tight", maxLines: 1 };
+        if (len > 12) return { textClass: "text-[9.5px] tracking-normal leading-tight", maxLines: 1 };
+        return { textClass: "text-[11px] tracking-wider leading-tight", maxLines: 1 };
 
       case "xl":
-        if (len > 26) return { textClass: "text-[11px] tracking-normal leading-[1.15]", maxLines: 2 };
-        if (len > 18) return { textClass: "text-[12.5px] tracking-wider leading-[1.2]", maxLines: 2 };
-        return { textClass: "text-[14px] tracking-widest leading-tight", maxLines: 1 };
+        if (len > 28) return { textClass: "text-[9.5px] tracking-tight leading-none", maxLines: 2 };
+        if (len > 20) return { textClass: "text-[11px] tracking-normal leading-tight", maxLines: 1 };
+        if (len > 13) return { textClass: "text-[12px] tracking-normal leading-tight", maxLines: 1 };
+        return { textClass: "text-[13.5px] tracking-widest leading-tight", maxLines: 1 };
 
       case "xxl":
       default:
-        if (len > 26) return { textClass: "text-[11px] sm:text-[12px] tracking-tight leading-[1.1]", maxLines: 2 };
-        if (len > 18) return { textClass: "text-[12px] sm:text-[13px] tracking-normal leading-[1.15]", maxLines: 2 };
-        if (len > 12) return { textClass: "text-[13px] sm:text-[14px] tracking-wider leading-[1.2]", maxLines: 1 };
+        if (len > 30) return { textClass: "text-[11px] sm:text-[12px] tracking-tight leading-none", maxLines: 2 };
+        if (len > 20) return { textClass: "text-[12px] sm:text-[13px] tracking-tight leading-tight", maxLines: 1 };
+        if (len > 13) return { textClass: "text-[13px] sm:text-[14px] tracking-wider leading-tight", maxLines: 1 };
         return { textClass: "text-[14px] sm:text-[15px] tracking-widest leading-tight", maxLines: 1 };
     }
   };
@@ -193,7 +194,14 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       })
     : null;
 
-  const topTitle = es_sello_especial ? "★ META COMPLETADA ★" : establecimiento_nombre;
+  const rawTitle =
+    (establecimiento_nombre &&
+     establecimiento_nombre !== "Local Afiliado" &&
+     establecimiento_nombre !== "Establecimiento" &&
+     establecimiento_nombre !== "Lugar")
+      ? establecimiento_nombre
+      : (nombre_sello || establecimiento_nombre || "Sello Oficial");
+  const topTitle = es_sello_especial ? "★ META COMPLETADA ★" : rawTitle;
   const { textClass: topTextClass, maxLines: topMaxLines } = getTopTextConfig(topTitle, size);
 
   return (
@@ -246,11 +254,11 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       )}
 
       {/* 2. Cabecera Superior del Sello con Adaptación Dinámica al Nombre (Sin "...") */}
-      <div className={`absolute ${s.topOffset} inset-x-0 text-center z-10 flex items-center justify-center min-h-[1.25rem]`}>
+      <div className={`absolute ${s.topOffset} inset-x-0 text-center z-20 flex items-center justify-center pointer-events-none`}>
         <span
           className={`font-black uppercase break-words block ${topTextClass} ${
-            topMaxLines > 1 ? "line-clamp-2" : ""
-          } ${es_sello_especial ? "text-[#92400E]" : "opacity-90"}`}
+            topMaxLines > 1 ? "line-clamp-2" : "truncate max-w-[92%]"
+          } ${es_sello_especial ? "text-[#92400E]" : "opacity-95"}`}
           title={topTitle}
         >
           {topTitle}
@@ -299,7 +307,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       </div>
 
       {/* 4. Etiqueta Inferior: Número de Sello / Fecha / Corona de Certificación */}
-      <div className={`absolute ${s.bottomOffset} inset-x-0 text-center z-10`}>
+      <div className={`absolute ${s.bottomOffset} inset-x-0 text-center z-20 pointer-events-none`}>
         {es_sello_especial ? (
           <span
             style={{
