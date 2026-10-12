@@ -1937,32 +1937,37 @@ export const ExplorarPage: React.FC = () => {
                   </div>
                 ) : (
                   /* TARJETA COMPLETA (ANTES DE INICIAR O EXPANDIDA) */
-                  <div className="pointer-events-auto bg-white rounded-3xl p-3.5 sm:p-4 border border-[#EFE7DE] shadow-xl max-h-[42vh] overflow-y-auto relative animate-fadeIn">
-                    {directions && (
+                  <div className="pointer-events-auto bg-white rounded-3xl p-3 sm:p-3.5 border border-[#EFE7DE] shadow-xl max-h-[42vh] overflow-y-auto relative animate-fadeIn">
+                    {/* Botones de acción superior: Minimizar y Cerrar */}
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+                      {directions && (
+                        <button
+                          type="button"
+                          onClick={() => setTarjetaExpandidaEnRuta(false)}
+                          className="h-7 px-2 text-[11px] font-bold text-[#7C0A1E] bg-[#FAF8F5] rounded-full border border-[#EFE7DE] flex items-center gap-1 hover:bg-[#EFE7DE] active:scale-95 transition-all cursor-pointer"
+                          title="Minimizar barra"
+                        >
+                          <ChevronDown size={13} />
+                          <span className="hidden xs:inline">{t("minimize") || "Minimizar"}</span>
+                        </button>
+                      )}
                       <button
-                        onClick={() => setTarjetaExpandidaEnRuta(false)}
-                        className="absolute top-2.5 right-11 text-[11px] font-bold text-[#7C0A1E] bg-[#FAF8F5] px-2.5 py-1 rounded-xl border border-[#EFE7DE] flex items-center gap-1 hover:bg-[#EFE7DE] transition-colors cursor-pointer"
-                        title="Minimizar barra"
+                        type="button"
+                        onClick={cerrarTarjeta}
+                        className="w-7 h-7 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#8E7D7D] hover:bg-[#EFE7DE] active:scale-95 transition-all cursor-pointer"
+                        title="Cerrar"
                       >
-                        <ChevronDown size={14} />
-                        <span>{t("minimize") || "Minimizar"}</span>
+                        <X size={14} />
                       </button>
-                    )}
-                    <button
-                      onClick={cerrarTarjeta}
-                      className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-[#FAF8F5] flex items-center justify-center text-[#8E7D7D] cursor-pointer hover:bg-[#EFE7DE] transition-colors z-10"
-                      title="Cerrar"
-                    >
-                      <X size={14} />
-                    </button>
+                    </div>
 
-                    <div className="flex items-center gap-3 pr-8">
+                    <div className="flex items-center gap-3 pr-20 sm:pr-24">
                       <div
                         onClick={() => {
                           const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
                           if (idLoc) navigate(`/user/locales/${idLoc}`);
                         }}
-                        className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden shrink-0 border-2 border-[#EFE7DE] cursor-pointer hover:opacity-90 hover:scale-105 transition-all shadow-xs"
+                        className="w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-[#EFE7DE] cursor-pointer hover:opacity-90 hover:scale-105 transition-all shadow-xs"
                         title="Ver detalles completos del local"
                       >
                         <img
@@ -1977,32 +1982,28 @@ export const ExplorarPage: React.FC = () => {
                           loading="lazy"
                         />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div
                           onClick={() => {
                             const idLoc = localSeleccionado.id_establecimiento || localSeleccionado.id;
                             if (idLoc) navigate(`/user/locales/${idLoc}`);
                           }}
-                          className="cursor-pointer group/title inline-block max-w-full"
+                          className="cursor-pointer group/title"
                           title="Ver información del local"
                         >
-                          <h3 className="font-bold text-sm text-[#2D1A1E] group-hover/title:text-[#7C0A1E] transition-colors truncate flex items-center gap-1.5">
-                            <span className="truncate">{localSeleccionado.nombre_comercial}</span>
-                            <span className="text-[10px] font-semibold text-[#7C0A1E] opacity-0 group-hover/title:opacity-100 transition-opacity shrink-0">
-                              Ver perfil →
-                            </span>
+                          <h3 className="font-bold text-sm text-[#2D1A1E] group-hover/title:text-[#7C0A1E] transition-colors truncate">
+                            {localSeleccionado.nombre_comercial}
                           </h3>
                         </div>
-                        <p className="text-[11px] text-[#8E7D7D] truncate">
-                          {localSeleccionado.sucursales?.[0]?.direccion || "Chiclayo"}
-                        </p>
 
-                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                          <span className="text-[#7C0A1E] font-semibold bg-[#FAF8F5] border border-[#EFE7DE] px-2 py-0.5 rounded-full text-[10px]">
-                            {localSeleccionado.categoria_nombre || localSeleccionado.categoria || "Comercio"}
+                        {/* Dirección y puntos en una sola línea compacta (sin repetir categoría) */}
+                        <div className="flex items-center gap-1.5 text-[11px] text-[#8E7D7D] mt-0.5">
+                          <span className="truncate max-w-[150px] xs:max-w-[200px] sm:max-w-[260px]">
+                            {localSeleccionado.sucursales?.[0]?.direccion || "Chiclayo"}
                           </span>
-                          <span className="text-[#C5A059] font-bold text-[10px] bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Sparkles size={10} />
+                          <span className="text-slate-300 shrink-0">•</span>
+                          <span className="text-[#C5A059] font-bold text-[10px] bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 shrink-0">
+                            <Sparkles size={10} className="shrink-0" />
                             +{localSeleccionado.puntos_por_visita || 20} pts
                           </span>
                         </div>
@@ -2010,14 +2011,14 @@ export const ExplorarPage: React.FC = () => {
                     </div>
 
                     {infoRuta && (
-                      <div className="flex items-center gap-2 mt-3 px-3 py-1.5 rounded-2xl bg-[#FAF8F5] border border-[#EFE7DE] w-fit text-xs text-[#2D1A1E]">
+                      <div className="flex items-center gap-2 mt-2 px-2.5 py-1 rounded-xl bg-[#FAF8F5] border border-[#EFE7DE] w-fit text-xs text-[#2D1A1E]">
                         <span className="font-bold text-[#7C0A1E] flex items-center gap-1">
-                          <MapPin size={13} className="shrink-0" />
+                          <MapPin size={12} className="shrink-0" />
                           {infoRuta.distancia}
                         </span>
                         <span className="text-[#C8BFB7]">•</span>
                         <span className="text-[#59494B] font-medium flex items-center gap-1">
-                          <Clock size={13} className="shrink-0" />
+                          <Clock size={12} className="shrink-0" />
                           {infoRuta.tiempo}
                         </span>
                         {infoRuta.esRutaReal && (
@@ -2028,13 +2029,13 @@ export const ExplorarPage: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-[#EFE7DE]">
+                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-[#EFE7DE]">
                       <span className="text-[11px] font-semibold text-[#8E7D7D]">{t("travelMode") || "Modo de viaje"}:</span>
-                      <div className="flex bg-[#FAF8F5] p-1 rounded-xl border border-[#EFE7DE] text-xs">
+                      <div className="flex bg-[#FAF8F5] p-0.5 rounded-xl border border-[#EFE7DE] text-xs">
                         <button
                           type="button"
                           onClick={() => cambiarModoViaje("DRIVING")}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                             modoViaje === "DRIVING"
                               ? "bg-white text-[#7C0A1E] shadow-sm border border-[#EFE7DE]"
                               : "text-[#8E7D7D] hover:text-[#2D1A1E]"
@@ -2046,7 +2047,7 @@ export const ExplorarPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => cambiarModoViaje("WALKING")}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                             modoViaje === "WALKING"
                               ? "bg-white text-[#7C0A1E] shadow-sm border border-[#EFE7DE]"
                               : "text-[#8E7D7D] hover:text-[#2D1A1E]"
@@ -2058,7 +2059,7 @@ export const ExplorarPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="mt-3 flex items-center gap-2">
+                    <div className="mt-2.5 flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -2073,14 +2074,14 @@ export const ExplorarPage: React.FC = () => {
                       </button>
 
                       <div className="flex-1 flex gap-2">
-                        {/* Botón principal INICIAR RUTA: Abre la navegación paso a paso idéntica a Google Maps */}
+                        {/* Botón principal INICIAR: Abre la navegación paso a paso idéntica a Google Maps */}
                         <button
                           onClick={iniciarNavegacionActiva}
                           disabled={cargandoRuta}
-                          className="flex-1 py-2.5 rounded-2xl bg-[#004D40] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer hover:bg-[#00382E] shadow-md"
+                          className="flex-1 py-2.5 rounded-2xl bg-[#004D40] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer hover:bg-[#00382E] shadow-md"
                         >
-                          <Navigation size={15} className="text-[#A7F3D0]" />
-                          <span>{cargandoRuta ? (t("calculating") || "Calculando...") : "Iniciar Navegación"}</span>
+                          <Navigation size={14} className="text-[#A7F3D0]" />
+                          <span>{cargandoRuta ? (t("calculating") || "Calculando...") : "Iniciar"}</span>
                         </button>
 
                         <button
