@@ -49,6 +49,7 @@ import { AdminReportes } from "./pages/admin/AdminReportes";
 import { AdminConfiguracion } from "./pages/admin/AdminConfiguracion";
 import { AdminAuditoria } from "./pages/admin/AdminAuditoria";
 import { AdminLegal } from "./pages/admin/AdminLegal";
+import { AdminControlApis } from "./pages/admin/AdminControlApis";
 import { useAuth } from "./hooks/useAuth";
 import { Spinner } from "./components/common/Spinner";
 import { homePathForRole, normalizeRole, AppRole } from "./utils/roles";
@@ -191,6 +192,7 @@ export const App: React.FC = () => {
                 <Route path="/admin/reportes" element={<AdminReportes />} />
                 <Route path="/admin/legal" element={<AdminLegal />} />
                 <Route path="/admin/auditoria" element={<AdminAuditoria />} />
+                <Route path="/admin/control-apis" element={<AdminControlApis />} />
                 <Route path="/admin/configuracion" element={<AdminConfiguracion />} />
               </Route>
 

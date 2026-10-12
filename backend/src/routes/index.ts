@@ -34,6 +34,17 @@ router.get("/config", async (req, res, next) => {
   }
 });
 
+// Endpoint público para que los clientes consulten si la navegación propia está disponible o en contingencia
+router.get("/public/estado-navegacion", async (req, res, next) => {
+  try {
+    const { ApiControlService } = await import("../services/apiControl.service");
+    const status = await ApiControlService.getClientContingencyStatus();
+    sendResponse(res, 200, status, "Estado de contingencia de navegación");
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.use("/auth", authRoutes);
 router.use("/nfc", nfcRoutes);
 router.use("/rewards", rewardsRoutes);

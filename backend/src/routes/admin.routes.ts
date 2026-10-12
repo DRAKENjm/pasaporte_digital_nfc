@@ -102,6 +102,12 @@ router.get("/reportes/exportar/:tipo", AdminController.exportarReporte);
 router.get("/configuracion", AdminController.obtenerConfiguracion);
 router.put("/configuracion", AdminController.actualizarConfiguracion);
 
+// ===== CONTROL Y MONITOREO DE APIS (Google Maps, Render, Supabase) =====
+router.get("/control-apis", AdminController.obtenerControlApis);
+router.post("/control-apis/config", AdminController.actualizarControlApis);
+router.post("/control-apis/incidente", AdminController.registrarIncidenteApi);
+router.patch("/control-apis/incidentes/:id/resolver", AdminController.resolverIncidenteApi);
+
 // ===== SUBIDA DE ARCHIVOS / FOTOS (Locales, Recompensas, etc.) =====
 import multer from "multer";
 import fs from "fs";

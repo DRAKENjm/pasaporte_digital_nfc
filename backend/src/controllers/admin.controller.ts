@@ -3130,5 +3130,57 @@ export const AdminController = {
       next(error);
     }
   },
+
+  // ===== CONTROL Y MONITOREO DE APIS (Google Maps, Render, Supabase) =====
+  obtenerControlApis: async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { ApiControlService } = await import("../services/apiControl.service");
+      const overview = await ApiControlService.getOverview();
+      sendResponse(res, 200, overview, "Resumen de control de APIs obtenido exitosamente");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  actualizarControlApis: async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { ApiControlService } = await import("../services/apiControl.service");
+      const { servicio } = req.body;
+      if (!servicio) throw new ApiError(400, "El campo 'servicio' es requerido");
+
+      const updated = await ApiControlService.updateConfig(servicio, req.body);
+      sendResponse(res, 200, updated, "Configuración de API actualizada exitosamente");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  registrarIncidenteApi: async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { ApiControlService } = await import("../services/apiControl.service");
+      const { servicio, tipo_evento, descripcion, detalles } = req.body;
+      if (!servicio || !tipo_evento || !descripcion) {
+        throw new ApiError(400, "Campos 'servicio', 'tipo_evento' y 'descripcion' son obligatorios");
+      }
+
+      const incidente = await ApiControlService.logIncident(servicio, tipo_evento, descripcion, { detalles });
+      sendResponse(res, 201, incidente, "Incidente registrado exitosamente");
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  resolverIncidenteApi: async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { ApiControlService } = await import("../services/apiControl.service");
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) throw new ApiError(400, "ID de incidente inválido");
+
+      const ok = await ApiControlService.resolveIncident(id);
+      sendResponse(res, 200, { resuelto: ok }, "Incidente marcado como resuelto");
+    } catch (error) {
+      next(error);
+    }
+  },
 };
 

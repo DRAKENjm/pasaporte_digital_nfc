@@ -236,6 +236,23 @@ export const ExplorarPage: React.FC = () => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
+  // Modo de Contingencia (Aviso profesional para clientes si la navegación propia no está disponible)
+  const [contingenciaModalOpen, setContingenciaModalOpen] = useState(false);
+  const [contingenciaDestUrl, setContingenciaDestUrl] = useState<string>("");
+  const [modoContingenciaGlobal, setModoContingenciaGlobal] = useState(false);
+
+  useEffect(() => {
+    // Comprobar estado de contingencia de navegación del backend
+    api.get("/public/estado-navegacion")
+      .then((res) => {
+        const d = res.data?.data || res.data;
+        if (d?.contingencia_activa) {
+          setModoContingenciaGlobal(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Referencias para filtrado de ruido y deadband
   const lastAcceptedCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const currentHeadingRef = useRef<number | null>(null);
@@ -1109,12 +1126,14 @@ export const ExplorarPage: React.FC = () => {
               );
             } catch {}
           } else {
-            showToast("No se pudo calcular la ruta. Abriendo Google Maps...", "info");
+            // Modo de Contingencia si DirectionsService falla o se agota la cuota (OVER_QUERY_LIMIT)
+            console.warn("Fallo o cuota en DirectionsService. Status:", status);
             const mapsUrl =
               suc?.google_maps_url ||
               loc.google_maps_url ||
-              `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
-            window.open(mapsUrl, "_blank");
+              `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=${travelMode.toLowerCase()}`;
+            setContingenciaDestUrl(mapsUrl);
+            setContingenciaModalOpen(true);
           }
         }
       );
@@ -1194,6 +1213,20 @@ export const ExplorarPage: React.FC = () => {
     if (!userCoords || gpsBlocked) {
       showToast("Por favor active su GPS para poder iniciar la navegación paso a paso", "info");
       solicitarPermisoUbicacion(true, false);
+      return;
+    }
+
+    // Si el modo de contingencia global está activado por el administrador o cuota
+    if (modoContingenciaGlobal && localSeleccionado) {
+      const suc = localSeleccionado.sucursales?.[0];
+      const destLat = suc?.latitud || "";
+      const destLng = suc?.longitud || "";
+      const mapsUrl =
+        suc?.google_maps_url ||
+        localSeleccionado.google_maps_url ||
+        `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=${modoViaje.toLowerCase()}`;
+      setContingenciaDestUrl(mapsUrl);
+      setContingenciaModalOpen(true);
       return;
     }
 
@@ -2236,6 +2269,50 @@ export const ExplorarPage: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* MODAL PROFESIONAL DE CONTINGENCIA CUANDO LA NAVEGACIÓN PROPIA NO ESTÁ DISPONIBLE */}
+      {contingenciaModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-sm w-full border border-[#EFE7DE] shadow-2xl space-y-4 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 border border-amber-200/80 flex items-center justify-center mx-auto shadow-sm">
+              <MapPin size={28} />
+            </div>
+
+            <div>
+              <h3 className="text-base font-extrabold text-[#2D1A1E]">
+                Navegación temporalmente no disponible
+              </h3>
+              <p className="text-xs text-[#59494B] mt-2 leading-relaxed">
+                En este momento no podemos ofrecerte la navegación desde RutaYa. Puedes abrir Google Maps para continuar tu viaje hasta el destino.
+              </p>
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (contingenciaDestUrl) {
+                    window.open(contingenciaDestUrl, "_blank");
+                  }
+                  setContingenciaModalOpen(false);
+                }}
+                className="w-full py-3 rounded-2xl bg-[#004D40] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 hover:bg-[#00382E] active:scale-[0.98] transition shadow-md cursor-pointer"
+              >
+                <ExternalLink size={16} className="text-[#A7F3D0]" />
+                <span>Abrir en Google Maps</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setContingenciaModalOpen(false)}
+                className="w-full py-2.5 rounded-2xl bg-[#FAF8F5] text-[#8E7D7D] font-bold text-xs hover:bg-[#EFE7DE] hover:text-[#2D1A1E] transition cursor-pointer"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

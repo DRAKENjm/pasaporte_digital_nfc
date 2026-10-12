@@ -24,6 +24,7 @@ import {
   Stamp,
   User as UserIcon,
   ChevronDown,
+  Activity,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useConfig } from "../context/ConfigContext";
@@ -125,6 +126,7 @@ export const AdminLayout: React.FC = () => {
       group: "Supervisión",
       items: [
         { to: "/admin/reportes", label: "Reportes", icon: BarChart3 },
+        { to: "/admin/control-apis", label: "Control de APIs", icon: Activity },
         { to: "/admin/reclamaciones", label: "Reclamaciones", icon: ShieldAlert },
         { to: "/admin/legal", label: "Documentos", icon: FileText },
         { to: "/admin/auditoria", label: "Auditoría", icon: ShieldCheck },
