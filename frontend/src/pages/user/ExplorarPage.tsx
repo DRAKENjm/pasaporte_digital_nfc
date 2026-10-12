@@ -205,8 +205,30 @@ export const ExplorarPage: React.FC = () => {
   const [modoViaje, setModoViaje] = useState<"DRIVING" | "WALKING">("DRIVING");
   const [tarjetaExpandidaEnRuta, setTarjetaExpandidaEnRuta] = useState(false);
   const [userHeading, setUserHeading] = useState<number | null>(null);
+  const [displayHeading, setDisplayHeading] = useState<number>(0);
+  const continuousHeadingRef = useRef<number>(0);
+  const userSpeedRef = useRef<number>(0);
   const [mostrarTrafico, setMostrarTrafico] = useState(false);
   const [refrescando, setRefrescando] = useState(false);
+
+  // Actualizador angular continuo (Shortest Arc Interpolation): elimina el salto de 360° -> 0°
+  const updateContinuousHeading = useCallback((targetDeg: number) => {
+    if (isNaN(targetDeg) || targetDeg === null || targetDeg === undefined) return;
+    const current = continuousHeadingRef.current;
+    const currentNormalized = ((current % 360) + 360) % 360;
+    let diff = targetDeg - currentNormalized;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+
+    // Zona muerta de 2.5 grados para evitar micro-vibraciones en reposo
+    if (Math.abs(diff) < 2.5) return;
+
+    // Acumulación angular continua para rotación suave sin giros inversos de 360°
+    const nextContinuous = current + diff;
+    continuousHeadingRef.current = nextContinuous;
+    setDisplayHeading(nextContinuous);
+    setUserHeading(targetDeg);
+  }, []);
 
   // --- MODO NAVEGACIÓN ACTIVA TURN-BY-TURN (Idéntico a Google Maps) ---
   const [modoNavegacion, setModoNavegacion] = useState(false);
@@ -703,6 +725,7 @@ export const ExplorarPage: React.FC = () => {
                   lng: p.coords.longitude,
                 };
                 const speed = p.coords.speed || 0;
+                userSpeedRef.current = speed;
                 setGpsBlocked(false);
 
                 // FILTRO DE ZONA MUERTA (Deadband): Previene temblores por fluctuaciones GPS de 1 a 3 metros
@@ -713,11 +736,9 @@ export const ExplorarPage: React.FC = () => {
                   getDistanceKm
                 );
 
-                // Rumbo / Heading: Priorizar bearing de desplazamiento real cuando se mueve más de 4 metros
-                if (p.coords.heading !== null && !isNaN(p.coords.heading) && p.coords.heading >= 0 && speed > 1.0) {
-                  const smoothed = filterHeadingJitter(currentHeadingRef.current, p.coords.heading);
-                  currentHeadingRef.current = smoothed;
-                  setUserHeading(smoothed);
+                // Rumbo / Heading: Priorizar rumbo nativo del GPS cuando hay velocidad (> 0.8 m/s) o bearing al desplazarse
+                if (p.coords.heading !== null && !isNaN(p.coords.heading) && p.coords.heading >= 0 && speed > 0.8) {
+                  updateContinuousHeading(p.coords.heading);
                 } else if (lastAcceptedCoordsRef.current) {
                   const distMove = getDistanceKm(
                     lastAcceptedCoordsRef.current.lat,
@@ -725,17 +746,15 @@ export const ExplorarPage: React.FC = () => {
                     filtered.lat,
                     filtered.lng
                   );
-                  // Solo calcular rumbo si el movimiento real supera 4.5 metros (evita giros aleatorios en reposo)
-                  if (distMove >= 0.0045) {
+                  // Solo calcular rumbo si el movimiento real supera 3.5 metros (evita giros aleatorios en reposo)
+                  if (distMove >= 0.0035) {
                     const angle = calculateBearing(
                       lastAcceptedCoordsRef.current.lat,
                       lastAcceptedCoordsRef.current.lng,
                       filtered.lat,
                       filtered.lng
                     );
-                    const smoothed = filterHeadingJitter(currentHeadingRef.current, angle);
-                    currentHeadingRef.current = smoothed;
-                    setUserHeading(smoothed);
+                    updateContinuousHeading(angle);
                   }
                 }
 
@@ -836,7 +855,7 @@ export const ExplorarPage: React.FC = () => {
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     },
-    [showToast, map, speakInstruction]
+    [showToast, map, speakInstruction, updateContinuousHeading]
   );
 
   // Escuchar brújula física con filtro angular amortiguado (elimina temblor en reposo)
@@ -846,6 +865,9 @@ export const ExplorarPage: React.FC = () => {
       // Throttle de eventos a máx 15fps (evita 60Hz de ruido magnético innecesario)
       if (now - lastOrientationTimeRef.current < 65) return;
       lastOrientationTimeRef.current = now;
+
+      // Si el usuario se desplaza activamente (speed > 0.8 m/s), el GPS es más preciso que la brújula magnética
+      if (userSpeedRef.current > 0.8) return;
 
       let compass = 0;
       if ((e as any).webkitCompassHeading !== undefined && (e as any).webkitCompassHeading !== null) {
@@ -857,11 +879,7 @@ export const ExplorarPage: React.FC = () => {
       }
 
       if (!isNaN(compass) && compass >= 0) {
-        const smoothed = filterHeadingJitter(currentHeadingRef.current, compass);
-        if (smoothed !== currentHeadingRef.current) {
-          currentHeadingRef.current = smoothed;
-          setUserHeading(smoothed);
-        }
+        updateContinuousHeading(compass);
       }
     };
 
@@ -876,7 +894,7 @@ export const ExplorarPage: React.FC = () => {
         window.removeEventListener("deviceorientation", handleOrientation, true);
       }
     };
-  }, []);
+  }, [updateContinuousHeading]);
 
   // Verificar permisos y solicitar ubicación de forma amigable al inicio
   useEffect(() => {
@@ -1657,72 +1675,125 @@ export const ExplorarPage: React.FC = () => {
           >
             {mostrarTrafico && <TrafficLayer />}
 
-            {/* PUCK DE UBICACIÓN EN TIEMPO REAL CON FILTRADO DE RUIDO Y CONO DE VISIÓN */}
+            {/* PUCK DE UBICACIÓN EN TIEMPO REAL: CÍRCULO EN PLANIFICACIÓN, TRIÁNGULO/FLECHA EN NAVEGACIÓN */}
             {(smoothCoords || userCoords) && (
               <OverlayView
                 position={smoothCoords || userCoords!}
                 mapPaneName={OverlayView.FLOAT_PANE}
-                getPixelPositionOffset={() => ({ x: -22, y: -22 })}
+                getPixelPositionOffset={() => (modoNavegacion ? { x: -18, y: -20 } : { x: -22, y: -22 })}
                 zIndex={9999}
               >
-                <div
-                  title="Tu ubicación en tiempo real"
-                  className="relative flex items-center justify-center pointer-events-none select-none"
-                  style={{ width: 44, height: 44 }}
-                >
-                  {/* Cono o haz de linterna (flashlight beam) en dirección de avance / brújula */}
-                  {userHeading !== null && (
-                    <div
-                      className="absolute w-28 h-28 pointer-events-none"
-                      style={{
-                        transform: `rotate(${userHeading}deg)`,
-                        transformOrigin: "center center",
-                        transition: "transform 0.15s linear",
-                      }}
-                    >
-                      <div
-                        className="w-full h-full"
-                        style={{
-                          background: modoNavegacion
-                            ? "radial-gradient(circle at 50% 50%, rgba(0,229,255,0.45) 0%, rgba(0,229,255) 70%)"
-                            : "radial-gradient(circle at 50% 50%, rgba(66,133,244,0.38) 0%, rgba(66,133,244,0) 70%)",
-                          clipPath: "polygon(50% 50%, 20% 0%, 80% 0%)",
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Halo sutil de radar móvil */}
-                  <span
-                    className={`absolute rounded-full animate-ping ${
-                      modoNavegacion ? "w-10 h-10 bg-[#00E5FF]/25" : "w-9 h-9 bg-[#1A73E8]/20"
-                    }`}
-                  />
-                  <span
-                    className={`absolute rounded-full ${
-                      modoNavegacion ? "w-8 h-8 bg-[#00E5FF]/20" : "w-8 h-8 bg-[#1A73E8]/15"
-                    }`}
-                  />
-
-                  {/* Círculo central Google Maps móvil: 22px con borde blanco 2.5px y sombra suave */}
+                {modoNavegacion ? (
+                  /* MARCADOR TRIANGULAR / FLECHA DE NAVEGACIÓN 3D TIPO GOOGLE MAPS */
                   <div
-                    className={`relative w-[22px] h-[22px] rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] border-[2.5px] border-white flex items-center justify-center ring-1 ring-black/15 ${
-                      modoNavegacion ? "bg-[#00E5FF]" : "bg-[#1A73E8]"
-                    }`}
+                    title="Navegación activa"
+                    className="relative flex items-center justify-center pointer-events-none select-none"
                     style={{
-                      transform: userHeading !== null ? `rotate(${userHeading}deg)` : undefined,
-                      transition: "transform 0.15s cubic-bezier(0.2, 0, 0.2, 1)",
+                      width: 36,
+                      height: 40,
+                      transform: `rotate(${displayHeading}deg)`,
+                      transformOrigin: "18px 20px",
+                      transition: "transform 0.22s cubic-bezier(0.2, 0, 0.2, 1)",
                     }}
                   >
-                    {userHeading !== null ? (
-                      /* Flecha de dirección frontal blanca */
-                      <div className="w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[7px] border-l-transparent border-r-transparent border-b-white -mt-0.5 filter drop-shadow(0 0.5px 0.5px rgba(0,0,0,0.4))" />
-                    ) : (
-                      /* Punto blanco de descanso en el centro */
-                      <div className="w-2 h-2 rounded-full bg-white shadow-xs" />
-                    )}
+                    {/* Halo de pulsación aerodinámico */}
+                    <span className="absolute w-8 h-8 rounded-full bg-[#00E5FF]/20 animate-ping" />
+                    <span className="absolute w-7 h-7 rounded-full bg-[#00E5FF]/15" />
+
+                    {/* Flecha chevron facetada 3D estilo Google Maps */}
+                    <svg
+                      width="36"
+                      height="40"
+                      viewBox="0 0 36 40"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="filter drop-shadow-[0_3px_6px_rgba(0,0,0,0.5)]"
+                    >
+                      {/* Borde exterior blanco nítido */}
+                      <path
+                        d="M18 2 L33 34 L18 26 L3 34 Z"
+                        fill="white"
+                      />
+                      {/* Ala izquierda (iluminada - azul cielo / cian navegación) */}
+                      <path
+                        d="M18 4.5 L4.5 32 L18 25 Z"
+                        fill="url(#navArrowLeftFacet)"
+                      />
+                      {/* Ala derecha (facetada más oscura - azul navegación) */}
+                      <path
+                        d="M18 4.5 L31.5 32 L18 25 Z"
+                        fill="url(#navArrowRightFacet)"
+                      />
+                      {/* Línea central de arista 3D */}
+                      <line
+                        x1="18"
+                        y1="4.5"
+                        x2="18"
+                        y2="25"
+                        stroke="rgba(255,255,255,0.45)"
+                        strokeWidth="0.8"
+                      />
+                      <defs>
+                        <linearGradient id="navArrowLeftFacet" x1="4.5" y1="18" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#38BDF8" />
+                          <stop offset="1" stopColor="#0284C7" />
+                        </linearGradient>
+                        <linearGradient id="navArrowRightFacet" x1="18" y1="18" x2="31.5" y2="18" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#0369A1" />
+                          <stop offset="1" stopColor="#075985" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
                   </div>
-                </div>
+                ) : (
+                  /* MARCADOR CIRCULAR DE PLANIFICACIÓN / EXPLORACIÓN CON CONO DE VISIÓN */
+                  <div
+                    title="Tu ubicación en tiempo real"
+                    className="relative flex items-center justify-center pointer-events-none select-none"
+                    style={{ width: 44, height: 44 }}
+                  >
+                    {/* Cono o haz de linterna (flashlight beam) en dirección de la brújula */}
+                    {userHeading !== null && (
+                      <div
+                        className="absolute w-28 h-28 pointer-events-none"
+                        style={{
+                          transform: `rotate(${displayHeading}deg)`,
+                          transformOrigin: "center center",
+                          transition: "transform 0.22s cubic-bezier(0.2, 0, 0.2, 1)",
+                        }}
+                      >
+                        <div
+                          className="w-full h-full"
+                          style={{
+                            background: "radial-gradient(circle at 50% 50%, rgba(66,133,244,0.38) 0%, rgba(66,133,244,0) 70%)",
+                            clipPath: "polygon(50% 50%, 20% 0%, 80% 0%)",
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Halo sutil de radar */}
+                    <span className="absolute w-9 h-9 rounded-full bg-[#1A73E8]/20 animate-ping" />
+                    <span className="absolute w-8 h-8 rounded-full bg-[#1A73E8]/15" />
+
+                    {/* Círculo central azul Google Maps con borde blanco */}
+                    <div
+                      className="relative w-[22px] h-[22px] rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] border-[2.5px] border-white flex items-center justify-center ring-1 ring-black/15 bg-[#1A73E8]"
+                      style={{
+                        transform: userHeading !== null ? `rotate(${displayHeading}deg)` : undefined,
+                        transition: "transform 0.22s cubic-bezier(0.2, 0, 0.2, 1)",
+                      }}
+                    >
+                      {userHeading !== null ? (
+                        /* Pequeña flecha de dirección frontal blanca */
+                        <div className="w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[7px] border-l-transparent border-r-transparent border-b-white -mt-0.5 filter drop-shadow(0 0.5px 0.5px rgba(0,0,0,0.4))" />
+                      ) : (
+                        /* Punto blanco de descanso en el centro */
+                        <div className="w-2 h-2 rounded-full bg-white shadow-xs" />
+                      )}
+                    </div>
+                  </div>
+                )}
               </OverlayView>
             )}
 
