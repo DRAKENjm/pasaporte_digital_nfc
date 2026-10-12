@@ -9,7 +9,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   role: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<User>;
   loginWithGoogle: (token: string) => Promise<User>;
   register: (data: {
     email: string;
@@ -128,16 +128,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     init();
   }, [logout]);
 
-  const login = async (email: string, password: string) => {
-    const res = await authService.login(email, password);
+  const login = async (email: string, password: string, rememberMe: boolean = false) => {
+    const res = await authService.login(email, password, rememberMe);
     const normalizedUser = {
       ...res.user,
       role: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
       rol: (res.user.rol || res.user.role || "CLIENTE").toUpperCase(),
     };
 
-    localStorage.setItem("token", res.token);
-    localStorage.setItem("user", JSON.stringify(normalizedUser));
+    // Si Recordarme está marcado: persistir en localStorage para que no se cierre al salir del navegador.
+    // Si NO está marcado: solo persistir en sessionStorage (se borra al cerrar pestaña/navegador).
+    if (rememberMe) {
+      localStorage.setItem("token", res.token);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+    } else {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+    }
+
     sessionStorage.setItem("token", res.token);
     sessionStorage.setItem("user", JSON.stringify(normalizedUser));
 

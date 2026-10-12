@@ -15,9 +15,9 @@ const cleanConnectionString = rawUrl.replace(/[?&]sslmode=[^&]*/g, "").replace(/
 
 export const pool = new Pool({
   connectionString: cleanConnectionString || undefined,
-  max: 20,
+  max: 30, // Mayor capacidad de conexiones simultáneas
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000,
   ssl: isRemoteOrSupabase ? { rejectUnauthorized: false } : undefined,
 });
 
@@ -32,24 +32,40 @@ pool.on("error", (err) => {
 export const query = async <T extends QueryResultRow = any>(
   text: string,
   params?: any[],
+  retries = 2
 ): Promise<QueryResult<T>> => {
-  const start = Date.now();
-  try {
-    const res = await pool.query<T>(text, params);
-    const duration = Date.now() - start;
+  let attempt = 0;
+  while (true) {
+    const start = Date.now();
+    try {
+      const res = await pool.query<T>(text, params);
+      const duration = Date.now() - start;
 
-    if (process.env.NODE_ENV === "development") {
-      console.log("[DB Query]", {
-        text: text.slice(0, 80),
-        duration: `${duration}ms`,
-        rows: res.rowCount ?? 0, // 2. Evitar null si es un comando estructural (ej. BEGIN)
-      });
+      if (process.env.NODE_ENV === "development") {
+        console.log("[DB Query]", {
+          text: text.slice(0, 80),
+          duration: `${duration}ms`,
+          rows: res.rowCount ?? 0,
+        });
+      }
+      return res;
+    } catch (error: any) {
+      attempt++;
+      const isTransient =
+        error?.message?.includes("timeout exceeded") ||
+        error?.message?.includes("Connection terminated") ||
+        error?.code === "57P01" ||
+        error?.code === "ECONNRESET";
+
+      if (isTransient && attempt <= retries) {
+        console.warn(`[DB Retry] Reintentando consulta (${attempt}/${retries}) tras error transitorio:`, error.message);
+        await new Promise((resolve) => setTimeout(resolve, attempt * 120));
+        continue;
+      }
+
+      console.error("[DB Query Error]", { text: text.slice(0, 80), error });
+      throw error;
     }
-    return res;
-  } catch (error) {
-    // Es útil registrar qué consulta falló exactamente
-    console.error("[DB Query Error]", { text: text.slice(0, 80), error });
-    throw error;
   }
 };
 

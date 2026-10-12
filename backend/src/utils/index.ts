@@ -24,7 +24,12 @@ export const comparePassword = async (
   return bcrypt.compare(password, hash);
 };
 
-export const generateToken = (user: AuthUser): string => {
+import crypto from "crypto";
+
+export const generateToken = (user: AuthUser, rememberMe = true): string => {
+  const jti = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
+  const expiresIn = rememberMe ? "30d" : "24h";
+
   return jwt.sign(
     {
       id: user.id,
@@ -32,9 +37,10 @@ export const generateToken = (user: AuthUser): string => {
       role: user.role,
       nombres: user.nombres,
       apellidos: user.apellidos,
+      jti,
     },
     process.env.JWT_SECRET!,
-    { expiresIn: (process.env.JWT_EXPIRES_IN as any) || "7d" },
+    { expiresIn },
   );
 };
 

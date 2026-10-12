@@ -12,27 +12,41 @@ export const authMiddleware = async (
   try {
     const header = req.headers.authorization;
     if (!header || !header.startsWith("Bearer ")) {
-      throw new ApiError(401, "Token no proporcionado");
+      return next(new ApiError(401, "Token no proporcionado"));
     }
 
     const token = header.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as AuthUser;
-
-    if (!decoded.id || !decoded.role) {
-      throw new ApiError(401, "Token no válido para iniciar sesión");
+    let decoded: AuthUser;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET!) as AuthUser;
+    } catch (jwtErr: any) {
+      if (jwtErr.name === "TokenExpiredError") {
+        return next(new ApiError(401, "Token expirado"));
+      }
+      return next(new ApiError(401, "Token inválido"));
     }
 
-    const current = await query(
-      `SELECT u.id_usuario, u.estado, r.nombre AS role, c.id_cliente
-       FROM usuarios u
-       JOIN roles r ON r.id_rol = u.id_rol
-       LEFT JOIN clientes c ON c.id_usuario = u.id_usuario
-       WHERE u.id_usuario = $1`,
-      [decoded.id],
-    );
+    if (!decoded.id || !decoded.role) {
+      return next(new ApiError(401, "Token no válido para iniciar sesión"));
+    }
+
+    let current;
+    try {
+      current = await query(
+        `SELECT u.id_usuario, u.estado, r.nombre AS role, c.id_cliente
+         FROM usuarios u
+         JOIN roles r ON r.id_rol = u.id_rol
+         LEFT JOIN clientes c ON c.id_usuario = u.id_usuario
+         WHERE u.id_usuario = $1`,
+        [decoded.id],
+      );
+    } catch (dbErr: any) {
+      console.error("[Auth Middleware Database Error]", dbErr);
+      return next(new ApiError(500, "Error de conexión al validar credenciales"));
+    }
 
     if (!current.rows[0] || current.rows[0].estado !== 1) {
-      throw new ApiError(401, "Cuenta inactiva o no disponible");
+      return next(new ApiError(401, "Cuenta inactiva o no disponible"));
     }
 
     req.user = {
@@ -45,10 +59,11 @@ export const authMiddleware = async (
     };
     next();
   } catch (err: any) {
-    if (err.name === "TokenExpiredError") {
-      return next(new ApiError(401, "Token expirado"));
+    if (err instanceof ApiError) {
+      return next(err);
     }
-    next(new ApiError(401, "Token inválido"));
+    console.error("[Auth Middleware Error]", err);
+    next(new ApiError(500, "Error interno en autenticación"));
   }
 };
 

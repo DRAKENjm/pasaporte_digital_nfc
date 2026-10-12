@@ -32,13 +32,25 @@ export const AuthController = {
         throw new ApiError(400, "Datos de registro inválidos");
       }
 
-      if (password.length < 6 || password.length > 72) {
-        throw new ApiError(400, "La contraseña debe tener al menos 6 caracteres");
+      // POLÍTICA DE SEGURIDAD DE CONTRASEÑAS REFORZADA (Mínimo 8 caracteres, alfanumérico)
+      if (typeof password !== "string" || password.length < 8 || password.length > 72) {
+        throw new ApiError(400, "La contraseña debe tener al menos 8 caracteres");
+      }
+
+      const hasLetters = /[a-zA-Z]/.test(password);
+      const hasNumbersOrSymbols = /[\d!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+      if (!hasLetters || !hasNumbersOrSymbols) {
+        throw new ApiError(400, "La contraseña debe incluir letras y al menos un número o símbolo");
+      }
+
+      const commonWeak = ["12345678", "password", "password123", "qwerty123", "admin1234", "pasaporte123"];
+      if (commonWeak.includes(password.toLowerCase().trim())) {
+        throw new ApiError(400, "La contraseña elegida es demasiado común. Elige una más segura.");
       }
 
       const existing = await UserModel.findByEmail(email.toLowerCase().trim());
       if (existing) {
-        throw new ApiError(409, "El correo electrónico ya está registrado");
+        throw new ApiError(409, "No se puede completar el registro con estos datos. Si ya tienes cuenta, por favor inicia sesión.");
       }
 
       const rolFinal = roleName || "CLIENTE";
@@ -199,7 +211,7 @@ export const AuthController = {
   async login(req: Request, res: Response, next: NextFunction) {
     try {
       const email = req.body.email || req.body.identifier;
-      const { password } = req.body;
+      const { password, rememberMe } = req.body;
 
       if (!email || !password) {
         throw new ApiError(400, "Ingresa email y contraseña");
@@ -226,28 +238,32 @@ export const AuthController = {
           [user.id_usuario, req.ip || null, req.headers["user-agent"] || null],
         );
 
-        if (attempts >= 3) {
+        if (attempts >= 5) {
           await query(`UPDATE usuarios SET estado = 0 WHERE id_usuario = $1`, [user.id_usuario]);
           failedAttemptsMap.delete(emailLower);
-          throw new ApiError(403, "Cuenta bloqueada por demasiados intentos fallidos. Por favor comuníquese con el administrador.");
+          throw new ApiError(429, "Cuenta bloqueada por demasiados intentos fallidos. Por favor comuníquese con el administrador.");
         }
 
-        const remaining = 3 - attempts;
-        throw new ApiError(401, `Contraseña incorrecta. Le queda${remaining === 1 ? '' : 'n'} ${remaining} intento${remaining === 1 ? '' : 's'}.`);
+        const remaining = 5 - attempts;
+        throw new ApiError(401, `Contraseña incorrecta. Te queda${remaining === 1 ? '' : 'n'} ${remaining} intento${remaining === 1 ? '' : 's'}.`);
       }
 
       failedAttemptsMap.delete(emailLower);
 
       await UserModel.updateUltimoAcceso(user.id_usuario);
 
-      const token = generateToken({
-        id: user.id_usuario,
-        email: user.email,
-        role: user.rol_nombre,
-        nombres: user.nombres,
-        apellidos: user.apellidos,
-        id_cliente: user.id_cliente,
-      });
+      const isRemembered = Boolean(rememberMe);
+      const token = generateToken(
+        {
+          id: user.id_usuario,
+          email: user.email,
+          role: user.rol_nombre,
+          nombres: user.nombres,
+          apellidos: user.apellidos,
+          id_cliente: user.id_cliente,
+        },
+        isRemembered
+      );
 
       sendResponse(res, 200, {
         user: {
@@ -260,6 +276,7 @@ export const AuthController = {
           codigo_cliente: user.codigo_cliente,
         },
         token,
+        rememberMe: isRemembered,
       });
     } catch (error) {
       next(error);

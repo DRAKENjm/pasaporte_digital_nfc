@@ -61,6 +61,18 @@ export const Register: React.FC = () => {
       return;
     }
 
+    if (form.password.length < 8) {
+      showToast("La contraseña debe tener al menos 8 caracteres", "error");
+      return;
+    }
+
+    const hasLetters = /[a-zA-Z]/.test(form.password);
+    const hasNumbersOrSymbols = /[\d!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(form.password);
+    if (!hasLetters || !hasNumbersOrSymbols) {
+      showToast("La contraseña debe combinar letras y al menos un número o símbolo", "error");
+      return;
+    }
+
     setLoading(true);
     try {
       await register({
@@ -150,11 +162,11 @@ export const Register: React.FC = () => {
           value={form.password}
           onChange={handleChange}
           required
-          minLength={6}
+          minLength={8}
           maxLength={72}
           autoComplete="new-password"
           isPassword
-          placeholder="Mínimo 6 caracteres"
+          placeholder="Mínimo 8 caracteres (letras y números)"
         />
 
         {/* Campo Código de Invitación si no vino por URL */}

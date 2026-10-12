@@ -13,10 +13,11 @@ export interface AuthPayload {
 }
 
 export const authService = {
-  async login(email: string, password: string): Promise<AuthPayload> {
+  async login(email: string, password: string, rememberMe = false): Promise<AuthPayload> {
     const res = await api.post<BackendApiResponse<AuthPayload>>("/auth/login", {
       email,
       password,
+      rememberMe,
     });
     // El backend responde { success: true, message: '...', data: { token, user } }
     if (res.data && res.data.data) {

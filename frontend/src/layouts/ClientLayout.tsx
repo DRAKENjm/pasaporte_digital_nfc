@@ -70,9 +70,9 @@ export const ClientLayout: React.FC = () => {
 
       {/* MOBILE VIEW */}
       <div className="md:hidden min-h-screen flex flex-col items-center">
-        <div className="w-full max-w-md min-h-screen bg-white flex flex-col relative shadow-xl">
-          <main className={`flex-1 w-full relative ${isMap ? "overflow-hidden" : "overflow-y-auto"}`}>
-            <div className="pb-24 min-h-full">
+        <div className={`w-full max-w-md bg-white flex flex-col relative shadow-xl ${isMap ? "h-[100dvh] overflow-hidden" : "min-h-screen"}`}>
+          <main className={`flex-1 w-full relative ${isMap ? "h-[calc(100dvh-65px)] overflow-hidden" : "overflow-y-auto"}`}>
+            <div className={isMap ? "h-full w-full flex flex-col" : "pb-24 min-h-full"}>
               <Outlet />
             </div>
           </main>

@@ -32,6 +32,15 @@ export const Login: React.FC = () => {
     if (params.get("inactivity") === "1") {
       setErrorMsg("Tu sesión se cerró por inactividad.");
     }
+
+    // Cargar correo recordado si el usuario marcó "Recordarme" previamente
+    const savedEmail = localStorage.getItem("remembered_identifier");
+    if (savedEmail) {
+      setIdentifier(savedEmail);
+      setRememberMe(true);
+    }
+    // Purga de seguridad: eliminar cualquier contraseña en texto plano guardada en el navegador
+    localStorage.removeItem("remembered_password");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,13 +53,11 @@ export const Login: React.FC = () => {
 
     setLoading(true);
     try {
-      const loggedUser: any = await login(identifier.trim(), password);
+      const loggedUser: any = await login(identifier.trim(), password, rememberMe);
       if (rememberMe) {
         localStorage.setItem("remembered_identifier", identifier.trim());
-        localStorage.setItem("remembered_password", password);
       } else {
         localStorage.removeItem("remembered_identifier");
-        localStorage.removeItem("remembered_password");
       }
       navigate(homePathForRole(loggedUser?.role || "CLIENTE"));
     } catch (err: any) {
@@ -202,8 +209,8 @@ export const Login: React.FC = () => {
             <GoogleLogin
               onSuccess={handleGoogleSuccess}
               onError={() => setErrorMsg("Error al conectar con Google")}
-              useOneTap={true}
-              auto_select={true}
+              useOneTap={false}
+              auto_select={false}
               shape="pill"
               text="continue_with"
               theme="outline"

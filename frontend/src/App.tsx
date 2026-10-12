@@ -99,9 +99,14 @@ export const App: React.FC = () => {
         <ConfigProvider>
           <AuthProvider>
             <UIProvider>
-              <BrowserRouter>
-            <Routes>
-              <Route path="/post/:id" element={<PublicPost />} />
+              <BrowserRouter
+                future={{
+                  v7_startTransition: true,
+                  v7_relativeSplatPath: true,
+                }}
+              >
+                <Routes>
+                  <Route path="/post/:id" element={<PublicPost />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/reclamaciones" element={<LibroReclamacionesPage />} />
               <Route path="/legal" element={<LegalViewerPage />} />
