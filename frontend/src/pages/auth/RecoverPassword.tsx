@@ -178,9 +178,14 @@ export const RecoverPassword = () => {
         </form>
       ) : (
         <div className="pt-2 text-center space-y-4">
-          <p className="text-xs text-[#8E7D7D] leading-relaxed">
-            Revisa tu bandeja de entrada o la carpeta de spam para completar el proceso.
-          </p>
+          <div className="p-4 bg-[#FAF8F5] border border-[#E5DACD] rounded-2xl text-left space-y-2">
+            <p className="text-xs text-[#2D1A1E] font-medium leading-relaxed">
+              📩 Hemos enviado las instrucciones. Revisa tu bandeja de entrada o la carpeta de <strong>Spam / Correo no deseado</strong>.
+            </p>
+            <p className="text-[11.5px] text-[#8E7D7D] leading-relaxed">
+              ¿No recibiste el correo? Nuestro equipo de administración ha recibido una alerta de seguridad de tu solicitud y podrá ayudarte a validar tu identidad y restaurar el acceso.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => navigate("/auth/login")}
