@@ -282,6 +282,7 @@ export const ExplorarPage: React.FC = () => {
   const announcedStepIndexRef = useRef<number>(-1);
 
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+  const vectorMapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || "";
   const watchIdRef = useRef<number | null>(null);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
   const mainPolylineRef = useRef<google.maps.Polyline | null>(null);
@@ -1460,6 +1461,9 @@ export const ExplorarPage: React.FC = () => {
       if (pos) {
         map.panTo(pos);
         map.setZoom(18);
+        // Restablecer orientación del mapa al Norte al re-centrar
+        map.setHeading(0);
+        map.setTilt(0);
       }
     }
   }, [map, smoothCoords, userCoords, gpsBlocked, showToast, solicitarPermisoUbicacion]);
@@ -1693,17 +1697,25 @@ export const ExplorarPage: React.FC = () => {
               }
             }}
             options={{
-              disableDefaultUI: true, // Oculta botones nativos como el botón de mover/girar de 4 flechas y fullscreen
+              disableDefaultUI: true,
               zoomControl: false,
               streetViewControl: false,
               mapTypeControl: false,
               fullscreenControl: false,
-              rotateControl: false, // Desactiva el botón de girar en pantalla ya que se gira libremente con dos dedos
+              rotateControl: false,
               panControl: false,
               scaleControl: false,
               clickableIcons: true,
-              gestureHandling: "greedy", // Permite mover con 1 dedo, zoom con pellizco y rotar con 2 dedos en móvil
-              styles: modoNavegacion ? navigationNightMapStyles : undefined,
+              gestureHandling: "greedy",
+              // Vector Map ID: habilita renderizado WebGL con rotación y tilt con dos dedos en móvil
+              ...(vectorMapId ? {
+                mapId: vectorMapId,
+                // En vector maps, colorScheme reemplaza a styles para modo nocturno
+                ...(modoNavegacion ? { colorScheme: "DARK" as any } : {}),
+              } : {
+                // Sin mapId: renderizado raster clásico con estilos JSON para modo nocturno
+                styles: modoNavegacion ? navigationNightMapStyles : undefined,
+              }),
             }}
           >
             {mostrarTrafico && <TrafficLayer />}
