@@ -1310,15 +1310,6 @@ export const ExplorarPage: React.FC = () => {
     };
   }, [infoRuta]);
 
-  // Punto medio de la polilínea para renderizar badge de tiempo estilo Google Maps
-  const routeMidpoint = useMemo<{ lat: number; lng: number } | null>(() => {
-    if (!directions?.routes?.[0]?.overview_path?.length) return null;
-    const path = directions.routes[0].overview_path;
-    const mid = path[Math.floor(path.length / 2)];
-    if (!mid) return null;
-    return { lat: mid.lat(), lng: mid.lng() };
-  }, [directions]);
-
   const salirDeNavegacion = () => {
     setModoNavegacion(false);
     setAutoFollow(true);
@@ -1712,27 +1703,7 @@ export const ExplorarPage: React.FC = () => {
               </OverlayView>
             )}
 
-            {/* BADGE FLOTANTE DE TIEMPO ESTIMADO SOBRE LA POLILÍNEA DE RUTA (Screenshot 3 & 4) */}
-            {routeMidpoint && infoRuta && !modoNavegacion && (
-              <OverlayView
-                position={routeMidpoint}
-                mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-                getPixelPositionOffset={() => ({ x: -38, y: -16 })}
-              >
-                <div
-                  className="px-3 py-1 rounded-full text-white font-black text-xs shadow-xl flex items-center gap-1.5 cursor-pointer select-none border border-white/60 active:scale-95 transition-transform bg-[#1A73E8]"
-                  title="Cambiar modo de viaje"
-                  onClick={() => cambiarModoViaje(modoViaje === "DRIVING" ? "WALKING" : "DRIVING")}
-                >
-                  {modoViaje === "WALKING" ? (
-                    <Footprints size={13} className="text-white" />
-                  ) : (
-                    <Car size={13} className="text-white" />
-                  )}
-                  <span>{infoRuta.tiempo}</span>
-                </div>
-              </OverlayView>
-            )}
+
 
             {/* Marcadores de los locales */}
             {localesFiltrados.map((loc) => {
@@ -1790,43 +1761,8 @@ export const ExplorarPage: React.FC = () => {
         ) : (
           /* 4. VISTA DE EXPLORACIÓN HABITUAL (Chips de locales o Cabecera de Ruta Activa) */
           <>
-            {/* Cabecera superior: Origen y Destino si hay ruta trazada (Screenshot 3 & 4) / Chips si está explorando */}
-            {directions && localSeleccionado ? (
-              <div className="absolute top-3 left-3 right-3 sm:left-4 sm:right-4 z-20 pointer-events-auto animate-slideDown">
-                <div className="bg-white/95 backdrop-blur-md rounded-2xl p-2.5 sm:p-3 border border-[#EFE7DE] shadow-xl flex items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    {/* Conector gráfico vertical de origen a destino */}
-                    <div className="flex flex-col items-center gap-1 shrink-0 py-0.5">
-                      <div className="w-2.5 h-2.5 rounded-full bg-[#1A73E8] border border-white shadow-xs" title="Tu ubicación" />
-                      <div className="w-0.5 h-3 bg-slate-300 rounded-full" />
-                      <MapPin size={13} className="text-[#7C0A1E]" />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[11px] font-bold text-[#8E7D7D] truncate">
-                        Tu ubicación
-                      </div>
-                      <div className="text-xs sm:text-sm font-black text-[#2D1A1E] truncate">
-                        {localSeleccionado.nombre_comercial}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={cancelarRuta}
-                      className="w-8 h-8 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] flex items-center justify-center text-[#8E7D7D] hover:bg-[#EFE7DE] active:scale-95 transition-all cursor-pointer"
-                      title="Cerrar vista de ruta"
-                    >
-                      <X size={15} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Chips superiores de locales */
-              <div className="absolute top-3 left-0 right-0 z-20 px-4 flex gap-2 overflow-x-auto pb-2 scrollbar-none pointer-events-auto">
+            {/* Chips superiores de locales */}
+            <div className="absolute top-3 left-0 right-0 z-20 px-4 flex gap-2 overflow-x-auto pb-2 scrollbar-none pointer-events-auto">
                 {localesFiltrados.map((loc) => {
                   const esActivo = localSeleccionado?.id_establecimiento === loc.id_establecimiento;
                   const locImg = loc.logo || loc.imagen_portada || loc.imagen_url;
@@ -1848,7 +1784,6 @@ export const ExplorarPage: React.FC = () => {
                   );
                 })}
               </div>
-            )}
 
             {/* Tarjeta inferior adaptativa */}
             {localSeleccionado && (

@@ -121,7 +121,7 @@ export const TurnByTurnHUD: React.FC<TurnByTurnHUDProps> = ({
   onReportIncident,
 }) => {
   return (
-    <div className="absolute inset-0 pointer-events-none z-40 flex flex-col justify-between p-3 sm:p-4 pb-[max(16px,env(safe-area-inset-bottom,16px))] select-none">
+    <div className="absolute inset-0 pointer-events-none z-40 flex flex-col justify-between p-3 sm:p-4 select-none">
       {/* 1. TOP BANNER: Cartel Verde Oscuro Turn-by-Turn idéntico a Google Maps */}
       <div className="w-full max-w-lg mx-auto pointer-events-auto animate-fadeIn">
         <div className="bg-[#004D40] text-white rounded-2xl sm:rounded-3xl shadow-2xl p-3 sm:p-4 border border-[#00695C]/40 backdrop-blur-md">
@@ -233,43 +233,43 @@ export const TurnByTurnHUD: React.FC<TurnByTurnHUDProps> = ({
         </button>
       </div>
 
-      {/* 3. BOTÓN INFERIOR IZQUIERDA: "▲ Centrar" (Idéntico a Screenshot 5 de Google Maps) */}
-      <div className="flex items-end justify-between w-full pointer-events-none mb-2 px-1">
-        <div>
-          {showCenterButton && (
-            <button
-              type="button"
-              onClick={onCenterUser}
-              className="pointer-events-auto px-4 py-2.5 rounded-full bg-white text-[#182330] font-black text-xs sm:text-sm shadow-2xl border border-slate-200/80 flex items-center gap-2 hover:bg-slate-50 active:scale-95 transition-all cursor-pointer backdrop-blur-md animate-slideUp"
-            >
-              <Navigation size={15} className="text-[#00796B] fill-[#00796B]" />
-              <span>Centrar</span>
-            </button>
-          )}
+      {/* 3 & 4. SECCIÓN INFERIOR: BOTÓN CENTRAR + FOOTER HUD NAVEGACIÓN (Elevado sobre la barra de navegación del teléfono) */}
+      <div className="w-full max-w-md mx-auto pointer-events-none flex flex-col gap-2 px-1 pb-[max(78px,calc(70px+env(safe-area-inset-bottom)))]">
+        {/* Fila inferior: Botón "Centrar" y Botón alternativas */}
+        <div className="flex items-center justify-between w-full pointer-events-none">
+          <div>
+            {showCenterButton && (
+              <button
+                type="button"
+                onClick={onCenterUser}
+                className="pointer-events-auto px-3.5 py-2 rounded-full bg-white text-[#004D40] font-black text-xs sm:text-sm shadow-xl border border-slate-200/90 flex items-center gap-1.5 hover:bg-slate-50 active:scale-95 transition-all cursor-pointer backdrop-blur-md"
+              >
+                <Navigation size={14} className="text-[#004D40] fill-[#004D40]" />
+                <span>Centrar</span>
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onResetOrientation}
+            className="pointer-events-auto w-10 h-10 rounded-full bg-white text-[#182330] shadow-xl border border-slate-200/90 flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all cursor-pointer"
+            title="Alinear brújula / Ver ruta"
+          >
+            <Split size={16} className="text-[#182330]" />
+          </button>
         </div>
 
-        {/* Botón de alternativas / orientación */}
-        <button
-          type="button"
-          onClick={onResetOrientation}
-          className="pointer-events-auto w-11 h-11 rounded-full bg-white text-[#182330] shadow-2xl border border-slate-200/80 flex items-center justify-center hover:bg-slate-50 active:scale-95 transition-all cursor-pointer"
-          title="Alinear brújula / Ver ruta"
-        >
-          <Split size={18} className="text-[#182330]" />
-        </button>
-      </div>
-
-      {/* 4. FOOTER INFERIOR: HUD de Navegación idéntico a Screenshot 5 */}
-      <div className="w-full max-w-md mx-auto pointer-events-auto animate-slideUp">
-        <div className="bg-white/98 text-[#182330] rounded-3xl p-3 sm:p-4 shadow-[0_10px_35px_rgba(0,0,0,0.3)] border border-slate-200 backdrop-blur-md flex items-center justify-between gap-3">
+        {/* HUD Inferior con [ ✕ ] para salir de navegación, tiempo estimado, distancia y hora */}
+        <div className="pointer-events-auto w-full bg-white/98 text-[#182330] rounded-3xl p-3 sm:p-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.3)] border border-slate-200 backdrop-blur-md flex items-center justify-between gap-3 animate-slideUp">
           {/* Botón circular X para salir de navegación */}
           <button
             type="button"
             onClick={onExitNavigation}
-            className="w-11 h-11 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200 transition-all cursor-pointer"
+            className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200 transition-all cursor-pointer"
             title="Salir de navegación"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
 
           {/* Información de ETA (Tiempo restante, modo, distancia y hora estimada de llegada) */}
@@ -279,13 +279,13 @@ export const TurnByTurnHUD: React.FC<TurnByTurnHUDProps> = ({
                 {eta?.duracionTexto || "Calculando..."}
               </span>
               {modoViaje === "WALKING" ? (
-                <Footprints size={20} className="text-[#00796B]" />
+                <Footprints size={18} className="text-[#00796B]" />
               ) : (
-                <Car size={20} className="text-[#00796B]" />
+                <Car size={18} className="text-[#00796B]" />
               )}
             </div>
 
-            <div className="flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-500 font-bold mt-1">
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-500 font-bold mt-1">
               <span>{eta?.distanciaTexto || ""}</span>
               <span className="text-slate-300">•</span>
               <span className="text-[#182330] font-extrabold">{eta?.horaLlegadaTexto || ""}</span>
@@ -294,7 +294,7 @@ export const TurnByTurnHUD: React.FC<TurnByTurnHUDProps> = ({
 
           {/* Icono de destino / sparkles a la derecha */}
           <div
-            className="w-11 h-11 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200 shadow-inner"
+            className="w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200 shadow-inner"
             title={destinationName}
           >
             {destinationLogo ? (
@@ -304,7 +304,7 @@ export const TurnByTurnHUD: React.FC<TurnByTurnHUDProps> = ({
                 className="w-full h-full object-cover"
               />
             ) : (
-              <Sparkles size={18} className="text-[#00796B]" />
+              <Sparkles size={16} className="text-[#00796B]" />
             )}
           </div>
         </div>
