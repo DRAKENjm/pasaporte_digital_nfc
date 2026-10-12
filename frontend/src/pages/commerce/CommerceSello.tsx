@@ -1443,7 +1443,7 @@ export const CommerceSello: React.FC = () => {
               </div>
 
               {/* Sello Estampado Central */}
-              <div className="relative z-10 my-auto py-6 flex flex-col items-center justify-center">
+              <div className="relative z-10 my-auto py-3 sm:py-5 flex flex-col items-center justify-center">
                 <div
                   className={`transition-all duration-500 transform ${
                     isStamping ? "scale-125 opacity-40 blur-xs" : "scale-100 opacity-100"

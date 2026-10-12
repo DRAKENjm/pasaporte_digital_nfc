@@ -109,58 +109,69 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
 
       case "xxl":
       default:
-        if (len > 26) return { textClass: "text-[13px] tracking-normal leading-[1.2]", maxLines: 2 };
-        if (len > 18) return { textClass: "text-[15px] tracking-wider leading-[1.2]", maxLines: 2 };
-        return { textClass: "text-[17px] tracking-widest leading-tight", maxLines: 1 };
+        if (len > 26) return { textClass: "text-[11px] sm:text-[12px] tracking-tight leading-[1.1]", maxLines: 2 };
+        if (len > 18) return { textClass: "text-[12px] sm:text-[13px] tracking-normal leading-[1.15]", maxLines: 2 };
+        if (len > 12) return { textClass: "text-[13px] sm:text-[14px] tracking-wider leading-[1.2]", maxLines: 1 };
+        return { textClass: "text-[14px] sm:text-[15px] tracking-widest leading-tight", maxLines: 1 };
     }
   };
 
-  // Dimensiones según el tamaño (Aro exterior + Círculo central adaptativo equilibrado: "ni tan ancho ni tan delgado")
+  // Dimensiones según el tamaño (Aro exterior + Círculo central equilibrado en proporción áurea clásica de sellos: ~50% centro, ~25% aro a cada lado)
   const sizeMap = {
     sm: {
       box: "w-24 h-24",
       borderOuter: "border-2",
       borderInner: "border",
-      centerDisk: "w-15 h-15",
-      centerVector: "w-8 h-8",
-      catIconSize: 26,
+      centerDisk: "w-11 h-11",
+      centerVector: "w-6 h-6",
+      catIconSize: 22,
       numberBadge: "text-[7.5px] px-1 py-0.2",
+      topOffset: "top-1 px-2",
+      bottomOffset: "bottom-1 px-1",
     },
     md: {
       box: "w-28 h-28",
       borderOuter: "border-[2px]",
       borderInner: "border-[1.5px]",
-      centerDisk: "w-18 h-18",
-      centerVector: "w-10 h-10",
-      catIconSize: 34,
+      centerDisk: "w-13 h-13",
+      centerVector: "w-7 h-7",
+      catIconSize: 26,
       numberBadge: "text-[8.5px] px-1.5 py-0.5",
+      topOffset: "top-1.5 px-2.5",
+      bottomOffset: "bottom-1.5 px-1",
     },
     lg: {
       box: "w-36 h-36",
       borderOuter: "border-[2.5px]",
       borderInner: "border-2",
-      centerDisk: "w-24 h-24",
-      centerVector: "w-14 h-14",
-      catIconSize: 46,
+      centerDisk: "w-17 h-17",
+      centerVector: "w-9 h-9",
+      catIconSize: 34,
       numberBadge: "text-[10px] px-2.5 py-0.5",
+      topOffset: "top-2 px-3",
+      bottomOffset: "bottom-2 px-1",
     },
     xl: {
       box: "w-48 h-48",
       borderOuter: "border-4",
       borderInner: "border-2",
-      centerDisk: "w-32 h-32",
-      centerVector: "w-20 h-20",
-      catIconSize: 62,
+      centerDisk: "w-24 h-24",
+      centerVector: "w-13 h-13",
+      catIconSize: 48,
       numberBadge: "text-xs px-3 py-1",
+      topOffset: "top-2.5 px-4",
+      bottomOffset: "bottom-2.5 px-1.5",
     },
     xxl: {
-      box: "w-72 h-72",
+      box: "w-64 h-64 sm:w-72 sm:h-72",
       borderOuter: "border-4",
       borderInner: "border-[3px]",
-      centerDisk: "w-50 h-50 sm:w-52 sm:h-52",
-      centerVector: "w-32 h-32",
-      catIconSize: 96,
-      numberBadge: "text-sm px-3.5 py-1",
+      centerDisk: "w-32 h-32 sm:w-36 sm:h-36",
+      centerVector: "w-18 h-18 sm:w-20 sm:h-20",
+      catIconSize: 68,
+      numberBadge: "text-xs px-3 py-0.5",
+      topOffset: "top-3 sm:top-3.5 px-5 sm:px-6",
+      bottomOffset: "bottom-3 sm:bottom-3.5 px-2",
     },
   };
 
@@ -235,7 +246,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       )}
 
       {/* 2. Cabecera Superior del Sello con Adaptación Dinámica al Nombre (Sin "...") */}
-      <div className="absolute top-1.5 inset-x-0 text-center px-2.5 z-10 flex items-center justify-center min-h-[1.25rem]">
+      <div className={`absolute ${s.topOffset} inset-x-0 text-center z-10 flex items-center justify-center min-h-[1.25rem]`}>
         <span
           className={`font-black uppercase break-words block ${topTextClass} ${
             topMaxLines > 1 ? "line-clamp-2" : ""
@@ -288,7 +299,7 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       </div>
 
       {/* 4. Etiqueta Inferior: Número de Sello / Fecha / Corona de Certificación */}
-      <div className="absolute bottom-1.5 inset-x-0 text-center px-1 z-10">
+      <div className={`absolute ${s.bottomOffset} inset-x-0 text-center z-10`}>
         {es_sello_especial ? (
           <span
             style={{
@@ -326,10 +337,10 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       </div>
 
       {/* 5. Marcas de Autenticidad Estrellas Laterales */}
-      <span className={`absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] ${es_sello_especial ? "text-[#D97706] font-bold" : "opacity-70"}`}>
+      <span className={`absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 text-[9px] sm:text-[10px] ${es_sello_especial ? "text-[#D97706] font-bold" : "opacity-70"}`}>
         ★
       </span>
-      <span className={`absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] ${es_sello_especial ? "text-[#D97706] font-bold" : "opacity-70"}`}>
+      <span className={`absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 text-[9px] sm:text-[10px] ${es_sello_especial ? "text-[#D97706] font-bold" : "opacity-70"}`}>
         ★
       </span>
 

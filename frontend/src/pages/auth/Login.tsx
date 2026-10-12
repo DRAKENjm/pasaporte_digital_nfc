@@ -17,7 +17,7 @@ import { homePathForRole } from "../../utils/roles";
 export const Login: React.FC = () => {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -33,6 +33,20 @@ export const Login: React.FC = () => {
       setErrorMsg("Tu sesión se cerró por inactividad.");
     }
 
+    // Cancelar activamente cualquier ventana flotante o diálogo automático de Google (One Tap / FedCM)
+    const dismissGooglePrompt = () => {
+      try {
+        if (typeof window !== "undefined" && (window as any).google?.accounts?.id) {
+          (window as any).google.accounts.id.cancel();
+        }
+      } catch {
+        // Ignorar si el script de Google aún no está listo
+      }
+    };
+    dismissGooglePrompt();
+    const t1 = setTimeout(dismissGooglePrompt, 250);
+    const t2 = setTimeout(dismissGooglePrompt, 800);
+
     // Cargar correo recordado si el usuario marcó "Recordarme" previamente
     const savedEmail = localStorage.getItem("remembered_identifier");
     if (savedEmail) {
@@ -41,6 +55,12 @@ export const Login: React.FC = () => {
     }
     // Purga de seguridad: eliminar cualquier contraseña en texto plano guardada en el navegador
     localStorage.removeItem("remembered_password");
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      dismissGooglePrompt();
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,7 +128,7 @@ export const Login: React.FC = () => {
 
       {/* Form Box overlapping the header */}
       <div className="flex-1 bg-white px-8 sm:px-10 pt-10 pb-10 rounded-t-[32px] -mt-8 relative z-20 flex flex-col shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        
+
         {errorMsg && (
           <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-100 flex gap-3 items-start animate-fadeIn">
             <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
@@ -170,7 +190,7 @@ export const Login: React.FC = () => {
                 Recordarme
               </label>
             </div>
-            
+
             <Link
               to="/auth/recover"
               className="text-xs text-[#7C0A1E] font-bold hover:underline"
@@ -211,6 +231,8 @@ export const Login: React.FC = () => {
               onError={() => setErrorMsg("Error al conectar con Google")}
               useOneTap={false}
               auto_select={false}
+              use_fedcm_for_prompt={false}
+              cancel_on_tap_outside={true}
               shape="pill"
               text="continue_with"
               theme="outline"

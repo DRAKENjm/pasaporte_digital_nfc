@@ -128,7 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     init();
   }, [logout]);
 
-  const login = async (email: string, password: string, rememberMe: boolean = false) => {
+  const login = async (email: string, password: string, rememberMe: boolean = true) => {
     const res = await authService.login(email, password, rememberMe);
     const normalizedUser = {
       ...res.user,
