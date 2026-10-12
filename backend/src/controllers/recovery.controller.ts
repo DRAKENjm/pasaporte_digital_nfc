@@ -22,7 +22,7 @@ export const RecoveryController = {
       }
 
       const result = await query(
-        "SELECT id_usuario, email, nombres FROM usuarios WHERE LOWER(email) = $1",
+        "SELECT id_usuario, email, nombres, apellidos, telefono FROM usuarios WHERE LOWER(email) = $1",
         [email]
       );
 
@@ -47,6 +47,30 @@ export const RecoveryController = {
         const link = `${baseUrl.replace(/\/$/, "")}/auth/recover?token=${token}`;
 
         console.log(`🔑 [Recuperación de Contraseña] Enlace generado para ${user.email}: ${link}`);
+
+        // Notificar a los administradores del sistema en el panel de control
+        try {
+          const admins = await query(
+            `SELECT u.id_usuario FROM usuarios u
+             JOIN roles r ON r.id_rol = u.id_rol
+             WHERE r.nombre = 'ADMIN' AND u.estado = 1`
+          );
+          const fullName = `${user.nombres || ""} ${user.apellidos || ""}`.trim() || user.email;
+          const telInfo = user.telefono ? ` · Tel: ${user.telefono}` : "";
+          for (const adm of admins.rows) {
+            await query(
+              `INSERT INTO notificaciones (
+                id_usuario, tipo_notificacion, titulo, mensaje, canal, estado_envio, leida
+              ) VALUES ($1, 'SEGURIDAD', 'Solicitud de recuperación de contraseña', $2, 'SISTEMA', 'ENVIADO', 0)`,
+              [
+                adm.id_usuario,
+                `El usuario ${fullName} (${user.email}${telInfo}) solicitó restablecer su contraseña de acceso.`,
+              ]
+            );
+          }
+        } catch (notifErr) {
+          console.error("Error al notificar al admin sobre recuperación:", notifErr);
+        }
 
         // Enviar correo con plantilla estilizada de Pasaporte Digital
         await EmailService.sendMail(
