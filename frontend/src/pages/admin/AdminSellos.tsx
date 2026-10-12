@@ -94,8 +94,12 @@ export const AdminSellos: React.FC = () => {
   const [editImagenSello, setEditImagenSello] = useState("landmark");
   const [editColorSello, setEditColorSello] = useState("#7C0A1E");
   const [editDescripcion, setEditDescripcion] = useState("");
-  const [editMetaSellos, setEditMetaSellos] = useState(8);
+  const [editMetaSellos, setEditMetaSellos] = useState(5);
   const [editPuntosPorVisita, setEditPuntosPorVisita] = useState(20);
+  const [editTipoReinicio, setEditTipoReinicio] = useState("MENSUAL");
+  const [editFechaInicioTemp, setEditFechaInicioTemp] = useState("");
+  const [editFechaFinTemp, setEditFechaFinTemp] = useState("");
+  const [editPuntosCompletadoMeta, setEditPuntosCompletadoMeta] = useState(50);
   const [editEstado, setEditEstado] = useState("ACTIVO");
   const [customIconModeEdit, setCustomIconModeEdit] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -245,8 +249,12 @@ export const AdminSellos: React.FC = () => {
     setEditImagenSello(item.imagen_sello || item.categoria_icono || "landmark");
     setEditColorSello(item.color_sello || "#7C0A1E");
     setEditDescripcion(item.descripcion || "");
-    setEditMetaSellos(Number(item.meta_sellos ?? 8));
+    setEditMetaSellos(Math.min(28, Math.max(1, Number(item.meta_sellos ?? 5))));
     setEditPuntosPorVisita(Number(item.puntos_por_visita ?? 20));
+    setEditTipoReinicio(item.tipo_reinicio || "MENSUAL");
+    setEditFechaInicioTemp(item.fecha_inicio_temporada ? item.fecha_inicio_temporada.slice(0, 10) : "");
+    setEditFechaFinTemp(item.fecha_fin_temporada ? item.fecha_fin_temporada.slice(0, 10) : "");
+    setEditPuntosCompletadoMeta(Number(item.puntos_completado_meta ?? 50));
     setEditEstado(item.estado || "ACTIVO");
     setCustomIconModeEdit(
       !TOURISM_EXPERIENCE_ICONS.some((p) => p.id === item.imagen_sello) &&
@@ -327,9 +335,13 @@ export const AdminSellos: React.FC = () => {
         descripcion: editDescripcion.trim(),
         meta_sellos: editMetaSellos,
         puntos_por_visita: editPuntosPorVisita,
+        tipo_reinicio: editTipoReinicio,
+        fecha_inicio_temporada: editTipoReinicio === "TEMPORADA" && editFechaInicioTemp ? editFechaInicioTemp : null,
+        fecha_fin_temporada: editTipoReinicio === "TEMPORADA" && editFechaFinTemp ? editFechaFinTemp : null,
+        puntos_completado_meta: editPuntosCompletadoMeta,
         estado: editEstado,
       });
-      showToast("Diseño de sello actualizado con éxito", "success");
+      showToast("Diseño y reglas de sello actualizados con éxito", "success");
       setModalEditar(false);
       await loadSellos();
     } catch (err: any) {
@@ -654,10 +666,21 @@ export const AdminSellos: React.FC = () => {
                         )}
                       </div>
 
+                      <div className="mt-2.5 pt-2 border-t border-[#EFE7DE] flex items-center justify-between text-[11px]">
+                        <span className="text-[#8E7D7D] font-medium">Sellos del Local:</span>
+                        <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                          (Number(item.total_sellos_local) || 1) >= 5
+                            ? "bg-amber-50 text-amber-800 border border-amber-200"
+                            : "bg-blue-50 text-blue-800 border border-blue-200"
+                        }`}>
+                          {item.total_sellos_local || 1}/5 sellos máx.
+                        </span>
+                      </div>
+
                       <div className="mt-2 pt-1.5 border-t border-[#EFE7DE] flex items-center justify-between text-[11px]">
-                        <span className="text-[#8E7D7D] font-medium">Puntos por visita:</span>
-                        <span className="font-black text-[#7C0A1E] bg-[#7C0A1E]/10 px-2.5 py-0.5 rounded-lg">
-                          +{item.puntos_por_visita || 20} pts
+                        <span className="text-[#8E7D7D] font-medium">Ciclo / Bono:</span>
+                        <span className="font-bold text-[10px] text-[#2D1A1E]">
+                          {item.tipo_reinicio || "MENSUAL"} · <span className="text-emerald-700">+{item.puntos_completado_meta ?? 50} bonus</span>
                         </span>
                       </div>
                     </div>
@@ -686,16 +709,14 @@ export const AdminSellos: React.FC = () => {
                         <span>{item.sello_nfc_uid ? "Sello NFC" : "Vincular NFC"}</span>
                       </button>
 
-                      {isLugarTuristico(item) && (
-                        <button
-                          onClick={() => openEditar(item)}
-                          className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
-                          title="Editar sello del lugar turístico (auto-sellado)"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          <span>Editar</span>
-                        </button>
-                      )}
+                      <button
+                        onClick={() => openEditar(item)}
+                        className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                        title="Editar diseño y reglas del sello"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
 
                       <button
                         onClick={() => openRestablecer(item)}
@@ -1031,9 +1052,21 @@ export const AdminSellos: React.FC = () => {
                   </span>
                 </span>
                 <span className="bg-white border border-[#E8DFD5] rounded-xl px-3 py-1 text-xs font-bold text-[#2D1A1E]">
-                  Puntos por visita:{" "}
+                  Cartilla:{" "}
                   <span className="text-[#7C0A1E] font-black">
-                    +{selloSeleccionado?.puntos_por_visita || 20} pts
+                    {selloSeleccionado?.meta_sellos || 5} sellos máx.
+                  </span>
+                </span>
+                <span className="bg-white border border-[#E8DFD5] rounded-xl px-3 py-1 text-xs font-bold text-[#2D1A1E]">
+                  Ciclo:{" "}
+                  <span className="text-[#7C0A1E] font-bold">
+                    {selloSeleccionado?.tipo_reinicio || "MENSUAL"}
+                  </span>
+                </span>
+                <span className="bg-white border border-[#E8DFD5] rounded-xl px-3 py-1 text-xs font-bold text-[#2D1A1E]">
+                  Bono Meta:{" "}
+                  <span className="text-emerald-700 font-black">
+                    +{selloSeleccionado?.puntos_completado_meta ?? 50} pts
                   </span>
                 </span>
               </div>
@@ -1047,18 +1080,16 @@ export const AdminSellos: React.FC = () => {
 
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EFE7DE]">
             <div className="flex items-center gap-2">
-              {isLugarTuristico(selloSeleccionado) && (
-                <button
-                  onClick={() => {
-                    setModalVer(false);
-                    openEditar(selloSeleccionado);
-                  }}
-                  className="px-3 py-2 rounded-xl text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Editar Sello de Lugar</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  setModalVer(false);
+                  openEditar(selloSeleccionado);
+                }}
+                className="px-3 py-2 rounded-xl text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Editar Sello</span>
+              </button>
               <button
                 onClick={() => {
                   setModalVer(false);
@@ -1271,49 +1302,150 @@ export const AdminSellos: React.FC = () => {
                 </div>
               </div>
 
-              {/* Parámetros de Sellos y Puntos */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1">
-                    Meta de Sellos (Ciclo)
+              {/* Parámetros de Sellos y Ciclo */}
+              <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#EFE7DE] space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#2D1A1E]">
+                    Meta de Sellos de la Cartilla *
                   </label>
+                  <span className="text-[10px] text-[#7C0A1E] font-bold">
+                    {editMetaSellos} {editMetaSellos === 1 ? "sello" : "sellos"} para completar
+                  </span>
+                </div>
+                
+                {/* Presets rápidos */}
+                <div className="grid grid-cols-6 gap-1.5">
+                  {[5, 8, 10, 12, 15, 20].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setEditMetaSellos(num)}
+                      className={`py-1.5 rounded-lg text-xs font-black transition border ${
+                        editMetaSellos === num
+                          ? "bg-[#7C0A1E] text-white border-[#7C0A1E] shadow-2xs"
+                          : "bg-white hover:bg-[#F3ECE4] text-[#2D1A1E] border-[#E8DFD5]"
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Input exacto 1 a 28 */}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[11px] font-medium text-[#8E7D7D] whitespace-nowrap">
+                    O define un valor exacto (1 a 28 sellos):
+                  </span>
                   <input
                     type="number"
                     min={1}
-                    max={50}
+                    max={28}
                     value={editMetaSellos}
-                    onChange={(e) => setEditMetaSellos(Number(e.target.value))}
-                    className="input-base w-full text-xs font-semibold"
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(28, Number(e.target.value) || 1));
+                      setEditMetaSellos(val);
+                    }}
+                    className="input-base text-xs font-bold text-center w-20 py-1"
                   />
+                  <span className="text-[11px] text-[#8E7D7D]">sellos</span>
                 </div>
 
+                {/* Ciclo de Reinicio */}
                 <div>
-                  <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1">
-                    Puntos por Visita
+                  <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1.5">
+                    Ciclo de Reinicio de Cartilla
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={editPuntosPorVisita}
-                    onChange={(e) => setEditPuntosPorVisita(Number(e.target.value))}
-                    className="input-base w-full text-xs font-semibold"
-                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "MENSUAL", label: "Mensual", desc: "Día 1 de cada mes" },
+                      { id: "TEMPORADA", label: "Temporada", desc: "Rango de fechas" },
+                      { id: "CICLICO", label: "Continuo", desc: "Sin expiración" },
+                    ].map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setEditTipoReinicio(c.id)}
+                        className={`p-2 rounded-xl text-left border transition ${
+                          editTipoReinicio === c.id
+                            ? "bg-rose-50 border-[#7C0A1E] text-[#7C0A1E] font-bold"
+                            : "bg-white hover:bg-[#FAF8F5] border-[#E8DFD5] text-[#2D1A1E]"
+                        }`}
+                      >
+                        <p className="text-xs font-bold">{c.label}</p>
+                        <p className="text-[9px] text-[#8E7D7D]">{c.desc}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1">
-                    Estado del Sello
-                  </label>
-                  <select
-                    value={editEstado}
-                    onChange={(e) => setEditEstado(e.target.value)}
-                    className="input-base w-full text-xs font-semibold"
-                  >
-                    <option value="ACTIVO">Activo</option>
-                    <option value="INACTIVO">Inactivo</option>
-                    <option value="MODERADO">Moderado</option>
-                  </select>
+                {/* Si es Temporada */}
+                {editTipoReinicio === "TEMPORADA" && (
+                  <div className="grid grid-cols-2 gap-2 pt-1 animate-fadeIn">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">Inicio Temporada</label>
+                      <input
+                        type="date"
+                        value={editFechaInicioTemp}
+                        onChange={(e) => setEditFechaInicioTemp(e.target.value)}
+                        className="input-base w-full text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">Fin Temporada</label>
+                      <input
+                        type="date"
+                        value={editFechaFinTemp}
+                        onChange={(e) => setEditFechaFinTemp(e.target.value)}
+                        className="input-base w-full text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Puntos y Bonos */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
+                      Puntos por Visita
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={editPuntosPorVisita}
+                      onChange={(e) => setEditPuntosPorVisita(Number(e.target.value))}
+                      className="input-base w-full text-xs font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
+                      Bono Fin de Cartilla
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={5000}
+                      value={editPuntosCompletadoMeta}
+                      onChange={(e) => setEditPuntosCompletadoMeta(Number(e.target.value))}
+                      className="input-base w-full text-xs font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
+                      Estado del Sello
+                    </label>
+                    <select
+                      value={editEstado}
+                      onChange={(e) => setEditEstado(e.target.value)}
+                      className="input-base w-full text-xs font-semibold"
+                    >
+                      <option value="ACTIVO">Activo</option>
+                      <option value="INACTIVO">Inactivo</option>
+                      <option value="MODERADO">Moderado</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>

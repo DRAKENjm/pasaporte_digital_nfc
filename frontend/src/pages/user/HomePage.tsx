@@ -563,7 +563,7 @@ export const HomePage: React.FC = () => {
                   <DigitalStampBadge
                     nombre_sello={v.nombre_sello}
                     establecimiento_nombre={v.establecimiento_nombre}
-                    imagen_sello={v.imagen_sello || "☕"}
+                    imagen_sello={v.imagen_sello || "coffee"}
                     color_sello={v.color_sello || "#7C0A1E"}
                     numero_sello={v.numero_sello || 1}
                     fecha={v.fecha_hora}

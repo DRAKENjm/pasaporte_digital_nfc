@@ -333,9 +333,15 @@ export const LocalDetailPage: React.FC = () => {
                 </span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-b border-[#EFE7DE]">
-                <span className="text-[#8E7D7D] font-medium">Meta del ciclo:</span>
+                <span className="text-[#8E7D7D] font-medium">Meta de cartilla:</span>
                 <span className="font-bold text-[#2D1A1E]">
-                  {local.meta_sellos ? `${local.meta_sellos} sellos` : "10 sellos"}
+                  {local.meta_sellos ? `${local.meta_sellos} sellos` : "5 sellos"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-[#EFE7DE]">
+                <span className="text-[#8E7D7D] font-medium">Ciclo de reinicio:</span>
+                <span className="font-bold text-[#7C0A1E]">
+                  {local.tipo_reinicio || "Mensual"}
                 </span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-b border-[#EFE7DE]">
@@ -347,7 +353,7 @@ export const LocalDetailPage: React.FC = () => {
               <div className="flex items-center justify-between py-1.5">
                 <span className="text-[#8E7D7D] font-medium">Cómo coleccionarlo:</span>
                 <span className="font-semibold text-[#7C0A1E] bg-[#7C0A1E]/10 px-2 py-0.5 rounded-full text-[10px]">
-                  Acerca tu NFC en caja
+                  Acerca tu NFC en tienda
                 </span>
               </div>
             </div>

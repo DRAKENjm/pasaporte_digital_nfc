@@ -49,6 +49,9 @@ export const AdminReglas: React.FC = () => {
     establecimiento_id: "",
     nombre_accion: "Visita estándar",
     valor_puntos_por_sello: 10,
+    meta_sellos: 5,
+    tipo_reinicio: "MENSUAL",
+    puntos_completado_meta: 50,
     limite_diario_por_usuario: 1,
     estado: "ACTIVA",
     fecha_inicio: "",
@@ -90,6 +93,9 @@ export const AdminReglas: React.FC = () => {
       valor_puntos_por_sello: 20,
       limite_diario_por_usuario: 1,
       estado: "ACTIVA",
+      tipo_reinicio: "MENSUAL",
+      meta_sellos: 5,
+      puntos_completado_meta: 50,
       fecha_inicio: "",
       fecha_fin: "",
     });
@@ -106,6 +112,9 @@ export const AdminReglas: React.FC = () => {
       valor_puntos_por_sello: r.valor_puntos_por_sello || 20,
       limite_diario_por_usuario: r.limite_diario_por_usuario || 1,
       estado: r.estado || "ACTIVA",
+      tipo_reinicio: r.tipo_reinicio || "MENSUAL",
+      meta_sellos: r.meta_sellos ? Math.max(1, Math.min(28, Number(r.meta_sellos))) : 5,
+      puntos_completado_meta: r.puntos_completado_meta ?? 50,
       fecha_inicio: r.fecha_inicio ? r.fecha_inicio.slice(0, 10) : "",
       fecha_fin: r.fecha_fin ? r.fecha_fin.slice(0, 10) : "",
     });
@@ -134,26 +143,39 @@ export const AdminReglas: React.FC = () => {
       return;
     }
 
+    if (form.tipo_reinicio === "TEMPORADA") {
+      if (!form.fecha_inicio || !form.fecha_fin) {
+        setErrors({ fecha_inicio: "Para modalidad por temporada debes indicar fecha de inicio y fin" });
+        return;
+      }
+      if (new Date(form.fecha_fin) <= new Date(form.fecha_inicio)) {
+        setErrors({ fecha_fin: "La fecha de fin debe ser posterior a la de inicio" });
+        return;
+      }
+    }
+
     setSaving(true);
     setErrors({});
     try {
+      const payload = {
+        nombre_accion: form.nombre_accion.trim(),
+        valor_puntos_por_sello: Number(form.valor_puntos_por_sello),
+        limite_diario_por_usuario: Number(form.limite_diario_por_usuario),
+        estado: form.estado,
+        tipo_reinicio: form.tipo_reinicio || "MENSUAL",
+        meta_sellos: Math.max(1, Math.min(28, Number(form.meta_sellos) || 5)),
+        puntos_completado_meta: Number(form.puntos_completado_meta) || 50,
+        fecha_inicio: form.tipo_reinicio === "TEMPORADA" ? (form.fecha_inicio || null) : null,
+        fecha_fin: form.tipo_reinicio === "TEMPORADA" ? (form.fecha_fin || null) : null,
+      };
+
       if (isEditing && selectedRegla) {
-        await api.patch(`/admin/reglas-sellos/${selectedRegla.id}`, {
-          nombre_accion: form.nombre_accion.trim(),
-          valor_puntos_por_sello: Number(form.valor_puntos_por_sello),
-          limite_diario_por_usuario: Number(form.limite_diario_por_usuario),
-          estado: form.estado,
-          fecha_inicio: form.fecha_inicio || null,
-          fecha_fin: form.fecha_fin || null,
-        });
+        await api.patch(`/admin/reglas-sellos/${selectedRegla.id}`, payload);
         showToast("Regla actualizada con éxito", "success");
       } else {
         await api.post("/admin/reglas-sellos", {
-          ...form,
-          valor_puntos_por_sello: Number(form.valor_puntos_por_sello),
-          limite_diario_por_usuario: Number(form.limite_diario_por_usuario),
-          fecha_inicio: form.fecha_inicio || null,
-          fecha_fin: form.fecha_fin || null,
+          ...payload,
+          establecimiento_id: form.establecimiento_id,
         });
         showToast("Regla creada con éxito", "success");
       }
@@ -309,9 +331,10 @@ export const AdminReglas: React.FC = () => {
                 <tr>
                   <th className="py-3.5 px-4">Acción / Beneficio</th>
                   <th className="py-3.5 px-4">Local Afiliado</th>
+                  <th className="py-3.5 px-4 text-center">Cartilla & Meta</th>
+                  <th className="py-3.5 px-4 text-center">Ciclo / Reinicio</th>
                   <th className="py-3.5 px-4 text-center">Puntos / Sello</th>
                   <th className="py-3.5 px-4 text-center">Límite Diario</th>
-                  <th className="py-3.5 px-4 text-center">Temporada</th>
                   <th className="py-3.5 px-4 text-center">Estado</th>
                   <th className="py-3.5 px-4 text-right">Acciones</th>
                 </tr>
@@ -347,6 +370,44 @@ export const AdminReglas: React.FC = () => {
                       </span>
                     </td>
 
+                    {/* Cartilla & Meta */}
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                      <div className="inline-flex flex-col items-center">
+                        <span className="inline-flex items-center gap-1 font-bold text-xs text-[#7C0A1E] dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-full border border-rose-200/60">
+                          {r.meta_sellos || 5} sellos
+                        </span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                          +{r.puntos_completado_meta || 50} pts bonus meta
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Ciclo / Reinicio */}
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                      {r.tipo_reinicio === "TEMPORADA" ? (
+                        <div className="inline-flex flex-col items-center">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60">
+                            Temporada
+                          </span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            {r.fecha_inicio ? new Date(r.fecha_inicio).toLocaleDateString() : "—"} al{" "}
+                            {r.fecha_fin ? new Date(r.fecha_fin).toLocaleDateString() : "—"}
+                          </span>
+                        </div>
+                      ) : r.tipo_reinicio === "CICLICO" ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border border-purple-200/60">
+                          Cíclico Continuo
+                        </span>
+                      ) : (
+                        <div className="inline-flex flex-col items-center">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200/60">
+                            Mensual
+                          </span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">Reinicia el día 1</span>
+                        </div>
+                      )}
+                    </td>
+
                     {/* Puntos por sello */}
                     <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-200/60 dark:border-teal-500/20">
@@ -360,19 +421,6 @@ export const AdminReglas: React.FC = () => {
                       <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                         {r.limite_diario_por_usuario} {r.limite_diario_por_usuario === 1 ? "sello/día" : "sellos/día"}
                       </span>
-                    </td>
-
-                    {/* Temporada */}
-                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                      {r.fecha_inicio || r.fecha_fin ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                          <Calendar className="w-3 h-3 text-slate-400" />
-                          {r.fecha_inicio ? new Date(r.fecha_inicio).toLocaleDateString() : "Inicio"} -{" "}
-                          {r.fecha_fin ? new Date(r.fecha_fin).toLocaleDateString() : "Fin"}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-xs">— Permanente —</span>
-                      )}
                     </td>
 
                     {/* Estado */}
@@ -472,7 +520,7 @@ export const AdminReglas: React.FC = () => {
       <Modal
         open={modalForm}
         onClose={() => setModalForm(false)}
-        title={isEditing ? "Editar Regla de Sellos" : "Nueva Regla de Sellos"}
+        title={isEditing ? "Editar Regla de Sellos y Ciclo" : "Nueva Regla de Sellos y Ciclo"}
         size="md"
       >
         <form onSubmit={handleSave} className="space-y-4">
@@ -483,13 +531,13 @@ export const AdminReglas: React.FC = () => {
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#8E7D7D] block">
-                  Establecimiento Vinculado (Fijo)
+                  Establecimiento Vinculado
                 </span>
                 <h4 className="text-xs font-bold text-[#2D1A1E] truncate">
                   {selectedRegla?.establecimiento_nombre || (selectedRegla as any)?.razon_social || "Local Seleccionado"}
                 </h4>
                 <p className="text-[11px] text-[#8E7D7D] mt-0.5">
-                  Modificando la regla de fidelización y valor de puntos para este local.
+                  Modificando la regla de sellos, ciclo y bonificaciones de este local.
                 </p>
               </div>
             </div>
@@ -518,7 +566,7 @@ export const AdminReglas: React.FC = () => {
 
           <Input
             label="Nombre de la acción o beneficio *"
-            placeholder="Ej: Visita estándar, Consumo > S/. 50, Promo Feriado"
+            placeholder="Ej: Visita estándar, Fidelización de la Casa"
             value={form.nombre_accion}
             required
             error={errors.nombre_accion}
@@ -527,7 +575,113 @@ export const AdminReglas: React.FC = () => {
             }
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Selector de Cantidad de Sellos por Local (1 a 28 sellos) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868]">
+                Cantidad de sellos por local (Meta de la Cartilla) *
+              </label>
+              <span className="text-xs font-bold text-[#7C0A1E] bg-[#7C0A1E]/10 px-2 py-0.5 rounded-md">
+                {form.meta_sellos} {form.meta_sellos === 1 ? "sello" : "sellos"}
+              </span>
+            </div>
+
+            {/* Presets rápidos */}
+            <div className="grid grid-cols-6 gap-1.5">
+              {[5, 8, 10, 12, 15, 20].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setForm({ ...form, meta_sellos: num })}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition border ${
+                    form.meta_sellos === num
+                      ? "bg-[#7C0A1E] text-white border-[#7C0A1E] shadow-sm"
+                      : "bg-[#FAF8F5] text-[#2D1A1E] border-[#EFE7DE] hover:bg-white"
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+
+            {/* Input personalizado 1 a 28 */}
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[11px] font-medium text-[#8E7D7D] whitespace-nowrap">
+                O ingresa un valor exacto (1 a 28):
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={28}
+                value={form.meta_sellos}
+                onChange={(e) => {
+                  const val = Math.max(1, Math.min(28, Number(e.target.value) || 1));
+                  setForm({ ...form, meta_sellos: val });
+                }}
+                className="input-base text-xs font-bold text-center w-24 py-1.5"
+              />
+              <span className="text-[11px] text-[#8E7D7D]">sellos</span>
+            </div>
+
+            <p className="text-[11px] text-[#8E7D7D]">
+              El cliente deberá acumular {form.meta_sellos} sellos para completar la cartilla y recibir la recompensa (máximo 28 sellos por ciclo).
+            </p>
+          </div>
+
+          {/* Modalidad de Reinicio */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868]">
+              Modalidad de reinicio / vigencia *
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: "MENSUAL", label: "Mensual", desc: "Reinicia el 1° de cada mes" },
+                { id: "TEMPORADA", label: "Por Temporada", desc: "Rango de fechas fijas" },
+                { id: "CICLICO", label: "Cíclico", desc: "Se renueva al completar" },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setForm({ ...form, tipo_reinicio: m.id })}
+                  className={`p-2.5 rounded-xl text-left transition border ${
+                    form.tipo_reinicio === m.id
+                      ? "bg-[#7C0A1E]/10 border-[#7C0A1E] text-[#7C0A1E]"
+                      : "bg-[#FAF8F5] border-[#EFE7DE] text-[#2D1A1E] hover:bg-white"
+                  }`}
+                >
+                  <span className="block text-xs font-bold">{m.label}</span>
+                  <span className="block text-[10px] text-[#8E7D7D] mt-0.5">{m.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Fechas de Temporada si aplica */}
+          {form.tipo_reinicio === "TEMPORADA" && (
+            <div className="grid grid-cols-2 gap-3 bg-amber-50/70 p-3 rounded-2xl border border-amber-200/80">
+              <Input
+                label="Inicio de temporada *"
+                type="date"
+                required
+                value={form.fecha_inicio}
+                error={errors.fecha_inicio}
+                onChange={(e) =>
+                  setForm({ ...form, fecha_inicio: e.target.value })
+                }
+              />
+              <Input
+                label="Fin de temporada *"
+                type="date"
+                required
+                value={form.fecha_fin}
+                error={errors.fecha_fin}
+                onChange={(e) => setForm({ ...form, fecha_fin: e.target.value })}
+              />
+            </div>
+          )}
+
+          {/* Puntos y Bonus */}
+          <div className="grid grid-cols-3 gap-3">
             <Input
               label="Puntos por sello *"
               type="number"
@@ -541,7 +695,19 @@ export const AdminReglas: React.FC = () => {
               }
             />
             <Input
-              label="Límite diario por cliente *"
+              label="Bonus al completar *"
+              type="number"
+              min={0}
+              value={form.puntos_completado_meta}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  puntos_completado_meta: Math.max(0, Number(e.target.value)),
+                })
+              }
+            />
+            <Input
+              label="Límite diario/cliente *"
               type="number"
               min={1}
               value={form.limite_diario_por_usuario}
@@ -551,23 +717,6 @@ export const AdminReglas: React.FC = () => {
                   limite_diario_por_usuario: Math.max(1, Number(e.target.value)),
                 })
               }
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Inicio de temporada (Opcional)"
-              type="date"
-              value={form.fecha_inicio}
-              onChange={(e) =>
-                setForm({ ...form, fecha_inicio: e.target.value })
-              }
-            />
-            <Input
-              label="Fin de temporada (Opcional)"
-              type="date"
-              value={form.fecha_fin}
-              onChange={(e) => setForm({ ...form, fecha_fin: e.target.value })}
             />
           </div>
 
@@ -633,22 +782,41 @@ export const AdminReglas: React.FC = () => {
                 </p>
               </div>
               <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                <p className="text-[10px] uppercase font-bold text-slate-400">Cartilla & Meta</p>
+                <p className="text-base font-bold text-[#7C0A1E] dark:text-rose-400 mt-0.5">
+                  {selectedRegla.meta_sellos || 5} sellos
+                </p>
+                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                  +{selectedRegla.puntos_completado_meta || 50} pts bonus al completar
+                </p>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                <p className="text-[10px] uppercase font-bold text-slate-400">Modalidad de Reinicio</p>
+                <p className="text-xs font-bold text-slate-900 dark:text-white mt-1">
+                  {selectedRegla.tipo_reinicio === "TEMPORADA"
+                    ? "Por Temporada"
+                    : selectedRegla.tipo_reinicio === "CICLICO"
+                    ? "Cíclico Continuo"
+                    : "Mensual (Día 1 de cada mes)"}
+                </p>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
                 <p className="text-[10px] uppercase font-bold text-slate-400">Límite Diario</p>
                 <p className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
                   {selectedRegla.limite_diario_por_usuario} por cliente
                 </p>
               </div>
               <div className="col-span-2 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Vigencia / Temporada</p>
+                <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Vigencia / Fechas de Temporada</p>
                 <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  {selectedRegla.fecha_inicio || selectedRegla.fecha_fin ? (
+                  {selectedRegla.tipo_reinicio === "TEMPORADA" && (selectedRegla.fecha_inicio || selectedRegla.fecha_fin) ? (
                     <span>
                       Desde {selectedRegla.fecha_inicio ? new Date(selectedRegla.fecha_inicio).toLocaleDateString() : "el inicio"} hasta{" "}
                       {selectedRegla.fecha_fin ? new Date(selectedRegla.fecha_fin).toLocaleDateString() : "fin indeterminado"}
                     </span>
                   ) : (
-                    <span>Regla permanente activa</span>
+                    <span>Ciclo regular activo sin fecha de vencimiento rígida</span>
                   )}
                 </p>
               </div>

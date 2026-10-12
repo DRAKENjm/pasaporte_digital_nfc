@@ -84,9 +84,26 @@ export interface ReglaSello {
   valor_puntos_por_sello: number;
   limite_diario_por_usuario: number;
   estado: "ACTIVA" | "INACTIVA" | string;
+  tipo_reinicio?: "MENSUAL" | "TEMPORADA" | "CICLICO" | "SIN_REINICIO" | string;
+  meta_sellos?: number;
+  puntos_completado_meta?: number;
   fecha_inicio?: string | null;
   fecha_fin?: string | null;
   created_at?: string;
+}
+
+export interface DisenoSelloLocal {
+  id_programa: number | string;
+  nombre_sello: string;
+  imagen_sello: string;
+  color_sello: string;
+  es_activo_entrega?: boolean;
+  mes_asignado?: string | null;
+  temporada_nombre?: string | null;
+  tipo_reinicio?: string;
+  ganado?: boolean;
+  fecha_ganado?: string | null;
+  es_sello_especial?: boolean;
 }
 
 export interface Publicacion {

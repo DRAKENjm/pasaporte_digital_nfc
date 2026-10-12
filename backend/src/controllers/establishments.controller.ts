@@ -41,7 +41,18 @@ const establecimientoDelUsuario = async (
 
 /** Valida y normaliza el cuerpo de un diseño de sello. */
 const validarDiseñoSello = (body: any) => {
-  const { nombre_sello, imagen_sello, color_sello, descripcion, meta_sellos } = body;
+  const {
+    nombre_sello,
+    imagen_sello,
+    color_sello,
+    descripcion,
+    meta_sellos,
+    tipo_reinicio,
+    fecha_inicio,
+    fecha_fin,
+    puntos_completado_meta,
+    sello_especial_icono,
+  } = body;
   if (typeof nombre_sello !== "string" || !nombre_sello.trim() || nombre_sello.trim().length > 100) {
     throw new ApiError(400, "El nombre del sello es obligatorio y admite hasta 100 caracteres");
   }
@@ -54,15 +65,41 @@ const validarDiseñoSello = (body: any) => {
   if (typeof descripcion !== "string" || descripcion.trim().length > 255) {
     throw new ApiError(400, "La descripción admite hasta 255 caracteres");
   }
-  if (!Number.isInteger(meta_sellos) || meta_sellos < 4 || meta_sellos > 20) {
-    throw new ApiError(400, "La meta debe ser un número entero entre 4 y 20 sellos");
+  const meta = Number(meta_sellos);
+  if (!Number.isInteger(meta) || meta < 1 || meta > 28) {
+    throw new ApiError(400, "La cantidad de sellos por cartilla debe ser un número entero entre 1 y 28 sellos");
   }
+  let reinicio = tipo_reinicio || "MENSUAL";
+  if (!["MENSUAL", "TEMPORADA", "CICLICO", "SIN_REINICIO"].includes(reinicio)) {
+    reinicio = "MENSUAL";
+  }
+  let fInicio = fecha_inicio ? new Date(fecha_inicio) : null;
+  let fFin = fecha_fin ? new Date(fecha_fin) : null;
+  if (reinicio === "TEMPORADA") {
+    if (!fInicio || isNaN(fInicio.getTime()) || !fFin || isNaN(fFin.getTime())) {
+      throw new ApiError(400, "Para un reinicio por temporada debes definir la fecha de inicio y fin de la temporada");
+    }
+    if (fFin <= fInicio) {
+      throw new ApiError(400, "La fecha de fin de temporada debe ser posterior a la fecha de inicio");
+    }
+  }
+  const puntosMeta = Number(puntos_completado_meta);
+  const ptsMeta = Number.isFinite(puntosMeta) && puntosMeta >= 0 ? puntosMeta : 50;
+
   return {
     nombre: nombre_sello.trim(),
     imagen: imagen_sello.trim(),
     color: color_sello.trim(),
     descripcion: descripcion.trim(),
-    meta: meta_sellos,
+    meta,
+    tipo_reinicio: reinicio,
+    fecha_inicio: fInicio ? fInicio.toISOString() : null,
+    fecha_fin: fFin ? fFin.toISOString() : null,
+    puntos_completado_meta: ptsMeta,
+    sello_especial_icono: typeof sello_especial_icono === "string" ? sello_especial_icono.trim().slice(0, 255) : "trophy",
+    mes_asignado: typeof body.mes_asignado === "string" ? body.mes_asignado.trim().slice(0, 30) : null,
+    temporada_nombre: typeof body.temporada_nombre === "string" ? body.temporada_nombre.trim().slice(0, 100) : null,
+    es_activo_entrega: Boolean(body.es_activo_entrega),
   };
 };
 
@@ -1096,8 +1133,8 @@ export const EstablishmentsController = {
       if (typeof descripcion !== "string" || descripcion.trim().length > 255) {
         throw new ApiError(400, "La descripción admite hasta 255 caracteres");
       }
-      if (!Number.isInteger(meta_sellos) || meta_sellos < 4 || meta_sellos > 20) {
-        throw new ApiError(400, "La meta debe ser un número entero entre 4 y 20 sellos");
+      if (!Number.isInteger(meta_sellos) || meta_sellos < 1 || meta_sellos > 28) {
+        throw new ApiError(400, "La cantidad de sellos debe ser un número entero entre 1 y 28 sellos");
       }
 
       client = await pool.connect();
@@ -1180,6 +1217,14 @@ export const EstablishmentsController = {
         );
       }
 
+      // Sincronizar regla administrativa de sellos para el panel Admin
+      await client.query(
+        `UPDATE reglas_sellos
+         SET meta_sellos = $1
+         WHERE establecimiento_id = $2`,
+        [meta_sellos, idEstablecimiento],
+      );
+
       await client.query("COMMIT");
       sendResponse(res, 200, result.rows[0], "Sello digital guardado exitosamente");
     } catch (error) {
@@ -1197,6 +1242,12 @@ export const EstablishmentsController = {
       const result = await query(
         `SELECT ps.id_programa, ps.nombre_sello, ps.imagen_sello, ps.color_sello,
                 ps.descripcion, ps.meta_sellos, ps.estado, ps.fecha_actualizacion,
+                COALESCE(ps.es_activo_entrega, false) AS es_activo_entrega,
+                ps.mes_asignado, ps.temporada_nombre,
+                COALESCE(ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
+                ps.fecha_inicio, ps.fecha_fin,
+                COALESCE(ps.puntos_completado_meta, 50) AS puntos_completado_meta,
+                COALESCE(ps.sello_especial_icono, 'trophy') AS sello_especial_icono,
                 e.nombre_comercial AS establecimiento_nombre,
                 COALESCE(ps.puntos_por_visita,
                   (SELECT rp.valor FROM reglas_puntos rp
@@ -1207,7 +1258,7 @@ export const EstablishmentsController = {
          FROM programas_sellos ps
          JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
          WHERE ps.id_establecimiento = $1
-         ORDER BY (ps.estado = 'ACTIVO') DESC, ps.fecha_actualizacion DESC, ps.id_programa DESC`,
+         ORDER BY ps.es_activo_entrega DESC, (ps.estado = 'ACTIVO') DESC, ps.id_programa ASC`,
         [est.id_establecimiento],
       );
       sendResponse(res, 200, result.rows, "Diseños de sello del establecimiento");
@@ -1279,11 +1330,29 @@ export const EstablishmentsController = {
         req.user!.id,
         req.body?.id_sucursal,
       );
+      // Límite de negocio: máximo 5 diseños de sellos por establecimiento
+      const totalSellos = await client.query(
+        `SELECT COUNT(*)::int AS total FROM programas_sellos WHERE id_establecimiento = $1`,
+        [est.id_establecimiento],
+      );
+      const totalExistentes = totalSellos.rows[0]?.total || 0;
+      const debeSerActivoEntrega = d.es_activo_entrega || totalExistentes === 0;
+
+      if (debeSerActivoEntrega) {
+        await client.query(
+          `UPDATE programas_sellos SET es_activo_entrega = FALSE WHERE id_establecimiento = $1`,
+          [est.id_establecimiento],
+        );
+      }
+
       const result = await client.query(
         `INSERT INTO programas_sellos (
            id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita,
-           nombre_sello, imagen_sello, color_sello, estado, fecha_inicio, fecha_actualizacion
-         ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7, 'ACTIVO', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+           nombre_sello, imagen_sello, color_sello, estado,
+           tipo_reinicio, fecha_inicio, fecha_fin, puntos_completado_meta, sello_especial_icono,
+           mes_asignado, temporada_nombre, es_activo_entrega,
+           fecha_actualizacion
+         ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7, 'ACTIVO', $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
          RETURNING *`,
         [
           est.id_establecimiento,
@@ -1293,6 +1362,14 @@ export const EstablishmentsController = {
           d.nombre,
           d.imagen,
           d.color,
+          d.tipo_reinicio,
+          d.fecha_inicio,
+          d.fecha_fin,
+          d.puntos_completado_meta,
+          d.sello_especial_icono,
+          d.mes_asignado,
+          d.temporada_nombre,
+          debeSerActivoEntrega,
         ],
       );
       await client.query("COMMIT");
@@ -1326,16 +1403,7 @@ export const EstablishmentsController = {
         [idPrograma, est.id_establecimiento],
       );
       if (!check.rows[0]) throw new ApiError(404, "Diseño de sello no encontrado");
-      if (Number(check.rows[0].meta_sellos) !== d.meta) {
-        const tieneSellos = await client.query(
-          `SELECT EXISTS (SELECT 1 FROM sellos_digitales
-                          WHERE id_programa = $1 AND estado = 'OTORGADO') AS tiene_sellos`,
-          [idPrograma],
-        );
-        if (tieneSellos.rows[0]?.tiene_sellos) {
-          throw new ApiError(409, "Este diseño ya tiene sellos otorgados. Crea un nuevo diseño para cambiar la meta y conservar el historial.");
-        }
-      }
+
       const result = await client.query(
         `UPDATE programas_sellos
          SET nombre_sello = $2,
@@ -1343,13 +1411,84 @@ export const EstablishmentsController = {
              color_sello = $4,
              descripcion = $5,
              meta_sellos = $6::int,
+             tipo_reinicio = $7,
+             fecha_inicio = $8,
+             fecha_fin = $9,
+             puntos_completado_meta = $10,
+             sello_especial_icono = $11,
+             mes_asignado = $12,
+             temporada_nombre = $13,
              fecha_actualizacion = CURRENT_TIMESTAMP
          WHERE id_programa = $1
          RETURNING *`,
-        [idPrograma, d.nombre, d.imagen, d.color, d.descripcion, d.meta],
+        [
+          idPrograma,
+          d.nombre,
+          d.imagen,
+          d.color,
+          d.descripcion,
+          d.meta,
+          d.tipo_reinicio,
+          d.fecha_inicio,
+          d.fecha_fin,
+          d.puntos_completado_meta,
+          d.sello_especial_icono,
+          d.mes_asignado,
+          d.temporada_nombre,
+        ],
       );
+
+      // Sincronizar regla administrativa de sellos para el panel Admin
+      await client.query(
+        `UPDATE reglas_sellos
+         SET meta_sellos = $1,
+             tipo_reinicio = $2,
+             puntos_completado_meta = $3,
+             fecha_inicio = $4,
+             fecha_fin = $5
+         WHERE establecimiento_id = $6`,
+        [d.meta, d.tipo_reinicio, d.puntos_completado_meta, d.fecha_inicio, d.fecha_fin, est.id_establecimiento],
+      );
+
       await client.query("COMMIT");
       sendResponse(res, 200, result.rows[0], "Diseño de sello actualizado");
+    } catch (error) {
+      if (client) await client.query("ROLLBACK");
+      next(error);
+    } finally {
+      client?.release();
+    }
+  },
+
+  /** Activar un diseño específico como el sello oficial de entrega actual */
+  async activarSelloParaEntrega(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    let client: any;
+    try {
+      const idPrograma = req.params.id;
+      if (!isValidId(idPrograma)) throw new ApiError(400, "Identificador de sello inválido");
+      client = await pool.connect();
+      await client.query("BEGIN");
+      const est = await establecimientoDelUsuario(
+        (sql, params) => client.query(sql, params),
+        req.user!.id,
+        req.body?.id_sucursal,
+      );
+      // Desactivar entrega anterior en los otros sellos del local
+      await client.query(
+        `UPDATE programas_sellos SET es_activo_entrega = FALSE WHERE id_establecimiento = $1`,
+        [est.id_establecimiento],
+      );
+      // Activar este sello como el que se entrega a los clientes
+      const result = await client.query(
+        `UPDATE programas_sellos
+         SET es_activo_entrega = TRUE, estado = 'ACTIVO', fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_programa = $1 AND id_establecimiento = $2
+         RETURNING *`,
+        [idPrograma, est.id_establecimiento],
+      );
+      if (!result.rows[0]) throw new ApiError(404, "Sello no encontrado en este establecimiento");
+      await client.query("COMMIT");
+      sendResponse(res, 200, result.rows[0], "Sello activado como el diseño en entrega actual para este local");
     } catch (error) {
       if (client) await client.query("ROLLBACK");
       next(error);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Crown } from "lucide-react";
 import { CategoryIcon } from "./CategoryIcon";
 import { getStampIcon } from "../../utils/stampIcons";
 
@@ -48,6 +49,8 @@ interface DigitalStampBadgeProps {
   size?: "sm" | "md" | "lg" | "xl" | "xxl";
   rotation?: number;
   interactive?: boolean;
+  es_sello_especial?: boolean;
+  subtitulo?: string;
 }
 
 export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
@@ -61,12 +64,17 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
   size = "md",
   rotation = -3,
   interactive = false,
+  es_sello_especial = false,
+  subtitulo,
 }) => {
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     setImgError(false);
   }, [imagen_sello]);
+
+  // Si es sello especial dorado, usamos paleta dorada de certificación consular
+  const activeColor = es_sello_especial ? "#B45309" : color_sello;
 
   // Dimensiones según el tamaño
   const sizeMap = {
@@ -77,30 +85,30 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       textTop: "text-[7.5px]",
       textBottom: "text-[6.5px]",
       centerIcon: "text-xl",
-      centerVector: "w-11 h-11",
-      centerImg: "w-12 h-12 max-h-12",
-      numberBadge: "text-[8px] px-1.5 py-0.5",
+      centerVector: "w-10 h-10",
+      centerImg: "w-11 h-11 max-h-11",
+      numberBadge: "text-[7.5px] px-1 py-0.2",
     },
     md: {
       box: "w-28 h-28",
       borderOuter: "border-[2px]",
       borderInner: "border-[1.5px]",
       textTop: "text-[9px]",
-      textBottom: "text-[8px]",
+      textBottom: "text-[7.5px]",
       centerIcon: "text-3xl",
-      centerVector: "w-14 h-14",
-      centerImg: "w-15 h-15 max-h-15",
-      numberBadge: "text-[9px] px-2 py-0.5",
+      centerVector: "w-13 h-13",
+      centerImg: "w-14 h-14 max-h-14",
+      numberBadge: "text-[8.5px] px-1.5 py-0.5",
     },
     lg: {
       box: "w-36 h-36",
       borderOuter: "border-[2.5px]",
       borderInner: "border-2",
       textTop: "text-[11px]",
-      textBottom: "text-[9.5px]",
+      textBottom: "text-[9px]",
       centerIcon: "text-4xl",
-      centerVector: "w-20 h-20",
-      centerImg: "w-22 h-22 max-h-22",
+      centerVector: "w-18 h-18",
+      centerImg: "w-20 h-20 max-h-20",
       numberBadge: "text-[10px] px-2.5 py-0.5",
     },
     xl: {
@@ -108,10 +116,10 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       borderOuter: "border-4",
       borderInner: "border-2",
       textTop: "text-[13.5px]",
-      textBottom: "text-[11.5px]",
+      textBottom: "text-[11px]",
       centerIcon: "text-6xl",
-      centerVector: "w-28 h-28",
-      centerImg: "w-30 h-30 max-h-30",
+      centerVector: "w-26 h-26",
+      centerImg: "w-28 h-28 max-h-28",
       numberBadge: "text-xs px-3 py-1",
     },
     xxl: {
@@ -119,10 +127,10 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
       borderOuter: "border-4",
       borderInner: "border-[3px]",
       textTop: "text-[17px]",
-      textBottom: "text-[14px]",
+      textBottom: "text-[13.5px]",
       centerIcon: "text-8xl",
-      centerVector: "w-48 h-48",
-      centerImg: "w-48 h-48 max-h-48",
+      centerVector: "w-44 h-44",
+      centerImg: "w-46 h-46 max-h-46",
       numberBadge: "text-sm px-3.5 py-1",
     },
   };
@@ -149,35 +157,63 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
     <div
       style={{
         transform: `rotate(${rotation}deg)`,
-        color: color_sello,
-        borderColor: color_sello,
+        color: activeColor,
+        borderColor: activeColor,
       }}
       className={`
         ${s.box} relative select-none rounded-full flex flex-col items-center justify-center
         transition-all duration-300 shrink-0
+        ${es_sello_especial ? "drop-shadow-[0_4px_14px_rgba(217,119,6,0.35)]" : "drop-shadow-[0_2px_4px_rgba(0,0,0,0.06)]"}
         ${interactive ? "hover:scale-105 hover:rotate-0 cursor-pointer" : ""}
       `}
     >
-      {/* 1. Aro Exterior Doble Estilo Tinta Notarial / Passport Rubber Stamp */}
-      <div
-        style={{ borderColor: color_sello }}
-        className={`absolute inset-0 rounded-full ${s.borderOuter} opacity-85 border-dashed`}
-      />
-      <div
-        style={{ borderColor: color_sello }}
-        className={`absolute inset-1 rounded-full ${s.borderInner} opacity-90`}
-      />
+      {/* 1. Anillo Exterior Notarial / Dentado de Seguridad */}
+      {es_sello_especial ? (
+        <>
+          {/* Aureola Dorada */}
+          <div
+            className="absolute -inset-1 rounded-full opacity-30 blur-xs pointer-events-none"
+            style={{ backgroundColor: "#F59E0B" }}
+          />
+          {/* Aro exterior doble dentado */}
+          <div
+            style={{ borderColor: "#D97706" }}
+            className={`absolute inset-0 rounded-full ${s.borderOuter} border-double opacity-95`}
+          />
+          <div
+            style={{ borderColor: "#F59E0B" }}
+            className={`absolute inset-1.5 rounded-full ${s.borderInner} border-dotted opacity-90`}
+          />
+        </>
+      ) : (
+        <>
+          <div
+            style={{ borderColor: color_sello }}
+            className={`absolute inset-0 rounded-full ${s.borderOuter} opacity-85 border-dashed`}
+          />
+          <div
+            style={{ borderColor: color_sello }}
+            className={`absolute inset-1 rounded-full ${s.borderInner} opacity-90`}
+          />
+          <div
+            style={{ borderColor: color_sello }}
+            className="absolute inset-2.5 rounded-full border border-dotted opacity-40 pointer-events-none"
+          />
+        </>
+      )}
 
       {/* 2. Cabecera Curva o Superior del Sello */}
-      <div className="absolute top-1.5 inset-x-0 text-center px-2">
+      <div className="absolute top-1.5 inset-x-0 text-center px-2 z-10">
         <span
-          className={`font-black uppercase tracking-widest block truncate ${s.textTop} opacity-90`}
+          className={`font-black uppercase tracking-widest block truncate ${s.textTop} ${
+            es_sello_especial ? "text-[#92400E] font-black" : "opacity-90"
+          }`}
         >
-          {establecimiento_nombre}
+          {es_sello_especial ? "★ META COMPLETADA ★" : establecimiento_nombre}
         </span>
       </div>
 
-      {/* 3. Centro: Insignia, Imagen o Icono vectorial con tinta notarial */}
+      {/* 3. Centro: Insignia, Imagen o Icono vectorial */}
       <div className="relative z-10 flex flex-col items-center justify-center my-auto w-full px-2">
         {isImage ? (
           <img
@@ -191,23 +227,37 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
             }}
           />
         ) : StampIcon ? (
-          <StampIcon className={`${s.centerVector} drop-shadow-xs`} strokeWidth={1.6} />
+          <StampIcon
+            className={`${s.centerVector} drop-shadow-xs transition-transform`}
+            strokeWidth={es_sello_especial ? 2 : 1.7}
+          />
         ) : (
           <div
             className="flex items-center justify-center drop-shadow-xs"
-            style={{ color: color_sello }}
+            style={{ color: activeColor }}
           >
             <CategoryIcon
               icon={imagen_sello || "coffee"}
-              size={size === "sm" ? 22 : size === "md" ? 34 : size === "lg" ? 46 : 60}
+              size={size === "sm" ? 22 : size === "md" ? 32 : size === "lg" ? 44 : 58}
             />
           </div>
         )}
       </div>
 
-      {/* 4. Etiqueta de Número de Sello / Fecha */}
-      <div className="absolute bottom-1.5 inset-x-0 text-center px-1">
-        {numero_sello ? (
+      {/* 4. Etiqueta Inferior: Número de Sello / Fecha / Corona de Certificación */}
+      <div className="absolute bottom-1.5 inset-x-0 text-center px-1 z-10">
+        {es_sello_especial ? (
+          <span
+            style={{
+              backgroundColor: "#FEF3C7",
+              borderColor: "#D97706",
+              color: "#92400E",
+            }}
+            className={`inline-block font-black uppercase tracking-widest rounded-md border shadow-2xs ${s.numberBadge}`}
+          >
+            SELLO DORADO
+          </span>
+        ) : numero_sello ? (
           <span
             style={{
               backgroundColor: `${color_sello}15`,
@@ -226,20 +276,30 @@ export const DigitalStampBadge: React.FC<DigitalStampBadgeProps> = ({
           <span
             className={`font-mono font-black uppercase tracking-widest block truncate opacity-75 ${s.textBottom}`}
           >
-            CERTIFICADO
+            {subtitulo || "CERTIFICADO"}
           </span>
         )}
       </div>
 
-      {/* 5. Marca de Autenticidad Estrellas Laterales */}
-      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] opacity-70">
+      {/* 5. Marcas de Autenticidad Estrellas Laterales */}
+      <span className={`absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] ${es_sello_especial ? "text-[#D97706] font-bold" : "opacity-70"}`}>
         ★
       </span>
-      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] opacity-70">
+      <span className={`absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] ${es_sello_especial ? "text-[#D97706] font-bold" : "opacity-70"}`}>
         ★
       </span>
 
-      {/* 6. Insignia de Colección Multiplicador (ej. x2, x5, x20) */}
+      {/* 6. Insignia Especial Dorada en Esquina */}
+      {es_sello_especial && (
+        <div
+          title="¡Sello especial conmemorativo por completar la cartilla!"
+          className="absolute -top-1.5 -left-1.5 z-20 w-6 h-6 rounded-full bg-gradient-to-tr from-[#B45309] to-[#F59E0B] text-white flex items-center justify-center shadow-md border border-white animate-pulse"
+        >
+          <Crown className="w-3.5 h-3.5 text-amber-100 drop-shadow-sm" />
+        </div>
+      )}
+
+      {/* 7. Insignia de Colección Multiplicador (ej. x2, x5) */}
       {contador && contador > 1 && (
         <div
           title={`${contador} sellos acumulados en este local`}

@@ -5,7 +5,7 @@ import { Spinner } from "../../components/common/Spinner";
 import { Button } from "../../components/common/Button";
 import { Input } from "../../components/common/Input";
 import { DigitalStampBadge } from "../../components/common/DigitalStampBadge";
-import { getStampIcon } from "../../utils/stampIcons";
+import { getStampIcon, STAMP_ICONS } from "../../utils/stampIcons";
 import {
   Stamp,
   Upload,
@@ -63,8 +63,16 @@ export const CommerceSello: React.FC = () => {
   const [imagenSello, setImagenSello] = useState("icon:coffee");
   const [colorSello, setColorSello] = useState("#7C0A1E");
   const [descripcion, setDescripcion] = useState("");
-  const [metaSellos, setMetaSellos] = useState(8);
+  const [metaSellos, setMetaSellos] = useState(5);
   const [puntosPorVisita, setPuntosPorVisita] = useState(20);
+  const [tipoReinicio, setTipoReinicio] = useState("MENSUAL");
+  const [fechaInicioTemporada, setFechaInicioTemporada] = useState("");
+  const [fechaFinTemporada, setFechaFinTemporada] = useState("");
+  const [puntosCompletadoMeta, setPuntosCompletadoMeta] = useState(50);
+  const [mesAsignado, setMesAsignado] = useState("");
+  const [temporadaNombre, setTemporadaNombre] = useState("");
+  const [esActivoEntrega, setEsActivoEntrega] = useState(false);
+  const [activandoEntrega, setActivandoEntrega] = useState(false);
 
   // Interactive stamping test effect
   const [isStamping, setIsStamping] = useState(false);
@@ -76,8 +84,15 @@ export const CommerceSello: React.FC = () => {
     setImagenSello(d.imagen_sello || "icon:coffee");
     setColorSello(d.color_sello || "#7C0A1E");
     setDescripcion(d.descripcion || "");
-    setMetaSellos(d.meta_sellos ?? 8);
+    setMetaSellos(Math.min(28, Math.max(1, Number(d.meta_sellos ?? 5))));
     setPuntosPorVisita(Number(d.puntos_por_visita ?? 20));
+    setTipoReinicio(d.tipo_reinicio || "MENSUAL");
+    setFechaInicioTemporada(d.fecha_inicio_temporada ? d.fecha_inicio_temporada.slice(0, 10) : "");
+    setFechaFinTemporada(d.fecha_fin_temporada ? d.fecha_fin_temporada.slice(0, 10) : "");
+    setPuntosCompletadoMeta(Number(d.puntos_completado_meta ?? 50));
+    setMesAsignado(d.mes_asignado || "");
+    setTemporadaNombre(d.temporada_nombre || "");
+    setEsActivoEntrega(Boolean(d.es_activo_entrega));
     setEstadoEdit(d.estado ?? null);
   };
 
@@ -287,8 +302,16 @@ export const CommerceSello: React.FC = () => {
       showToast("Revisa la descripción (máximo 255 caracteres) y el color del sello", "error");
       return;
     }
-    if (!Number.isInteger(metaSellos) || metaSellos < 4 || metaSellos > 20) {
-      showToast("La meta debe ser un número entero entre 4 y 20 sellos", "error");
+    if (!Number.isInteger(metaSellos) || metaSellos < 1 || metaSellos > 28) {
+      showToast("La meta de la cartilla debe ser entre 1 y 28 sellos", "error");
+      return;
+    }
+    if (selectedId == null && sellos.length >= 5) {
+      showToast("Has alcanzado el límite máximo de 5 sellos para tu establecimiento", "info");
+      return;
+    }
+    if (tipoReinicio === "TEMPORADA" && (!fechaInicioTemporada || !fechaFinTemporada)) {
+      showToast("Debes especificar la fecha de inicio y fin para la temporada", "error");
       return;
     }
 
@@ -301,6 +324,13 @@ export const CommerceSello: React.FC = () => {
         color_sello: colorSello.trim(),
         descripcion: descripcion.trim(),
         meta_sellos: Number(metaSellos),
+        tipo_reinicio: tipoReinicio,
+        fecha_inicio_temporada: tipoReinicio === "TEMPORADA" && fechaInicioTemporada ? fechaInicioTemporada : null,
+        fecha_fin_temporada: tipoReinicio === "TEMPORADA" && fechaFinTemporada ? fechaFinTemporada : null,
+        puntos_completado_meta: Number(puntosCompletadoMeta || 50),
+        mes_asignado: mesAsignado.trim() || null,
+        temporada_nombre: temporadaNombre.trim() || null,
+        es_activo_entrega: Boolean(esActivoEntrega),
       };
       if (selectedId == null) {
         const res = await api.post("/establishments/me/sellos", { ...payload, id_sucursal: selectedSucursal });
@@ -308,7 +338,7 @@ export const CommerceSello: React.FC = () => {
         const nuevoId = res.data?.data?.id_programa;
         const lista = await fetchSellos();
         seleccionar(lista, nuevoId != null ? String(nuevoId) : null);
-        showToast("¡Nuevo sello creado y activo para tus clientes!", "success");
+        showToast("¡Nuevo sello creado y listo para tus clientes!", "success");
       } else {
         await api.put(`/establishments/me/sellos/${selectedId}${branchQuery()}`, payload);
         pendingUploadedFilename.current = null;
@@ -323,6 +353,23 @@ export const CommerceSello: React.FC = () => {
     }
   };
 
+  const handleActivarEntrega = async (d: any) => {
+    if (busy.current || activandoEntrega) return;
+    busy.current = true;
+    setActivandoEntrega(true);
+    try {
+      await api.patch(`/establishments/me/sellos/${d.id_programa}/entrega${branchQuery()}`);
+      const lista = await fetchSellos();
+      seleccionar(lista, String(d.id_programa));
+      showToast(`¡"${d.nombre_sello}" es ahora el sello en entrega activa para este local!`, "success");
+    } catch (e: any) {
+      showToast(e.response?.data?.message || "No se pudo activar este sello para entrega", "error");
+    } finally {
+      busy.current = false;
+      setActivandoEntrega(false);
+    }
+  };
+
   const handleSelect = (d: any) => {
     if (busy.current || saving || uploading || toggling) return;
     if (pendingUploadedFilename.current) void limpiarUploadPendiente();
@@ -332,6 +379,13 @@ export const CommerceSello: React.FC = () => {
 
   const handleNuevo = () => {
     if (busy.current || saving || uploading || toggling) return;
+    if (sellos.length >= 5) {
+      showToast(
+        "Has alcanzado el límite máximo de 5 sellos permitidos para tu establecimiento. Puedes editar o personalizar tus sellos existentes.",
+        "info",
+      );
+      return;
+    }
     if (pendingUploadedFilename.current) void limpiarUploadPendiente();
     setSelectedId(null);
     applyDesign({});
@@ -475,7 +529,7 @@ export const CommerceSello: React.FC = () => {
                 Mi Sello Digital
               </h1>
               <p className="text-xs text-[#8E7D7D]">
-                Personaliza la insignia que se estampará en el pasaporte de tus clientes al validar su visita
+                Gestiona tus diseños de sello y la meta de fidelización de tus clientes.
               </p>
             </div>
           </div>
@@ -501,45 +555,62 @@ export const CommerceSello: React.FC = () => {
             </label>
           )}
           <div className="flex items-center gap-2 bg-white border border-[#EFE7DE] px-3.5 py-1.5 rounded-2xl shadow-2xs text-xs">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span className="font-semibold text-[#2D1A1E]">
-            {sello?.establecimiento_nombre || "Establecimiento"}
-          </span>
-          <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
-            {sellos.reduce((acc, d) => acc + (Number(d.total_sellos_otorgados) || 0), 0)} otorgados
-          </span>
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span className="font-semibold text-[#2D1A1E]">
+              {sello?.establecimiento_nombre || "Establecimiento"}
+            </span>
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
+              {sellos.reduce((acc, d) => acc + (Number(d.total_sellos_otorgados) || 0), 0)} otorgados
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Mis diseños de sello */}
+      {/* Mis diseños de sello (Biblioteca: máx 5) */}
       <div className="bg-white rounded-3xl p-5 border border-[#EFE7DE] shadow-xs space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-bold text-[#2D1A1E] uppercase tracking-wider flex items-center gap-2">
-              <Stamp className="w-4 h-4 text-[#7C0A1E]" />
-              Mis diseños de sello
-            </h3>
-            <p className="text-[11px] text-[#8E7D7D]">
-              {sellos.length} diseño{sellos.length === 1 ? "" : "s"} ·{" "}
-              {sellos.filter((d) => d.estado === "ACTIVO").length} activo(s) disponible(s) para validar visitas
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-[#2D1A1E] uppercase tracking-wider flex items-center gap-2">
+                <Stamp className="w-4 h-4 text-[#7C0A1E]" />
+                Biblioteca de Diseños
+              </h3>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  sellos.length >= 5
+                    ? "bg-amber-50 text-amber-800 border-amber-300"
+                    : "bg-[#7C0A1E]/10 text-[#7C0A1E] border-[#7C0A1E]/20"
+                }`}
+              >
+                {sellos.length}/5 guardados
+              </span>
+            </div>
+            <p className="text-[11px] text-[#8E7D7D] mt-0.5">
+              Guarda hasta 5 diseños distintos para rotar por mes o temporada sin perder los anteriores.
             </p>
           </div>
           <button
             type="button"
             onClick={handleNuevo}
-            disabled={saving || uploading || toggling}
-            className="px-4 py-2.5 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] active:scale-95 transition-all shadow-md flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            disabled={saving || uploading || toggling || sellos.length >= 5}
+            title={sellos.length >= 5 ? "Límite de 5 diseños alcanzado" : "Crear nuevo diseño"}
+            className="px-4 py-2 rounded-2xl bg-[#7C0A1E] text-white text-xs font-bold hover:bg-[#600616] active:scale-95 transition-all shadow-xs flex items-center gap-1.5 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             Nuevo diseño
           </button>
         </div>
 
+        {sellos.length >= 5 && (
+          <div className="px-3.5 py-2 bg-amber-50 rounded-xl border border-amber-200 flex items-center gap-2 text-xs text-amber-900">
+            <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>Capacidad máxima (5 diseños). Selecciona cualquiera abajo para editarlo o cambiar su temporada.</span>
+          </div>
+        )}
+
         {sellos.length === 0 ? (
           <p className="text-xs text-[#8E7D7D] bg-[#FAF8F5] border border-[#EFE7DE] rounded-2xl p-4">
-            Aún no tienes diseños guardados. Crea el primero con "Nuevo diseño" y pulsa Crear Sello:
-            quedará activo para que tus clientes lo reciban al validar su visita.
+            Aún no tienes diseños. Pulsa "Nuevo diseño" para crear tu primer sello digital.
           </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -582,12 +653,42 @@ export const CommerceSello: React.FC = () => {
                       <p className="text-[10px] text-[#8E7D7D]">
                         meta {d.meta_sellos} · {Number(d.total_sellos_otorgados) || 0} otorgados
                       </p>
+                      <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                        {d.mes_asignado && (
+                          <span className="text-[8.5px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                            📅 {d.mes_asignado}
+                          </span>
+                        )}
+                        {d.temporada_nombre && (
+                          <span className="text-[8.5px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 truncate max-w-[120px]">
+                            🌿 {d.temporada_nombre}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mt-2.5">
-                    <div className="flex items-center gap-1.5">
+                  <div className="mt-2.5 pt-2 border-t border-[#F2ECE4] flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      {d.es_activo_entrega ? (
+                        <span className="text-[9px] font-black text-rose-800 bg-rose-100/90 px-2 py-0.5 rounded-full border border-rose-300 flex items-center gap-1 shadow-2xs">
+                          🌟 En Entrega
+                        </span>
+                      ) : activo ? (
+                        <button
+                          type="button"
+                          disabled={activandoEntrega || saving || uploading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleActivarEntrega(d);
+                          }}
+                          className="text-[9px] font-bold text-slate-700 hover:text-white hover:bg-[#7C0A1E] bg-[#FAF8F5] border border-[#E5DACD] px-2 py-0.5 rounded-full transition-all shrink-0"
+                          title="Activar este diseño para entregar a los clientes"
+                        >
+                          Entregar ahora
+                        </button>
+                      ) : null}
                       <span
-                        className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                        className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
                           activo
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                             : "bg-slate-100 text-slate-500 border-slate-200"
@@ -596,32 +697,34 @@ export const CommerceSello: React.FC = () => {
                         {activo ? "Activo" : "Inactivo"}
                       </span>
                       {sellos.length > 0 && String(sellos[0].id_programa) === String(d.id_programa) && (
-                        <span className="text-[9px] font-bold text-amber-800 bg-amber-100/70 dark:bg-amber-950/40 px-1.5 py-0.5 rounded-md border border-amber-300">
-                          Principal
+                        <span className="text-[9px] font-bold text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded-md border border-amber-300 shrink-0">
+                          Base
                         </span>
                       )}
                     </div>
 
-                    {sellos.length > 0 && String(sellos[0].id_programa) === String(d.id_programa) ? (
-                      <span
-                        className="text-[10px] font-semibold text-slate-400 cursor-not-allowed"
-                        title="El sello principal oficial siempre debe permanecer activo"
-                      >
-                        Fijo
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={toggling || saving || uploading}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleToggleEstado(d);
-                        }}
-                        className="text-[10px] font-bold text-[#7C0A1E] hover:underline disabled:opacity-50"
-                      >
-                        {activo ? "Desactivar" : "Activar"}
-                      </button>
-                    )}
+                    <div className="shrink-0 text-right">
+                      {sellos.length > 0 && String(sellos[0].id_programa) === String(d.id_programa) ? (
+                        <span
+                          className="text-[10px] font-semibold text-slate-400 cursor-not-allowed"
+                          title="El sello base oficial siempre permanece activo"
+                        >
+                          Fijo
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={toggling || saving || uploading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleToggleEstado(d);
+                          }}
+                          className="text-[10px] font-bold text-[#7C0A1E] hover:underline disabled:opacity-50"
+                        >
+                          {activo ? "Desactivar" : "Activar"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -636,14 +739,14 @@ export const CommerceSello: React.FC = () => {
           <div className="border-b border-[#EFE7DE] pb-3 flex items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-[#2D1A1E] uppercase tracking-wider flex items-center gap-2">
               <Palette className="w-4 h-4 text-[#7C0A1E]" />
-              {selectedId == null ? "Nuevo diseño de sello" : "Atributos del Sello"}
+              {selectedId == null ? "Nuevo diseño de sello" : "Personalizar Sello"}
             </h3>
             <span className="flex items-center gap-2 text-[11px] text-[#8E7D7D]">
               {selectedId == null
-                ? "Se creará como sello nuevo"
+                ? "Nuevo diseño"
                 : estadoEdit === "INACTIVO"
-                ? "Editando sello inactivo"
-                : "Edición en vivo"}
+                ? "Diseño inactivo"
+                : "Diseño activo"}
             </span>
           </div>
 
@@ -659,9 +762,6 @@ export const CommerceSello: React.FC = () => {
                 required
                 maxLength={100}
               />
-              <span className="text-[11px] text-[#8E7D7D] block mt-1">
-                Aparecerá en el registro de visitas y sellos coleccionados del cliente.
-              </span>
             </div>
 
             {/* 2. Lema o Descripción */}
@@ -677,16 +777,13 @@ export const CommerceSello: React.FC = () => {
                 maxLength={255}
                 onChange={(e) => setDescripcion(e.target.value)}
               />
-              <span className="text-[11px] text-[#8E7D7D] block mt-1">
-                Mensaje conmemorativo que acompaña la acreditación del sello.
-              </span>
             </div>
 
             {/* 3. Selección de Color de Tinta Digital */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868]">
-                  Color de Tinta Digital (Tono de Estampado)
+                  Color de Tinta Digital
                 </label>
                 <div className="flex items-center gap-2">
                   <span
@@ -702,18 +799,14 @@ export const CommerceSello: React.FC = () => {
               {/* Barra interactiva de espectro continuo de color (Slider de tonalidad) */}
               <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-[#EFE7DE] space-y-2.5">
                 <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] text-[#8E7D7D] font-medium">
-                    <span>Barra de tonos (desliza para cambiar el color):</span>
-                    <span>Tinta continua</span>
-                  </div>
                   <input
                     type="range"
                     min="0"
                     max="360"
                     defaultValue="350"
+                    aria-label="Tono de color"
                     onChange={(e) => {
                       const h = Number(e.target.value);
-                      // Convertir HSL(h, 85%, 26%) a Hex
                       const s = 80;
                       const l = 28;
                       const l_dec = l / 100;
@@ -741,7 +834,7 @@ export const CommerceSello: React.FC = () => {
                       onChange={(e) => setColorSello(e.target.value)}
                       className="w-7 h-7 rounded-lg cursor-pointer border border-[#EFE7DE] p-0.5 bg-white"
                     />
-                    <span>Elegir tono exacto en paleta</span>
+                    <span>Elegir tono exacto</span>
                   </label>
 
                   {/* Acceso rápido a las tintas clásicas */}
@@ -769,38 +862,63 @@ export const CommerceSello: React.FC = () => {
             <div className="space-y-3 pt-2 border-t border-[#EFE7DE]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868]">
-                  Insignia Central del Sello
+                  Insignia Central
                 </label>
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => setShowInsigniaForm((open) => !open)}
                     disabled={uploading || saving}
-                    className="text-xs font-bold text-[#7C0A1E] hover:underline flex items-center gap-1 disabled:opacity-50"
+                    className="text-xs font-bold text-[#7C0A1E] hover:underline flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>{showInsigniaForm ? "Cerrar creador" : "Crear insignia"}</span>
+                    <span>{showInsigniaForm ? "Cerrar" : "Crear insignia"}</span>
                   </button>
-                  <label className="cursor-pointer text-xs font-bold text-[#7C0A1E] hover:underline flex items-center gap-1">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Subir para este diseño</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                    onChange={handleUploadImage}
-                    className="hidden"
-                  />
+                  <label className="cursor-pointer text-xs font-bold text-[#7C0A1E] hover:underline flex items-center gap-1.5">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Subir imagen</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                      onChange={handleUploadImage}
+                      className="hidden"
+                    />
                   </label>
                 </div>
               </div>
 
-              <p className="text-[11px] text-[#8E7D7D]">Crea insignias propias para guardarlas en la biblioteca de tu local y reutilizarlas en tus diseños. También puedes subir una imagen solo para este diseño. Máximo 5 MB.</p>
+              {/* Iconos temáticos predefinidos */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-[#8E7D7D] uppercase tracking-wider block">
+                  Iconos predefinidos
+                </span>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+                  {STAMP_ICONS.map(({ id, label, Icon }) => {
+                    const selected = imagenSello === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => seleccionarImagen(id)}
+                        className={`flex flex-col items-center justify-center py-2 px-2.5 rounded-xl border transition-all shrink-0 min-w-[58px] ${
+                          selected
+                            ? "bg-rose-50/80 border-[#7C0A1E] text-[#7C0A1E] ring-2 ring-[#7C0A1E]/20 shadow-2xs font-bold"
+                            : "bg-[#FAF8F5] hover:bg-white border-[#EFE7DE] text-[#736868] hover:text-[#2D1A1E]"
+                        }`}
+                        title={label}
+                      >
+                        <Icon className="w-4 h-4 mb-1 shrink-0" style={{ color: selected ? colorSello : undefined }} />
+                        <span className="text-[9.5px] truncate max-w-[50px]">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {showInsigniaForm && (
                 <div className="rounded-2xl border border-[#C5A059]/40 bg-amber-50/50 p-4 space-y-3">
                   <div>
-                    <p className="text-xs font-bold text-[#2D1A1E]">Crear insignia reutilizable</p>
-                    <p className="text-[11px] text-[#8E7D7D] mt-0.5">Se guardará en la biblioteca de tu local para usarla en otros diseños.</p>
+                    <p className="text-xs font-bold text-[#2D1A1E]">Nueva insignia reutilizable</p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="text-[11px] font-semibold text-[#736868] space-y-1">
@@ -942,25 +1060,203 @@ export const CommerceSello: React.FC = () => {
               )}
             </div>
 
-            {/* 5. Meta de sellos del ciclo */}
-            <div className="pt-2 border-t border-[#EFE7DE]">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868] mb-1">
-                Meta de Sellos por Ciclo de Pasaporte
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min="4"
-                  max="20"
-                  step="1"
-                  required
-                  value={metaSellos}
-                  onChange={(e) => setMetaSellos(Number(e.target.value))}
-                  className="input-base w-32 font-bold text-center"
-                />
-                <span className="text-xs text-[#8E7D7D]">
-                  sellos para que el cliente complete una ronda y desbloquee recompensas exclusivas
-                </span>
+            {/* 5. Reglas de Cartilla, Ciclo y Meta de Sellos */}
+            <div className="pt-3 border-t border-[#EFE7DE] space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#736868]">
+                    Meta de Sellos por Cartilla (1 a 28) *
+                  </label>
+                  <span className="text-xs font-bold text-[#7C0A1E]">
+                    {metaSellos} {metaSellos === 1 ? "sello" : "sellos"} para completar
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {[5, 8, 10, 12, 15, 20].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setMetaSellos(num)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                        metaSellos === num
+                          ? "bg-[#7C0A1E] text-white border-[#7C0A1E] shadow-xs"
+                          : "bg-white hover:bg-[#FAF8F5] text-[#2D1A1E] border-[#E8DFD5]"
+                      }`}
+                    >
+                      {num} sellos
+                    </button>
+                  ))}
+
+                  <div className="flex items-center gap-2 bg-[#FAF8F5] border border-[#E8DFD5] px-2.5 py-1 rounded-xl">
+                    <span className="text-[11px] text-[#8E7D7D] font-medium">Otro (1-28):</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="28"
+                      value={metaSellos}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) {
+                          setMetaSellos(Math.max(1, Math.min(28, val)));
+                        }
+                      }}
+                      className="w-14 bg-white border border-[#E8DFD5] rounded-lg text-xs font-bold text-center py-1 text-[#2D1A1E]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Ciclo de Reinicio */}
+              <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#EFE7DE] space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#2D1A1E] mb-1.5">
+                    Ciclo de Reinicio
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: "MENSUAL", title: "Mensual", desc: "Reinicia el día 1 de cada mes" },
+                      { id: "TEMPORADA", title: "Por Temporada", desc: "Durante fechas fijas" },
+                      { id: "CICLICO", title: "Continuo", desc: "Sin fecha de expiración" },
+                    ].map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setTipoReinicio(c.id)}
+                        className={`p-2.5 rounded-xl text-left border transition ${
+                          tipoReinicio === c.id
+                            ? "bg-white border-[#7C0A1E] text-[#7C0A1E] ring-2 ring-[#7C0A1E]/20 font-bold"
+                            : "bg-white hover:bg-slate-50 border-[#E8DFD5] text-[#2D1A1E]"
+                        }`}
+                      >
+                        <p className="text-xs font-bold">{c.title}</p>
+                        <p className="text-[9px] text-[#8E7D7D] mt-0.5">{c.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Si es Temporada */}
+                {tipoReinicio === "TEMPORADA" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
+                        Inicio de Temporada *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={fechaInicioTemporada}
+                        onChange={(e) => setFechaInicioTemporada(e.target.value)}
+                        className="input-base text-xs w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
+                        Fin de Temporada *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={fechaFinTemporada}
+                        onChange={(e) => setFechaFinTemporada(e.target.value)}
+                        className="input-base text-xs w-full"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Asignación de Mes o Temporada específica para este diseño */}
+                <div className="pt-2 border-t border-[#EFE7DE] space-y-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-[#736868] mb-1">
+                        Mes asignado (opcional)
+                      </label>
+                      <select
+                        value={mesAsignado}
+                        onChange={(e) => setMesAsignado(e.target.value)}
+                        className="input-base text-xs w-full bg-white font-medium"
+                      >
+                        <option value="">Cualquier mes / Sin mes fijo</option>
+                        {["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"].map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-[#736868] mb-1">
+                        Nombre de Temporada / Edición
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={80}
+                        value={temporadaNombre}
+                        onChange={(e) => setTemporadaNombre(e.target.value)}
+                        placeholder="Ej. Temporada Verano, Festividad..."
+                        className="input-base text-xs w-full"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Switch para activar como diseño de entrega inmediata */}
+                  <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white border border-[#E8DFD5] cursor-pointer hover:border-[#7C0A1E]/40 transition">
+                    <input
+                      type="checkbox"
+                      checked={esActivoEntrega}
+                      onChange={(e) => setEsActivoEntrega(e.target.checked)}
+                      className="w-4 h-4 text-[#7C0A1E] rounded accent-[#7C0A1E]"
+                    />
+                    <div className="min-w-0 text-left">
+                      <p className="text-xs font-bold text-[#2D1A1E]">
+                        Sello actual para entrega en visitas
+                      </p>
+                      <p className="text-[10px] text-[#8E7D7D]">
+                        Tus clientes recibirán este diseño en sus visitas validadas en este periodo.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Bono al Completar Cartilla */}
+                <div className="pt-2.5 border-t border-[#EFE7DE] space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#2D1A1E]">
+                        Bono al Completar la Cartilla
+                      </label>
+                      <p className="text-[10px] text-[#8E7D7D] mt-0.5">
+                        Puntos de recompensa al llenar los {metaSellos} sellos requeridos en el ciclo.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                      <input
+                        type="number"
+                        min="0"
+                        max="2000"
+                        value={puntosCompletadoMeta}
+                        onChange={(e) => setPuntosCompletadoMeta(Number(e.target.value))}
+                        className="input-base text-xs font-bold w-24 text-emerald-700 text-center py-1.5"
+                      />
+                      <span className="text-xs font-bold text-[#736868]">pts extra</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white px-3 py-2 rounded-xl border border-[#E8DFD5] text-[11px] text-[#8E7D7D]">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Sparkles className="w-3.5 h-3.5 text-[#C5A059] shrink-0" />
+                      <span className="truncate">
+                        Puntos por sello diario actual: <strong className="text-[#2D1A1E]">+{puntosPorVisita} pts</strong>
+                      </span>
+                    </span>
+                    <a
+                      href="/commerce/perfil"
+                      className="text-[10px] font-bold text-[#7C0A1E] hover:underline shrink-0"
+                    >
+                      Configurar en Perfil del Local →
+                    </a>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1045,8 +1341,8 @@ export const CommerceSello: React.FC = () => {
 
               {/* Pie de página con código de autenticidad */}
               <div className="relative z-10 border-t border-[#E8DFD5] pt-2 flex items-center justify-between text-[9px] text-[#8E7D7D] font-mono">
-                <span>NFC-VALIDATED · +{puntosPorVisita} PTS</span>
-                <span>ID: #SELLO-VRF-2026</span>
+                <span>CICLO: {tipoReinicio} · META: {metaSellos} SELLOS</span>
+                <span>BONO: +{puntosCompletadoMeta} PTS</span>
               </div>
             </div>
           </div>
@@ -1056,17 +1352,17 @@ export const CommerceSello: React.FC = () => {
             <div className="flex items-center justify-between">
               <h4 className="font-bold text-[#2D1A1E] flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-[#C5A059]" />
-                ¿Cómo funciona el Sello Digital?
+                Dinámica de Fidelización
               </h4>
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                +{puntosPorVisita} pts / visita
+                Bono: +{puntosCompletadoMeta} pts
               </span>
             </div>
-            <p>
-              Cada vez que acerques la tarjeta NFC de un cliente a tu terminal o registres su visita, este sello se estampará automáticamente en su pasaporte digital personal junto con los <strong>+{puntosPorVisita} puntos</strong> configurados para este diseño.
+            <p className="text-[11px] leading-relaxed">
+              Al validar la visita o tarjeta NFC del cliente, se estampa este sello otorgándole los puntos de visita diaria configurados en tu <strong>Perfil del Local</strong> (+{puntosPorVisita} pts).
             </p>
-            <p className="text-[11px]">
-              Al completar los <strong>{metaSellos} sellos</strong> requeridos, tu cliente completará este ciclo y acumulará puntos para canjear recompensas.
+            <p className="text-[11px] leading-relaxed">
+              Al acumular los <strong>{metaSellos} sellos</strong> requeridos en su ciclo ({tipoReinicio}), el cliente completa su cartilla y recibe el bono de <strong>+{puntosCompletadoMeta} pts extra</strong>.
             </p>
           </div>
         </div>

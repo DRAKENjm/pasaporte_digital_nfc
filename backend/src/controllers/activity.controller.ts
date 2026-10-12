@@ -185,6 +185,8 @@ export const ActivityController = {
 
       // visitas NO tiene id_establecimiento: se llega por sucursales
       // categorias usa icono_url (no icono)
+      const mesActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+
       const sql = `
         SELECT 
           e.id_establecimiento,
@@ -203,10 +205,16 @@ export const ActivityController = {
           ps.id_programa,
           COALESCE(ps.nombre, 'Pasaporte de Sellos') AS programa_nombre,
           ps.descripcion AS programa_descripcion,
-          COALESCE(ps.meta_sellos, 6) AS meta_sellos,
+          COALESCE(ps.meta_sellos, 5) AS meta_sellos,
           COALESCE(ps.nombre_sello, 'Sello Oficial') AS nombre_sello,
           ps.imagen_sello,
           COALESCE(ps.color_sello, '#7C0A1E') AS color_sello,
+          COALESCE(ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
+          ps.fecha_inicio,
+          ps.fecha_fin,
+          COALESCE(ps.puntos_completado_meta, 50) AS puntos_completado_meta,
+          COALESCE(ps.sello_especial_icono, 'trophy') AS sello_especial_icono,
+          -- Total histórico de sellos en este local
           COALESCE(
             (
               SELECT COUNT(*)::int
@@ -218,7 +226,39 @@ export const ActivityController = {
                 AND sd.estado = 'OTORGADO'
                 AND vi.estado = 'CONFIRMADA'
             ), 0
+          ) AS total_sellos_historico,
+          -- Sellos en el ciclo actual (mes o temporada)
+          COALESCE(
+            (
+              SELECT COUNT(*)::int
+              FROM sellos_digitales sd
+              JOIN visitas vi ON vi.id_visita = sd.id_visita
+              JOIN sucursales su ON su.id_sucursal = vi.id_sucursal
+              WHERE vi.id_cliente = $1
+                AND su.id_establecimiento = e.id_establecimiento
+                AND sd.estado = 'OTORGADO'
+                AND vi.estado = 'CONFIRMADA'
+                AND (
+                  (COALESCE(ps.tipo_reinicio, 'MENSUAL') = 'MENSUAL' AND to_char(sd.fecha_otorgamiento AT TIME ZONE 'America/Lima', 'YYYY-MM') = $2)
+                  OR (COALESCE(ps.tipo_reinicio, 'MENSUAL') = 'TEMPORADA' AND ps.fecha_inicio IS NOT NULL AND ps.fecha_fin IS NOT NULL AND sd.fecha_otorgamiento >= ps.fecha_inicio AND sd.fecha_otorgamiento <= ps.fecha_fin)
+                  OR (COALESCE(ps.tipo_reinicio, 'MENSUAL') NOT IN ('MENSUAL', 'TEMPORADA'))
+                )
+            ), 0
           ) AS sellos_obtenidos,
+          -- Cuántos sellos dorados/especiales ha obtenido en este local
+          COALESCE(
+            (
+              SELECT COUNT(*)::int
+              FROM sellos_digitales sd
+              JOIN visitas vi ON vi.id_visita = sd.id_visita
+              JOIN sucursales su ON su.id_sucursal = vi.id_sucursal
+              WHERE vi.id_cliente = $1
+                AND su.id_establecimiento = e.id_establecimiento
+                AND sd.estado = 'OTORGADO'
+                AND sd.es_sello_especial = TRUE
+            ), 0
+          ) AS total_sellos_especiales,
+          -- Detalle de todos los sellos otorgados
           COALESCE(
             (
               SELECT json_agg(
@@ -226,8 +266,15 @@ export const ActivityController = {
                   'id_sello', sd.id_sello,
                   'numero_sello', sd.numero_sello,
                   'fecha_otorgamiento', sd.fecha_otorgamiento,
+                  'nombre_sello', COALESCE(sd.nombre_sello_snapshot, ps.nombre_sello, 'Sello Oficial'),
+                  'imagen_sello', COALESCE(sd.imagen_sello_snapshot, ps.imagen_sello, '☕'),
+                  'color_sello', COALESCE(sd.color_sello_snapshot, ps.color_sello, '#7C0A1E'),
+                  'meta_sellos', COALESCE(sd.meta_sellos_snapshot, ps.meta_sellos, 5),
+                  'es_sello_especial', COALESCE(sd.es_sello_especial, FALSE),
+                  'periodo_referencia', sd.periodo_referencia,
+                  'mes_periodo', to_char(sd.fecha_otorgamiento AT TIME ZONE 'America/Lima', 'YYYY-MM'),
                   'es_festivo', 0
-                ) ORDER BY sd.fecha_otorgamiento ASC
+                ) ORDER BY sd.fecha_otorgamiento DESC
               )
               FROM sellos_digitales sd
               JOIN visitas vi ON vi.id_visita = sd.id_visita
@@ -238,6 +285,56 @@ export const ActivityController = {
                 AND vi.estado = 'CONFIRMADA'
             ), '[]'::json
           ) AS sellos_detalle,
+          -- Catálogo de hasta 5 diseños distintos configurados por el local
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id_programa', psg.id_programa,
+                  'nombre_sello', psg.nombre_sello,
+                  'imagen_sello', psg.imagen_sello,
+                  'color_sello', psg.color_sello,
+                  'es_activo_entrega', COALESCE(psg.es_activo_entrega, FALSE),
+                  'mes_asignado', psg.mes_asignado,
+                  'temporada_nombre', psg.temporada_nombre,
+                  'tipo_reinicio', psg.tipo_reinicio,
+                  'ganado', EXISTS (
+                    SELECT 1 FROM sellos_digitales sdg
+                    JOIN visitas vig ON vig.id_visita = sdg.id_visita
+                    JOIN sucursales sug ON sug.id_sucursal = vig.id_sucursal
+                    WHERE vig.id_cliente = $1
+                      AND sug.id_establecimiento = e.id_establecimiento
+                      AND sdg.id_programa = psg.id_programa
+                      AND sdg.estado = 'OTORGADO'
+                  ),
+                  'fecha_ganado', (
+                    SELECT sdg.fecha_otorgamiento FROM sellos_digitales sdg
+                    JOIN visitas vig ON vig.id_visita = sdg.id_visita
+                    JOIN sucursales sug ON sug.id_sucursal = vig.id_sucursal
+                    WHERE vig.id_cliente = $1
+                      AND sug.id_establecimiento = e.id_establecimiento
+                      AND sdg.id_programa = psg.id_programa
+                      AND sdg.estado = 'OTORGADO'
+                    ORDER BY sdg.fecha_otorgamiento DESC
+                    LIMIT 1
+                  ),
+                  'es_sello_especial', COALESCE((
+                    SELECT sdg.es_sello_especial FROM sellos_digitales sdg
+                    JOIN visitas vig ON vig.id_visita = sdg.id_visita
+                    JOIN sucursales sug ON sug.id_sucursal = vig.id_sucursal
+                    WHERE vig.id_cliente = $1
+                      AND sug.id_establecimiento = e.id_establecimiento
+                      AND sdg.id_programa = psg.id_programa
+                      AND sdg.estado = 'OTORGADO'
+                    ORDER BY sdg.fecha_otorgamiento DESC
+                    LIMIT 1
+                  ), FALSE)
+                ) ORDER BY psg.es_activo_entrega DESC, psg.id_programa ASC
+              )
+              FROM programas_sellos psg
+              WHERE psg.id_establecimiento = e.id_establecimiento AND psg.estado = 'ACTIVO'
+            ), '[]'::json
+          ) AS catalogo_sellos_local,
           COALESCE(
             (
               SELECT json_agg(
@@ -256,10 +353,12 @@ export const ActivityController = {
         FROM establecimientos e
         LEFT JOIN categorias_establecimiento c ON c.id = e.categoria_id
         LEFT JOIN LATERAL (
-          SELECT id_programa, nombre, descripcion, meta_sellos, nombre_sello, imagen_sello, color_sello
+          SELECT id_programa, nombre, descripcion, meta_sellos, nombre_sello, imagen_sello, color_sello,
+                 tipo_reinicio, fecha_inicio, fecha_fin, puntos_completado_meta, sello_especial_icono,
+                 es_activo_entrega, mes_asignado, temporada_nombre
           FROM programas_sellos
           WHERE id_establecimiento = e.id_establecimiento AND estado = 'ACTIVO'
-          ORDER BY id_programa DESC
+          ORDER BY es_activo_entrega DESC, id_programa DESC
           LIMIT 1
         ) ps ON true
         LEFT JOIN LATERAL (
@@ -273,7 +372,7 @@ export const ActivityController = {
         ORDER BY c.nombre ASC NULLS LAST, e.nombre_comercial ASC
       `;
 
-      const result = await query(sql, [idCliente]);
+      const result = await query(sql, [idCliente, mesActual]);
       sendResponse(res, 200, result.rows, "Sellos por establecimiento");
     } catch (error) {
       next(error);

@@ -19,11 +19,12 @@ router.get("/me/canjes", authMiddleware, EstablishmentsController.misCanjes);
 router.get("/me/sello", authMiddleware, EstablishmentsController.miSello);
 router.put("/me/sello", authMiddleware, EstablishmentsController.actualizarMiSello);
 
-// Diseños de sello: varios por establecimiento (CRUD + activar/desactivar)
+// Diseños de sello: varios por establecimiento (CRUD + activar/desactivar + entrega actual)
 router.get("/me/sellos", authMiddleware, EstablishmentsController.misSellos);
 router.post("/me/sellos", authMiddleware, EstablishmentsController.crearMiSello);
 router.put("/me/sellos/:id", authMiddleware, EstablishmentsController.actualizarMiSelloDiseño);
 router.patch("/me/sellos/:id/estado", authMiddleware, EstablishmentsController.cambiarEstadoMiSello);
+router.patch("/me/sellos/:id/entrega", authMiddleware, EstablishmentsController.activarSelloParaEntrega);
 router.get("/me/insignias", authMiddleware, EstablishmentsController.misInsignias);
 router.post("/me/insignias", authMiddleware, EstablishmentsController.crearMiInsignia);
 router.put("/me/insignias/:id", authMiddleware, EstablishmentsController.renombrarMiInsignia);

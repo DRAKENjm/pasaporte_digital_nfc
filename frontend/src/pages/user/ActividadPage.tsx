@@ -127,10 +127,11 @@ export const ActividadPage: React.FC = () => {
                   <div className="shrink-0">
                     <DigitalStampBadge
                       establecimiento_nombre={v.establecimiento_nombre}
-                      imagen_sello={v.imagen_sello || "☕"}
+                      imagen_sello={v.imagen_sello || "coffee"}
                       color_sello={v.color_sello || "#7C0A1E"}
                       numero_sello={v.numero_sello || 1}
                       fecha={v.fecha_hora}
+                      es_sello_especial={Boolean(v.es_sello_especial)}
                       size="sm"
                     />
                   </div>
@@ -138,7 +139,7 @@ export const ActividadPage: React.FC = () => {
                     <h4 className="text-xs font-bold text-[#2D1A1E]">{v.establecimiento_nombre}</h4>
                     <p className="text-[10px] text-[#8E7D7D]">{v.sucursal_nombre}</p>
                     <p className="text-[9px] text-[#C5A059] font-medium mt-0.5">
-                      {new Date(v.fecha_hora).toLocaleDateString()} • Sello #{v.numero_sello || 1}
+                      {new Date(v.fecha_hora).toLocaleDateString()} • {v.es_sello_especial ? "Sello Dorado" : `Sello #${v.numero_sello || 1}`}
                     </p>
                   </div>
                 </div>

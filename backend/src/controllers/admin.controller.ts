@@ -1222,14 +1222,18 @@ export const AdminController = {
       // Auto-asegurar reglas por defecto para establecimientos que no tengan
       await query(`
         INSERT INTO reglas_sellos (
-          establecimiento_id, nombre_accion, valor_puntos_por_sello, limite_diario_por_usuario, estado
+          establecimiento_id, nombre_accion, valor_puntos_por_sello, limite_diario_por_usuario, estado,
+          tipo_reinicio, meta_sellos, puntos_completado_meta
         )
         SELECT 
           e.id_establecimiento,
           'Visita con Sello NFC',
           COALESCE(ps.puntos_por_visita, 20),
           1,
-          'ACTIVA'
+          'ACTIVA',
+          COALESCE(ps.tipo_reinicio, 'MENSUAL'),
+          COALESCE(ps.meta_sellos, 5),
+          COALESCE(ps.puntos_completado_meta, 50)
         FROM establecimientos e
         LEFT JOIN programas_sellos ps ON ps.id_establecimiento = e.id_establecimiento
         WHERE NOT EXISTS (
@@ -1238,9 +1242,14 @@ export const AdminController = {
       `);
 
       const result = await query(`
-        SELECT r.*, e.nombre_comercial AS establecimiento_nombre, e.razon_social
+        SELECT r.*, e.nombre_comercial AS establecimiento_nombre, e.razon_social,
+               COALESCE(r.tipo_reinicio, ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
+               COALESCE(r.meta_sellos, ps.meta_sellos, 5) AS meta_sellos,
+               COALESCE(r.puntos_completado_meta, ps.puntos_completado_meta, 50) AS puntos_completado_meta,
+               COALESCE(r.valor_puntos_por_sello, ps.puntos_por_visita, 20) AS valor_puntos_por_sello
         FROM reglas_sellos r
         LEFT JOIN establecimientos e ON e.id_establecimiento = r.establecimiento_id
+        LEFT JOIN programas_sellos ps ON ps.id_establecimiento = r.establecimiento_id
         ORDER BY r.created_at DESC
       `);
       sendResponse(res, 200, result.rows, "Reglas de sellos");
@@ -1263,6 +1272,9 @@ export const AdminController = {
         estado = "ACTIVA",
         fecha_inicio = null,
         fecha_fin = null,
+        tipo_reinicio = "MENSUAL",
+        meta_sellos = 5,
+        puntos_completado_meta = 50,
       } = req.body;
 
       let estId = establecimiento_id;
@@ -1278,11 +1290,18 @@ export const AdminController = {
         );
       }
 
+      const meta = Math.max(1, Math.min(28, Number(meta_sellos) || 5));
+      let reinicio = tipo_reinicio || "MENSUAL";
+      if (!["MENSUAL", "TEMPORADA", "CICLICO", "SIN_REINICIO"].includes(reinicio)) {
+        reinicio = "MENSUAL";
+      }
+
       const result = await query(
         `INSERT INTO reglas_sellos (
            establecimiento_id, nombre_accion, valor_puntos_por_sello,
-           limite_diario_por_usuario, estado, fecha_inicio, fecha_fin
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+           limite_diario_por_usuario, estado, fecha_inicio, fecha_fin,
+           tipo_reinicio, meta_sellos, puntos_completado_meta
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          RETURNING *`,
         [
           estId,
@@ -1292,6 +1311,31 @@ export const AdminController = {
           estado,
           fecha_inicio || null,
           fecha_fin || null,
+          reinicio,
+          meta,
+          Number(puntos_completado_meta) || 50,
+        ],
+      );
+
+      // Sincronizar programa principal del local
+      await query(
+        `UPDATE programas_sellos
+         SET puntos_por_visita = $1,
+             meta_sellos = $2,
+             tipo_reinicio = $3,
+             fecha_inicio = $4,
+             fecha_fin = $5,
+             puntos_completado_meta = $6,
+             fecha_actualizacion = CURRENT_TIMESTAMP
+         WHERE id_establecimiento = $7`,
+        [
+          Number(valor_puntos_por_sello),
+          meta,
+          reinicio,
+          fecha_inicio || null,
+          fecha_fin || null,
+          Number(puntos_completado_meta) || 50,
+          estId,
         ],
       );
 
@@ -1315,7 +1359,12 @@ export const AdminController = {
         estado,
         fecha_inicio,
         fecha_fin,
+        tipo_reinicio,
+        meta_sellos,
+        puntos_completado_meta,
       } = req.body;
+
+      const meta = meta_sellos != null ? Math.max(1, Math.min(28, Number(meta_sellos))) : null;
 
       const result = await query(
         `UPDATE reglas_sellos SET
@@ -1324,34 +1373,49 @@ export const AdminController = {
            limite_diario_por_usuario = COALESCE($4, limite_diario_por_usuario),
            estado = COALESCE($5, estado),
            fecha_inicio = COALESCE($6, fecha_inicio),
-           fecha_fin = COALESCE($7, fecha_fin)
+           fecha_fin = COALESCE($7, fecha_fin),
+           tipo_reinicio = COALESCE($8, tipo_reinicio),
+           meta_sellos = COALESCE($9, meta_sellos),
+           puntos_completado_meta = COALESCE($10, puntos_completado_meta)
          WHERE id = $1
          RETURNING *`,
         [
           id,
           nombre_accion ?? null,
-          valor_puntos_por_sello != null
-            ? Number(valor_puntos_por_sello)
-            : null,
-          limite_diario_por_usuario != null
-            ? Number(limite_diario_por_usuario)
-            : null,
+          valor_puntos_por_sello != null ? Number(valor_puntos_por_sello) : null,
+          limite_diario_por_usuario != null ? Number(limite_diario_por_usuario) : null,
           estado ?? null,
           fecha_inicio ?? null,
           fecha_fin ?? null,
+          tipo_reinicio ?? null,
+          meta,
+          puntos_completado_meta != null ? Number(puntos_completado_meta) : null,
         ],
       );
 
       if (!result.rows[0]) throw new ApiError(404, "Regla no encontrada");
 
-      if (valor_puntos_por_sello != null && Number(valor_puntos_por_sello) > 0) {
-        await query(
-          `UPDATE programas_sellos 
-           SET puntos_por_visita = $1, fecha_actualizacion = CURRENT_TIMESTAMP 
-           WHERE id_establecimiento = $2`,
-          [Number(valor_puntos_por_sello), result.rows[0].establecimiento_id],
-        );
-      }
+      // Sincronizar programa de sellos
+      await query(
+        `UPDATE programas_sellos 
+         SET puntos_por_visita = COALESCE($1, puntos_por_visita),
+             meta_sellos = COALESCE($2, meta_sellos),
+             tipo_reinicio = COALESCE($3, tipo_reinicio),
+             fecha_inicio = COALESCE($4, fecha_inicio),
+             fecha_fin = COALESCE($5, fecha_fin),
+             puntos_completado_meta = COALESCE($6, puntos_completado_meta),
+             fecha_actualizacion = CURRENT_TIMESTAMP 
+         WHERE id_establecimiento = $7`,
+        [
+          valor_puntos_por_sello != null ? Number(valor_puntos_por_sello) : null,
+          meta,
+          tipo_reinicio ?? null,
+          fecha_inicio ?? null,
+          fecha_fin ?? null,
+          puntos_completado_meta != null ? Number(puntos_completado_meta) : null,
+          result.rows[0].establecimiento_id,
+        ],
+      );
 
       sendResponse(res, 200, result.rows[0], "Regla actualizada");
     } catch (error) {
@@ -2427,6 +2491,11 @@ export const AdminController = {
           ps.meta_sellos,
           ps.max_sellos_visita,
           ps.estado,
+          COALESCE(ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
+          ps.fecha_inicio,
+          ps.fecha_fin,
+          COALESCE(ps.puntos_completado_meta, 50) AS puntos_completado_meta,
+          COALESCE(ps.sello_especial_icono, 'trophy') AS sello_especial_icono,
           ps.fecha_actualizacion,
           cat.nombre AS categoria_nombre,
           cat.icono_url AS categoria_icono,
@@ -2473,33 +2542,71 @@ export const AdminController = {
         meta_sellos,
         puntos_por_visita,
         estado,
+        tipo_reinicio,
+        fecha_inicio,
+        fecha_fin,
+        puntos_completado_meta,
+        sello_especial_icono,
       } = req.body;
 
       if (!id_establecimiento) {
         throw new ApiError(400, "El establecimiento es obligatorio");
       }
 
+      // Validar límite máximo de 5 sellos por establecimiento
+      const countCheck = await query(
+        `SELECT COUNT(*)::int AS total FROM programas_sellos WHERE id_establecimiento = $1`,
+        [id_establecimiento],
+      );
+      if ((countCheck.rows[0]?.total || 0) >= 5) {
+        throw new ApiError(400, "Este establecimiento ya cuenta con el límite máximo de 5 sellos permitidos.");
+      }
+
       const estCheck = await query(`SELECT nombre_comercial FROM establecimientos WHERE id_establecimiento = $1`, [id_establecimiento]);
       if (!estCheck.rows[0]) throw new ApiError(404, "Establecimiento no encontrado");
 
       const nombreEst = estCheck.rows[0].nombre_comercial;
+      const meta = meta_sellos ? Math.max(1, Math.min(5, Number(meta_sellos))) : 5;
+
+      let reinicio = tipo_reinicio || "MENSUAL";
+      if (!["MENSUAL", "TEMPORADA", "CICLICO", "SIN_REINICIO"].includes(reinicio)) {
+        reinicio = "MENSUAL";
+      }
+
+      let fInicio = fecha_inicio ? new Date(fecha_inicio) : null;
+      let fFin = fecha_fin ? new Date(fecha_fin) : null;
+      if (reinicio === "TEMPORADA") {
+        if (!fInicio || isNaN(fInicio.getTime()) || !fFin || isNaN(fFin.getTime())) {
+          throw new ApiError(400, "Para un reinicio por temporada debes definir la fecha de inicio y fin de la temporada");
+        }
+        if (fFin <= fInicio) {
+          throw new ApiError(400, "La fecha de fin de temporada debe ser posterior a la fecha de inicio");
+        }
+      }
 
       const result = await query(
         `INSERT INTO programas_sellos (
            id_establecimiento, nombre, descripcion, meta_sellos, max_sellos_visita,
-           nombre_sello, imagen_sello, color_sello, puntos_por_visita, estado, fecha_actualizacion
-         ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+           nombre_sello, imagen_sello, color_sello, puntos_por_visita, estado,
+           tipo_reinicio, fecha_inicio, fecha_fin, puntos_completado_meta, sello_especial_icono,
+           fecha_actualizacion
+         ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
          RETURNING *`,
         [
           id_establecimiento,
           `Pasaporte ${nombreEst}`,
           descripcion || `Programa de sellos de ${nombreEst}`,
-          meta_sellos ? Number(meta_sellos) : 8,
+          meta,
           nombre_sello || `Sello ${nombreEst}`,
           imagen_sello || "☕",
           color_sello || "#7C0A1E",
           puntos_por_visita ? Number(puntos_por_visita) : 20,
           estado || "ACTIVO",
+          reinicio,
+          fInicio ? fInicio.toISOString() : null,
+          fFin ? fFin.toISOString() : null,
+          Number(puntos_completado_meta) || 50,
+          sello_especial_icono || "trophy",
         ],
       );
 
@@ -2525,10 +2632,22 @@ export const AdminController = {
         meta_sellos,
         puntos_por_visita,
         estado,
+        tipo_reinicio,
+        fecha_inicio,
+        fecha_fin,
+        puntos_completado_meta,
+        sello_especial_icono,
       } = req.body;
 
       const check = await query(`SELECT * FROM programas_sellos WHERE id_programa = $1`, [id]);
       if (!check.rows[0]) throw new ApiError(404, "Programa de sello no encontrado");
+
+      const meta = meta_sellos !== undefined && meta_sellos !== null
+        ? Math.max(1, Math.min(28, Number(meta_sellos)))
+        : null;
+
+      let fInicio = fecha_inicio !== undefined ? (fecha_inicio ? new Date(fecha_inicio) : null) : undefined;
+      let fFin = fecha_fin !== undefined ? (fecha_fin ? new Date(fecha_fin) : null) : undefined;
 
       const result = await query(
         `UPDATE programas_sellos
@@ -2540,6 +2659,11 @@ export const AdminController = {
            meta_sellos = COALESCE($6::int, meta_sellos),
            puntos_por_visita = COALESCE($7::numeric, puntos_por_visita),
            estado = COALESCE($8, estado),
+           tipo_reinicio = COALESCE($9, tipo_reinicio),
+           fecha_inicio = COALESCE($10, fecha_inicio),
+           fecha_fin = COALESCE($11, fecha_fin),
+           puntos_completado_meta = COALESCE($12::numeric, puntos_completado_meta),
+           sello_especial_icono = COALESCE($13, sello_especial_icono),
            fecha_actualizacion = CURRENT_TIMESTAMP
          WHERE id_programa = $1
          RETURNING *`,
@@ -2549,19 +2673,33 @@ export const AdminController = {
           imagen_sello !== undefined ? imagen_sello.trim() : null,
           color_sello !== undefined ? color_sello.trim() : null,
           descripcion !== undefined ? descripcion.trim() : null,
-          meta_sellos !== undefined && meta_sellos !== null ? Number(meta_sellos) : null,
+          meta,
           puntos_por_visita !== undefined && puntos_por_visita !== null ? Number(puntos_por_visita) : null,
           estado || null,
+          tipo_reinicio || null,
+          fInicio !== undefined ? (fInicio ? fInicio.toISOString() : null) : null,
+          fFin !== undefined ? (fFin ? fFin.toISOString() : null) : null,
+          puntos_completado_meta !== undefined && puntos_completado_meta !== null ? Number(puntos_completado_meta) : null,
+          sello_especial_icono || null,
         ],
       );
 
-      if (puntos_por_visita !== undefined && result.rows[0]?.id_establecimiento) {
+      if (result.rows[0]?.id_establecimiento) {
         try {
           await query(
             `UPDATE reglas_sellos 
-             SET valor_puntos_por_sello = $1 
-             WHERE establecimiento_id = $2`,
-            [Number(puntos_por_visita), result.rows[0].id_establecimiento],
+             SET valor_puntos_por_sello = COALESCE($1, valor_puntos_por_sello),
+                 meta_sellos = COALESCE($2, meta_sellos),
+                 tipo_reinicio = COALESCE($3, tipo_reinicio),
+                 puntos_completado_meta = COALESCE($4, puntos_completado_meta)
+             WHERE establecimiento_id = $5`,
+            [
+              puntos_por_visita !== undefined ? Number(puntos_por_visita) : null,
+              meta,
+              tipo_reinicio || null,
+              puntos_completado_meta !== undefined ? Number(puntos_completado_meta) : null,
+              result.rows[0].id_establecimiento,
+            ],
           );
         } catch {
           // Si reglas_sellos no existe para este establecimiento, no interrumpir

@@ -246,17 +246,21 @@ export const NfcVisitController = {
       const progParams: any[] = [establecimientoId];
       let progSql = `
         SELECT ps.id_programa, ps.meta_sellos, ps.max_sellos_dia, ps.nombre_sello,
-                ps.imagen_sello, ps.color_sello,
-                COALESCE(ps.puntos_por_visita, rp.valor, 20) AS puntos_por_sello
-         FROM programas_sellos ps
-         LEFT JOIN reglas_puntos rp ON rp.id_programa = ps.id_programa AND rp.tipo_regla = 'POR_SELLO' AND rp.estado = 1
-         WHERE ps.id_establecimiento = $1 AND ps.estado = 'ACTIVO'`;
+               ps.imagen_sello, ps.color_sello,
+               COALESCE(ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
+               ps.fecha_inicio, ps.fecha_fin,
+               COALESCE(ps.puntos_completado_meta, 50) AS puntos_completado_meta,
+               COALESCE(ps.sello_especial_icono, 'trophy') AS sello_especial_icono,
+               COALESCE(ps.puntos_por_visita, rp.valor, 20) AS puntos_por_sello
+        FROM programas_sellos ps
+        LEFT JOIN reglas_puntos rp ON rp.id_programa = ps.id_programa AND rp.tipo_regla = 'POR_SELLO' AND rp.estado = 1
+        WHERE ps.id_establecimiento = $1 AND ps.estado = 'ACTIVO'`;
       if (id_programa !== undefined) {
         progParams.push(id_programa);
         progSql += ` AND ps.id_programa = $${progParams.length}`;
       }
       progSql += `
-         ORDER BY ps.id_programa DESC
+         ORDER BY ps.es_activo_entrega DESC, ps.id_programa DESC
          LIMIT 1
          FOR SHARE OF ps`;
       const progRes = await client.query(progSql, progParams);
@@ -281,6 +285,100 @@ export const NfcVisitController = {
       );
       const yaTieneSelloHoy = (sellosHoyRes.rows[0]?.total_hoy || 0) >= 1;
 
+      // REGLA DE NEGOCIO: Ciclo de reinicio y meta de sellos por local
+      const metaSellos = Math.max(1, Math.min(28, Number(programa.meta_sellos) || 5));
+      const tipoReinicio = programa.tipo_reinicio || "MENSUAL";
+      const puntosBonusMeta = Number(programa.puntos_completado_meta) || 50;
+
+      let periodoReferencia = "";
+      let sellosCicloSql = "";
+      let sellosCicloParams: any[] = [];
+
+      if (tipoReinicio === "MENSUAL") {
+        periodoReferencia = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+        sellosCicloSql = `
+          SELECT COUNT(*)::int AS total
+          FROM sellos_digitales s
+          JOIN visitas v ON v.id_visita = s.id_visita
+          JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+          WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+            AND s.estado = 'OTORGADO'
+            AND to_char(s.fecha_otorgamiento AT TIME ZONE 'America/Lima', 'YYYY-MM') = $3
+        `;
+        sellosCicloParams = [clienteId, establecimientoId, periodoReferencia];
+      } else if (tipoReinicio === "TEMPORADA" && programa.fecha_inicio && programa.fecha_fin) {
+        periodoReferencia = `TEMPORADA_${programa.id_programa}`;
+        sellosCicloSql = `
+          SELECT COUNT(*)::int AS total
+          FROM sellos_digitales s
+          JOIN visitas v ON v.id_visita = s.id_visita
+          JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+          WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+            AND s.estado = 'OTORGADO'
+            AND s.fecha_otorgamiento >= $3 AND s.fecha_otorgamiento <= $4
+        `;
+        sellosCicloParams = [clienteId, establecimientoId, programa.fecha_inicio, programa.fecha_fin];
+      } else {
+        periodoReferencia = "CICLO";
+        sellosCicloSql = `
+          SELECT COUNT(*)::int AS total
+          FROM sellos_digitales s
+          JOIN visitas v ON v.id_visita = s.id_visita
+          JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+          WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+            AND s.estado = 'OTORGADO'
+        `;
+        sellosCicloParams = [clienteId, establecimientoId];
+      }
+
+      const sellosCicloRes = await client.query(sellosCicloSql, sellosCicloParams);
+      const totalEnCicloRaw = sellosCicloRes.rows[0]?.total || 0;
+      const totalSellosEnCiclo = tipoReinicio === "CICLICO"
+        ? (totalEnCicloRaw % metaSellos)
+        : totalEnCicloRaw;
+
+      // Validar si el cliente ya recibió este diseño de sello específico en este ciclo/temporada
+      const selloDisenoYaObtenidoRes = await client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM sellos_digitales s
+         JOIN visitas v ON v.id_visita = s.id_visita
+         JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+         WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+           AND s.id_programa = $3
+           AND s.estado = 'OTORGADO'
+           AND (
+             ($4 = 'MENSUAL' AND to_char(s.fecha_otorgamiento AT TIME ZONE 'America/Lima', 'YYYY-MM') = $5)
+             OR ($4 = 'TEMPORADA' AND $6::timestamptz IS NOT NULL AND $7::timestamptz IS NOT NULL AND s.fecha_otorgamiento >= $6 AND s.fecha_otorgamiento <= $7)
+             OR ($4 NOT IN ('MENSUAL', 'TEMPORADA'))
+           )`,
+        [clienteId, establecimientoId, programa.id_programa, tipoReinicio, periodoReferencia, programa.fecha_inicio, programa.fecha_fin]
+      );
+      const yaTieneEsteDiseno = (selloDisenoYaObtenidoRes.rows[0]?.total || 0) >= 1;
+
+      // Total de diseños distintos ganados por el cliente en este local
+      const disenosDistintosRes = await client.query(
+        `SELECT COUNT(DISTINCT s.id_programa)::int AS total
+         FROM sellos_digitales s
+         JOIN visitas v ON v.id_visita = s.id_visita
+         JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+         WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+           AND s.estado = 'OTORGADO'`,
+        [clienteId, establecimientoId]
+      );
+      const disenosDistintosGanados = disenosDistintosRes.rows[0]?.total || 0;
+
+      // Total de diseños activos configurados por el local (máximo 5)
+      const disenosTotalesLocalRes = await client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM programas_sellos
+         WHERE id_establecimiento = $1 AND estado = 'ACTIVO'`,
+        [establecimientoId]
+      );
+      const disenosTotalesLocal = Math.max(1, Math.min(5, Number(disenosTotalesLocalRes.rows[0]?.total || metaSellos)));
+
+      // ¿Ya completó el total de sellos de este ciclo (ej. 5 de 5)?
+      const cicloMetaCompletada = totalSellosEnCiclo >= metaSellos;
+
       const metodo = (req.body.metodo_validacion === "QR" || req.body.metodo_validacion === "QR_RESPALDO") ? "QR" : "NFC";
 
       // 1. Crear Visita Confirmada
@@ -301,16 +399,6 @@ export const NfcVisitController = {
       );
       const visitaId = visitaRes.rows[0].id_visita;
 
-      // Calcular número de orden del sello en el ciclo de la meta
-      const totalSellosClienteRes = await client.query(
-        `SELECT COUNT(*)::int AS total
-         FROM sellos_digitales
-         WHERE id_programa = $1 AND estado = 'OTORGADO'
-           AND id_visita IN (SELECT id_visita FROM visitas WHERE id_cliente = $2)`,
-        [programa.id_programa, clienteId],
-      );
-      const ordenSello = (totalSellosClienteRes.rows[0].total % programa.meta_sellos) + 1;
-
       // Obtener monto_por_punto configurado en el establecimiento
       const estConfigRes = await client.query(
         `SELECT monto_por_punto FROM establecimientos WHERE id_establecimiento = $1`,
@@ -320,40 +408,57 @@ export const NfcVisitController = {
         ? Number(estConfigRes.rows[0].monto_por_punto)
         : 10;
 
-      // 1. Puntos Base de Sello (únicamente si es la primera visita del día)
-      const puntosBase = !yaTieneSelloHoy ? (Number(programa.puntos_por_sello) || 0) : 0;
-
       let bonoConsumo = 0;
       let tagConsumo = "";
-
-      if (yaTieneSelloHoy) {
-        // En visitas posteriores del mismo día: aplica regla de puntos por consumo
-        if (monto_compra !== undefined && Number(monto_compra) > 0 && ratioMontoPorPunto > 0) {
-          const montoNum = Number(monto_compra);
-          bonoConsumo = Math.floor(montoNum / ratioMontoPorPunto);
-          if (bonoConsumo > 0) {
-            tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
-          }
+      if (monto_compra !== undefined && Number(monto_compra) > 0 && ratioMontoPorPunto > 0) {
+        const montoNum = Number(monto_compra);
+        bonoConsumo = Math.floor(montoNum / ratioMontoPorPunto);
+        if (bonoConsumo > 0) {
+          tagConsumo = ` (+${bonoConsumo} pts por consumo S/ ${montoNum.toFixed(2)})`;
         }
       }
 
-      // En la primera visita solo se otorgan los puntos del sello diario;
-      // En la segunda visita o posterior se otorgan puntos por consumo
-      const puntosOtorgados = yaTieneSelloHoy
-        ? bonoConsumo
-        : puntosBase;
+      // ¿Se otorga un nuevo sello en esta visita?
+      // Condición: NO tiene sello hoy Y aún NO tiene este diseño en este periodo Y no ha superado el ciclo
+      const otorgarSello = !yaTieneSelloHoy && !yaTieneEsteDiseno && !cicloMetaCompletada;
+      const ordenSello = otorgarSello ? (totalSellosEnCiclo + 1) : totalSellosEnCiclo;
+      // Es sello especial si con este completa todos los diseños del local o alcanza la meta
+      const esSelloMetaFinal = otorgarSello && ((disenosDistintosGanados + 1 >= disenosTotalesLocal) || (ordenSello >= metaSellos));
+
+      const puntosBaseVisita = Number(programa.puntos_por_sello) || 20;
+
+      let puntosOtorgados = 0;
+      let tagPuntos = "";
+
+      if (otorgarSello) {
+        // Primera visita con nuevo diseño disponible: puntos de sello (+ bonus si completa la colección)
+        puntosOtorgados = puntosBaseVisita + (esSelloMetaFinal ? puntosBonusMeta : 0) + bonoConsumo;
+        if (esSelloMetaFinal) {
+          tagPuntos = ` (+${puntosBonusMeta} pts BONUS por completar colección de ${disenosTotalesLocal} sellos)`;
+        }
+      } else if (!yaTieneSelloHoy) {
+        // Ya tiene el sello de esta temporada/mes o completó el cupo: ¡Gana puntos por su visita!
+        puntosOtorgados = puntosBaseVisita + bonoConsumo;
+        tagPuntos = yaTieneEsteDiseno
+          ? ` (Ya cuentas con el diseño de sello de este periodo: ¡sumas ${puntosBaseVisita} pts por visita!)`
+          : ` (Ciclo de sellos completado: ¡sumas ${puntosBaseVisita} pts por visita!)`;
+      } else {
+        // Visita adicional del mismo día: acumula solo bono de consumo
+        puntosOtorgados = bonoConsumo;
+      }
 
       let selloId: number | null = null;
 
-      // 2. Crear Sello Digital solo si no tiene sello de hoy
-      if (!yaTieneSelloHoy) {
+      // 2. Crear Sello Digital si corresponde
+      if (otorgarSello) {
         const selloRes = await client.query(
           `INSERT INTO sellos_digitales (
              id_visita, id_programa, numero_sello, cantidad, estado,
              nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot,
-             meta_sellos_snapshot, puntos_sello_snapshot
+             meta_sellos_snapshot, puntos_sello_snapshot,
+             es_sello_especial, periodo_referencia
            )
-           VALUES ($1, $2, $3, 1, 'OTORGADO', $4, $5, $6, $7, $8)
+           VALUES ($1, $2, $3, 1, 'OTORGADO', $4, $5, $6, $7, $8, $9, $10)
            RETURNING id_sello, numero_sello`,
           [
             visitaId,
@@ -362,8 +467,10 @@ export const NfcVisitController = {
             programa.nombre_sello,
             programa.imagen_sello,
             programa.color_sello,
-            programa.meta_sellos,
+            metaSellos,
             puntosOtorgados,
+            esSelloMetaFinal,
+            periodoReferencia,
           ],
         );
         selloId = selloRes.rows[0].id_sello;
@@ -379,12 +486,15 @@ export const NfcVisitController = {
       const saldoAnterior = saldoRes.rows[0].saldo;
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
-      const descripcionMovimiento = yaTieneSelloHoy
-        ? `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}`
-        : `Visita a ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}`;
+      const descripcionMovimiento = otorgarSello
+        ? (esSelloMetaFinal
+            ? `Cartilla de ${metaSellos} sellos completada en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagPuntos}${tagConsumo}`
+            : `Sello #${ordenSello} en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}`)
+        : (cicloMetaCompletada
+            ? `Puntos por visita en ${sucursalRes.rows[0].nombre_comercial} (cartilla ya completada este período)${tagConsumo}`
+            : `Consumo en ${sucursalRes.rows[0].nombre_comercial} (${sucursalRes.rows[0].sucursal_nombre})${tagConsumo}`);
 
       // 4. Crear Movimiento Contable de Puntos (Ledger) si se otorgaron puntos
-      // Nota: tipo_movimiento en DB debe ser 'GANANCIA_VISITA' o 'GANANCIA_SELLO' para satisfacer el CHECK constraint
       if (puntosOtorgados > 0) {
         await client.query(
           `INSERT INTO movimientos_puntos (
@@ -401,7 +511,7 @@ export const NfcVisitController = {
             programa.id_programa,
             visitaId,
             selloId,
-            yaTieneSelloHoy ? "GANANCIA_VISITA" : "GANANCIA_SELLO",
+            otorgarSello ? "GANANCIA_SELLO" : "GANANCIA_VISITA",
             puntosOtorgados,
             saldoAnterior,
             saldoPosterior,
@@ -412,10 +522,22 @@ export const NfcVisitController = {
       }
 
       // 5. Crear Notificación para el cliente
-      const notifTitulo = yaTieneSelloHoy ? "¡Consumo registrado!" : "¡Nuevo sello obtenido!";
-      const notifMensaje = yaTieneSelloHoy
-        ? `Se registraron tus compras en ${sucursalRes.rows[0].nombre_comercial} y ganaste +${puntosOtorgados} puntos (el sello diario de hoy ya fue acumulado).`
-        : `Has obtenido el sello #${ordenSello} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.${tagConsumo}`;
+      let notifTitulo = "¡Visita registrada!";
+      let notifMensaje = "";
+
+      if (esSelloMetaFinal) {
+        notifTitulo = "🏆 ¡Cartilla de sellos completada!";
+        notifMensaje = `¡Felicitaciones! Has completado tus ${metaSellos} sellos en ${sucursalRes.rows[0].nombre_comercial}. ¡Recibiste el Sello Dorado especial y +${puntosOtorgados} puntos!`;
+      } else if (otorgarSello) {
+        notifTitulo = "¡Nuevo sello obtenido!";
+        notifMensaje = `Has obtenido el sello #${ordenSello} de ${metaSellos} y ganado +${puntosOtorgados} puntos en ${sucursalRes.rows[0].nombre_comercial}.${tagConsumo}`;
+      } else if (cicloMetaCompletada) {
+        notifTitulo = "¡Visita registrada!";
+        notifMensaje = `Gracias por visitarnos en ${sucursalRes.rows[0].nombre_comercial}. Como ya completaste tu cartilla este período, ganaste +${puntosOtorgados} puntos por tu visita.`;
+      } else {
+        notifTitulo = "¡Consumo registrado!";
+        notifMensaje = `Se registraron tus consumos en ${sucursalRes.rows[0].nombre_comercial} y ganaste +${puntosOtorgados} puntos.`;
+      }
 
       await client.query(
         `INSERT INTO notificaciones (
@@ -439,11 +561,20 @@ export const NfcVisitController = {
         [
           validadorId,
           visitaId,
-          `Confirmación de visita para cliente ${clienteId} en sucursal ${id_sucursal} (Sello: ${!yaTieneSelloHoy}, Puntos: ${puntosOtorgados})`,
+          `Confirmación de visita para cliente ${clienteId} en sucursal ${id_sucursal} (Sello: ${otorgarSello}, Meta: ${esSelloMetaFinal}, Puntos: ${puntosOtorgados})`,
         ],
       );
 
       await client.query("COMMIT");
+
+      let mensajeRespuesta = `¡Sello #${ordenSello} de ${metaSellos} otorgado con éxito!`;
+      if (esSelloMetaFinal) {
+        mensajeRespuesta = `¡Felicidades! Completaste la cartilla de ${metaSellos} sellos. ¡Sello Dorado y +${puntosBonusMeta} pts bonus acreditados!`;
+      } else if (cicloMetaCompletada && !yaTieneSelloHoy) {
+        mensajeRespuesta = `Cartilla ya completada en este período (${metaSellos}/${metaSellos}). ¡Ganaste +${puntosOtorgados} puntos por tu visita!`;
+      } else if (yaTieneSelloHoy) {
+        mensajeRespuesta = "Sello diario ya acumulado hoy (1/1). Puntos por consumo acreditados.";
+      }
 
       sendResponse(res, 201, {
         visita: {
@@ -452,25 +583,28 @@ export const NfcVisitController = {
           sucursal: sucursalRes.rows[0].sucursal_nombre,
           establecimiento: sucursalRes.rows[0].nombre_comercial,
         },
-        sello_otorgado: !yaTieneSelloHoy,
-        sello: !yaTieneSelloHoy ? {
+        sello_otorgado: otorgarSello,
+        es_meta_completada: esSelloMetaFinal || cicloMetaCompletada,
+        es_sello_especial: esSelloMetaFinal,
+        sello: otorgarSello ? {
           id_sello: selloId,
           numero_sello: ordenSello,
-          meta_sellos: programa.meta_sellos,
+          meta_sellos: metaSellos,
           nombre_sello: programa.nombre_sello,
+          es_sello_especial: esSelloMetaFinal,
+          periodo_referencia: periodoReferencia,
         } : null,
-        mensaje_sello: yaTieneSelloHoy
-          ? "Sello diario ya acumulado hoy (1/1). Puntos por consumo acreditados."
-          : `¡Sello #${ordenSello} otorgado con éxito!`,
+        mensaje_sello: mensajeRespuesta,
         puntos: {
           puntos_ganados: puntosOtorgados,
           saldo_actual: saldoPosterior,
           desglose: {
-            puntos_base: puntosBase,
+            puntos_base: puntosBaseVisita,
+            bonus_meta: esSelloMetaFinal ? puntosBonusMeta : 0,
             bono_consumo: bonoConsumo,
           },
         },
-      }, yaTieneSelloHoy ? "Compra confirmada y puntos acreditados." : "Visita confirmada, sello y puntos acreditados.");
+      }, mensajeRespuesta);
     } catch (error) {
       if (client) await client.query("ROLLBACK");
       next(error);
@@ -682,6 +816,10 @@ export const NfcVisitController = {
       let progSql = `
         SELECT ps.id_programa, ps.meta_sellos, ps.max_sellos_dia, ps.nombre_sello,
                ps.imagen_sello, ps.color_sello,
+               COALESCE(ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
+               ps.fecha_inicio, ps.fecha_fin,
+               COALESCE(ps.puntos_completado_meta, 50) AS puntos_completado_meta,
+               COALESCE(ps.sello_especial_icono, 'trophy') AS sello_especial_icono,
                COALESCE(ps.puntos_por_visita, rp.valor, 25) AS puntos_por_sello
         FROM programas_sellos ps
         LEFT JOIN reglas_puntos rp ON rp.id_programa = ps.id_programa AND rp.tipo_regla = 'POR_SELLO' AND rp.estado = 1
@@ -690,7 +828,7 @@ export const NfcVisitController = {
         progParams.push(id_programa);
         progSql += ` AND ps.id_programa = $${progParams.length}`;
       }
-      progSql += ` ORDER BY ps.id_programa DESC LIMIT 1 FOR SHARE OF ps`;
+      progSql += ` ORDER BY ps.es_activo_entrega DESC, ps.id_programa DESC LIMIT 1 FOR SHARE OF ps`;
       const progRes = await client.query(progSql, progParams);
       const programa = progRes.rows[0];
 
@@ -714,6 +852,103 @@ export const NfcVisitController = {
         }
       }
 
+      // REGLA DE NEGOCIO: Ciclo de reinicio y meta de sellos por local
+      const metaSellos = Math.max(1, Math.min(28, Number(programa.meta_sellos) || 5));
+      const tipoReinicio = programa.tipo_reinicio || "MENSUAL";
+      const puntosBonusMeta = Number(programa.puntos_completado_meta) || 50;
+
+      let periodoReferencia = "";
+      let sellosCicloSql = "";
+      let sellosCicloParams: any[] = [];
+
+      if (tipoReinicio === "MENSUAL") {
+        periodoReferencia = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+        sellosCicloSql = `
+          SELECT COUNT(*)::int AS total
+          FROM sellos_digitales s
+          JOIN visitas v ON v.id_visita = s.id_visita
+          JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+          WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+            AND s.estado = 'OTORGADO'
+            AND to_char(s.fecha_otorgamiento AT TIME ZONE 'America/Lima', 'YYYY-MM') = $3
+        `;
+        sellosCicloParams = [clienteId, suc.id_establecimiento, periodoReferencia];
+      } else if (tipoReinicio === "TEMPORADA" && programa.fecha_inicio && programa.fecha_fin) {
+        periodoReferencia = `TEMPORADA_${programa.id_programa}`;
+        sellosCicloSql = `
+          SELECT COUNT(*)::int AS total
+          FROM sellos_digitales s
+          JOIN visitas v ON v.id_visita = s.id_visita
+          JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+          WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+            AND s.estado = 'OTORGADO'
+            AND s.fecha_otorgamiento >= $3 AND s.fecha_otorgamiento <= $4
+        `;
+        sellosCicloParams = [clienteId, suc.id_establecimiento, programa.fecha_inicio, programa.fecha_fin];
+      } else {
+        periodoReferencia = "CICLO";
+        sellosCicloSql = `
+          SELECT COUNT(*)::int AS total
+          FROM sellos_digitales s
+          JOIN visitas v ON v.id_visita = s.id_visita
+          JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+          WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+            AND s.estado = 'OTORGADO'
+        `;
+        sellosCicloParams = [clienteId, suc.id_establecimiento];
+      }
+
+      const sellosCicloRes = await client.query(sellosCicloSql, sellosCicloParams);
+      const totalEnCicloRaw = sellosCicloRes.rows[0]?.total || 0;
+      const totalSellosEnCiclo = tipoReinicio === "CICLICO"
+        ? (totalEnCicloRaw % metaSellos)
+        : totalEnCicloRaw;
+
+      // Validar si el cliente ya recibió este diseño de sello específico en este ciclo/temporada
+      const selloDisenoYaObtenidoRes = await client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM sellos_digitales s
+         JOIN visitas v ON v.id_visita = s.id_visita
+         JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+         WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+           AND s.id_programa = $3
+           AND s.estado = 'OTORGADO'
+           AND (
+             ($4 = 'MENSUAL' AND to_char(s.fecha_otorgamiento AT TIME ZONE 'America/Lima', 'YYYY-MM') = $5)
+             OR ($4 = 'TEMPORADA' AND $6::timestamptz IS NOT NULL AND $7::timestamptz IS NOT NULL AND s.fecha_otorgamiento >= $6 AND s.fecha_otorgamiento <= $7)
+             OR ($4 NOT IN ('MENSUAL', 'TEMPORADA'))
+           )`,
+        [clienteId, suc.id_establecimiento, programa.id_programa, tipoReinicio, periodoReferencia, programa.fecha_inicio, programa.fecha_fin]
+      );
+      const yaTieneEsteDiseno = (selloDisenoYaObtenidoRes.rows[0]?.total || 0) >= 1;
+
+      // Total de diseños distintos ganados por el cliente en este local
+      const disenosDistintosClienteRes = await client.query(
+        `SELECT COUNT(DISTINCT s.id_programa)::int AS total
+         FROM sellos_digitales s
+         JOIN visitas v ON v.id_visita = s.id_visita
+         JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+         WHERE v.id_cliente = $1 AND suc.id_establecimiento = $2
+           AND s.estado = 'OTORGADO'`,
+        [clienteId, suc.id_establecimiento]
+      );
+      const disenosDistintosGanados = disenosDistintosClienteRes.rows[0]?.total || 0;
+
+      // Total de diseños activos configurados por el local (máximo 5)
+      const disenosTotalesLocalRes = await client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM programas_sellos
+         WHERE id_establecimiento = $1 AND estado = 'ACTIVO'`,
+        [suc.id_establecimiento]
+      );
+      const disenosTotalesLocal = Math.max(1, Math.min(5, Number(disenosTotalesLocalRes.rows[0]?.total || metaSellos)));
+
+      // ¿Ya completó el total de sellos de este ciclo?
+      const cicloMetaCompletada = totalSellosEnCiclo >= metaSellos;
+      const otorgarSello = !yaTieneEsteDiseno && !cicloMetaCompletada;
+      const ordenSello = otorgarSello ? (totalSellosEnCiclo + 1) : totalSellosEnCiclo;
+      const esSelloMetaFinal = otorgarSello && ((disenosDistintosGanados + 1 >= disenosTotalesLocal) || (ordenSello >= metaSellos));
+
       // 1. Crear Visita con método AUTOSELLADO
       const visitaRes = await client.query(
         `INSERT INTO visitas (
@@ -733,16 +968,6 @@ export const NfcVisitController = {
         ],
       );
       const visitaId = visitaRes.rows[0].id_visita;
-
-      // 2. Calcular Puntos y Crear Sello Digital
-      const totalSellosRes = await client.query(
-        `SELECT COUNT(*)::int AS total
-         FROM sellos_digitales
-         WHERE id_programa = $1 AND estado = 'OTORGADO'
-           AND id_visita IN (SELECT id_visita FROM visitas WHERE id_cliente = $2)`,
-        [programa.id_programa, clienteId],
-      );
-      const ordenSello = (totalSellosRes.rows[0].total % programa.meta_sellos) + 1;
 
       // Puntos base
       const puntosBase = Number(programa.puntos_por_sello) || 25;
@@ -769,28 +994,39 @@ export const NfcVisitController = {
         tagFrecuencia = " (+10 pts bono racha semanal)";
       }
 
-      const puntosOtorgados = puntosBase + bonoFrecuencia;
+      let tagMetaBonus = "";
+      if (esSelloMetaFinal) {
+        tagMetaBonus = ` (+${puntosBonusMeta} pts BONUS por completar cartilla)`;
+      }
 
-      const selloRes = await client.query(
-        `INSERT INTO sellos_digitales (
-           id_visita, id_programa, numero_sello, cantidad, estado,
-           nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot,
-           meta_sellos_snapshot, puntos_sello_snapshot
-         )
-         VALUES ($1, $2, $3, 1, 'OTORGADO', $4, $5, $6, $7, $8)
-         RETURNING id_sello, numero_sello`,
-        [
-          visitaId,
-          programa.id_programa,
-          ordenSello,
-          programa.nombre_sello,
-          programa.imagen_sello,
-          programa.color_sello,
-          programa.meta_sellos,
-          puntosOtorgados,
-        ],
-      );
-      const selloId = selloRes.rows[0].id_sello;
+      const puntosOtorgados = puntosBase + (esSelloMetaFinal ? puntosBonusMeta : 0) + bonoFrecuencia;
+      let selloId: number | null = null;
+
+      if (otorgarSello) {
+        const selloRes = await client.query(
+          `INSERT INTO sellos_digitales (
+             id_visita, id_programa, numero_sello, cantidad, estado,
+             nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot,
+             meta_sellos_snapshot, puntos_sello_snapshot,
+             es_sello_especial, periodo_referencia
+           )
+           VALUES ($1, $2, $3, 1, 'OTORGADO', $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id_sello, numero_sello`,
+          [
+            visitaId,
+            programa.id_programa,
+            ordenSello,
+            programa.nombre_sello,
+            programa.imagen_sello,
+            programa.color_sello,
+            metaSellos,
+            puntosOtorgados,
+            esSelloMetaFinal,
+            periodoReferencia,
+          ],
+        );
+        selloId = selloRes.rows[0].id_sello;
+      }
 
       // 3. Registrar en Ledger de Puntos
       const saldoRes = await client.query(
@@ -800,7 +1036,11 @@ export const NfcVisitController = {
       const saldoAnterior = saldoRes.rows[0].saldo;
       const saldoPosterior = saldoAnterior + puntosOtorgados;
 
-      const descripAutosello = `Auto-sellado en ${suc.nombre_comercial} (${suc.sucursal_nombre})${tagFrecuencia}`;
+      const descripAutosello = otorgarSello
+        ? (esSelloMetaFinal
+            ? `Auto-sellado y cartilla completada en ${suc.nombre_comercial} (${suc.sucursal_nombre})${tagMetaBonus}${tagFrecuencia}`
+            : `Auto-sellado en ${suc.nombre_comercial} (${suc.sucursal_nombre})${tagFrecuencia}`)
+        : `Auto-sellado (visita) en ${suc.nombre_comercial} (cartilla ya completada este período)${tagFrecuencia}`;
 
       await client.query(
         `INSERT INTO movimientos_puntos (
@@ -809,14 +1049,15 @@ export const NfcVisitController = {
           descripcion, id_usuario_accion
         ) VALUES (
           $1, $2, $3, $4,
-          'GANANCIA_SELLO', $5, $6, $7,
-          $8, $9
+          $5, $6, $7, $8,
+          $9, $10
         )`,
         [
           clienteId,
           programa.id_programa,
           visitaId,
           selloId,
+          otorgarSello ? "GANANCIA_SELLO" : "GANANCIA_VISITA",
           puntosOtorgados,
           saldoAnterior,
           saldoPosterior,
@@ -826,16 +1067,27 @@ export const NfcVisitController = {
       );
 
       // 4. Notificación para el usuario
+      let notifTituloAuto = "¡Sello Turístico Desbloqueado!";
+      let notifMsgAuto = `¡Felicidades! Has sellado tu pasaporte en ${suc.nombre_comercial} y ganado +${puntosOtorgados} puntos.${tagFrecuencia}`;
+      if (esSelloMetaFinal) {
+        notifTituloAuto = "🏆 ¡Cartilla de sellos completada!";
+        notifMsgAuto = `¡Felicidades! Completaste tus ${metaSellos} sellos en ${suc.nombre_comercial}. ¡Recibiste el Sello Dorado y +${puntosOtorgados} puntos!`;
+      } else if (cicloMetaCompletada) {
+        notifTituloAuto = "¡Visita turística registrada!";
+        notifMsgAuto = `¡Gracias por visitar ${suc.nombre_comercial}! Como ya completaste tu cartilla este período, ganaste +${puntosOtorgados} puntos.`;
+      }
+
       await client.query(
         `INSERT INTO notificaciones (
           id_usuario, tipo_notificacion, titulo, mensaje, canal, estado_envio, referencia_tipo, referencia_id
         ) VALUES (
-          $1, 'SELLO_OBTENIDO', '¡Sello Turístico Desbloqueado!',
-          $2, 'APP', 'ENVIADA', 'VISITA', $3
+          $1, 'SELLO_OBTENIDO', $2,
+          $3, 'APP', 'ENVIADA', 'VISITA', $4
         )`,
         [
           idUsuario,
-          `¡Felicidades! Has sellado tu pasaporte en ${suc.nombre_comercial} y ganado +${puntosOtorgados} puntos.${tagFrecuencia}`,
+          notifTituloAuto,
+          notifMsgAuto,
           visitaId,
         ],
       );
@@ -850,14 +1102,19 @@ export const NfcVisitController = {
           establecimiento: suc.nombre_comercial,
           distancia_metros: distanciaMetros,
         },
-        sello: {
+        sello_otorgado: otorgarSello,
+        es_meta_completada: esSelloMetaFinal || cicloMetaCompletada,
+        es_sello_especial: esSelloMetaFinal,
+        sello: otorgarSello ? {
           id_sello: selloId,
           numero_sello: ordenSello,
-          meta_sellos: programa.meta_sellos,
+          meta_sellos: metaSellos,
           nombre_sello: programa.nombre_sello,
           color_sello: programa.color_sello,
           imagen_sello: programa.imagen_sello,
-        },
+          es_sello_especial: esSelloMetaFinal,
+          periodo_referencia: periodoReferencia,
+        } : null,
         puntos: {
           puntos_ganados: puntosOtorgados,
           saldo_actual: saldoPosterior,
