@@ -1742,25 +1742,6 @@ export const EstablishmentsController = {
       const { sello_nfc_uid, id_programa, id_sucursal } = req.body;
       const est = await establecimientoDelUsuario(query, idUsuario, id_sucursal);
 
-      const uidClean = sello_nfc_uid ? String(sello_nfc_uid).trim().toUpperCase() : null;
-
-      // Si se asigna un UID, validar que ningún otro establecimiento lo esté usando
-      if (uidClean) {
-        const dup = await query(
-          `SELECT ps.id_programa, ps.nombre_sello, e.nombre_comercial 
-           FROM programas_sellos ps
-           JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
-           WHERE UPPER(ps.sello_nfc_uid) = $1 AND ps.id_establecimiento != $2`,
-          [uidClean, est.id_establecimiento],
-        );
-        if (dup.rows[0]) {
-          throw new ApiError(
-            409,
-            `Este chip NFC ya está vinculado a "${dup.rows[0].nombre_sello}" de ${dup.rows[0].nombre_comercial}`,
-          );
-        }
-      }
-
       let targetProgId = id_programa;
       if (!targetProgId) {
         const pRes = await query(
@@ -1775,6 +1756,36 @@ export const EstablishmentsController = {
 
       if (!targetProgId) {
         throw new ApiError(404, "No hay programa de sellos registrado para vincular");
+      }
+
+      const uidClean = sello_nfc_uid ? String(sello_nfc_uid).trim().toUpperCase() : null;
+      const uidSanitized = uidClean ? uidClean.replace(/:/g, "") : null;
+
+      // Si se asigna un UID, validar que ningún otro establecimiento lo esté usando
+      if (uidClean && uidSanitized) {
+        const dup = await query(
+          `SELECT ps.id_programa, ps.nombre_sello, e.nombre_comercial 
+           FROM programas_sellos ps
+           JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
+           WHERE (UPPER(ps.sello_nfc_uid) = $1 OR UPPER(REPLACE(ps.sello_nfc_uid, ':', '')) = $2)
+             AND ps.id_establecimiento != $3`,
+          [uidClean, uidSanitized, est.id_establecimiento],
+        );
+        if (dup.rows[0]) {
+          throw new ApiError(
+            409,
+            `Este chip NFC ya está vinculado a "${dup.rows[0].nombre_sello}" de ${dup.rows[0].nombre_comercial}`,
+          );
+        }
+
+        // Si ya estaba en otro programa del mismo establecimiento, desvincularlo para evitar ambigüedad
+        await query(
+          `UPDATE programas_sellos
+           SET sello_nfc_uid = NULL, fecha_actualizacion = CURRENT_TIMESTAMP
+           WHERE (UPPER(sello_nfc_uid) = $1 OR UPPER(REPLACE(sello_nfc_uid, ':', '')) = $2)
+             AND id_establecimiento = $3 AND id_programa != $4`,
+          [uidClean, uidSanitized, est.id_establecimiento, targetProgId],
+        );
       }
 
       const result = await query(

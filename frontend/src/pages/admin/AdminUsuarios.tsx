@@ -25,8 +25,10 @@ import {
   KeyRound,
   Copy,
   Check,
+  EyeOff,
 } from "lucide-react";
 import { initials } from "../../utils/levels";
+import { maskEmail } from "../../utils/privacy";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -58,6 +60,7 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
   const [filtroRol, setFiltroRol] = useState(isClientes ? "CLIENTE" : "TODOS");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [pagina, setPagina] = useState(1);
+  const [mostrarEmailsCompletos, setMostrarEmailsCompletos] = useState(false);
 
   const [modalCrear, setModalCrear] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
@@ -595,6 +598,20 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setMostrarEmailsCompletos(!mostrarEmailsCompletos)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition shadow-2xs ${
+              mostrarEmailsCompletos
+                ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+                : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+            }`}
+            title="Cumplimiento Ley N° 29733 de Protección de Datos Personales"
+          >
+            {mostrarEmailsCompletos ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            <span>{mostrarEmailsCompletos ? "Ley 29733: Desprotegido" : "Ley 29733: Correos protegidos"}</span>
+          </button>
+
           <span className="text-xs font-bold text-[#8E7D7D] bg-white border border-[#E8DFD5] px-3 py-1.5 rounded-xl shadow-2xs">
             {rowsFiltrados.length} {isClientes ? (rowsFiltrados.length !== 1 ? "clientes" : "cliente") : (rowsFiltrados.length !== 1 ? "usuarios" : "usuario")}
           </span>
@@ -728,7 +745,7 @@ export const AdminUsuarios: React.FC<AdminUsuariosProps> = ({ modo = "USUARIOS" 
                         </div>
                       </td>
                       <td className="p-3.5 text-muted font-mono">
-                        {u.email}
+                        {mostrarEmailsCompletos ? u.email : maskEmail(u.email)}
                       </td>
                       <td className="p-3.5">
                         <span

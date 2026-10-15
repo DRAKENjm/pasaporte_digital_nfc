@@ -80,6 +80,8 @@ export interface ReglaSello {
   id: string;
   establecimiento_id: string;
   establecimiento_nombre?: string;
+  establecimiento_tipo?: "LOCAL" | "LUGAR_TURISTICO" | string;
+  establecimiento_logo?: string | null;
   nombre_accion: string;
   valor_puntos_por_sello: number;
   limite_diario_por_usuario: number;

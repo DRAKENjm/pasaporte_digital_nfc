@@ -1148,6 +1148,7 @@ export const NfcVisitController = {
       }
 
       const uidClean = String(sello_nfc_uid).trim().toUpperCase();
+      const uidSanitized = uidClean.replace(/:/g, "");
 
       client = await pool.connect();
       await client.query("BEGIN");
@@ -1161,50 +1162,88 @@ export const NfcVisitController = {
         [idUsuario],
       );
       if (!clienteRes.rows[0]) {
-        throw new ApiError(404, "Perfil de cliente no encontrado");
+        throw new ApiError(
+          404,
+          "Perfil de cliente no encontrado. Inicia sesión con tu cuenta de cliente para recibir sellos en tu pasaporte.",
+        );
       }
       const cliente = clienteRes.rows[0];
 
+      if (cliente.usuario_estado !== 1) {
+        throw new ApiError(403, "Tu cuenta de cliente se encuentra inactiva");
+      }
+
+      // 1.1 Obtener tarjeta física activa del cliente si la tiene vinculada
+      const tarjetaRes = await client.query(
+        `SELECT id_tarjeta FROM tarjetas_nfc 
+         WHERE id_cliente = $1 AND estado = 'ACTIVA' 
+         ORDER BY es_principal DESC, id_tarjeta DESC LIMIT 1`,
+        [cliente.id_cliente],
+      );
+      const idTarjeta = tarjetaRes.rows[0]?.id_tarjeta || null;
+
       // 2. Buscar programa de sellos y establecimiento por el chip NFC físico del local
+      // Máxima tolerancia a formatos con o sin dos puntos (MAC/UID)
       const progRes = await client.query(
         `SELECT ps.id_programa, ps.id_establecimiento, ps.nombre_sello, ps.imagen_sello,
                 ps.color_sello, ps.meta_sellos, ps.max_sellos_dia, ps.estado AS prog_estado,
                 COALESCE(ps.puntos_por_visita, 20) AS puntos_por_sello,
+                COALESCE(ps.puntos_completado_meta, 50) AS puntos_bonus_meta,
+                ps.tipo_reinicio, ps.fecha_inicio, ps.fecha_fin,
                 e.nombre_comercial, e.estado AS est_estado
          FROM programas_sellos ps
          JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
-         WHERE UPPER(ps.sello_nfc_uid) = $1 AND ps.estado = 'ACTIVO' AND e.estado = 'ACTIVO'
+         WHERE (UPPER(ps.sello_nfc_uid) = $1 OR UPPER(REPLACE(ps.sello_nfc_uid, ':', '')) = $2)
+           AND ps.estado = 'ACTIVO' AND e.estado = 'ACTIVO'
          LIMIT 1`,
-        [uidClean],
+        [uidClean, uidSanitized],
       );
 
       if (!progRes.rows[0]) {
         throw new ApiError(
           404,
-          "El chip NFC escaneado no corresponde a ningún sello activo de la red",
+          "El chip NFC escaneado no corresponde a ningún sello activo de la red o el comercio se encuentra inactivo",
         );
       }
       const programa = progRes.rows[0];
 
-      // 3. Obtener sucursal principal del establecimiento
+      // 3. Obtener sucursal del establecimiento
       const sucRes = await client.query(
         `SELECT id_sucursal, nombre FROM sucursales 
          WHERE id_establecimiento = $1 AND estado = 1 
          ORDER BY id_sucursal ASC LIMIT 1`,
         [programa.id_establecimiento],
       );
-      const idSucursal = sucRes.rows[0]?.id_sucursal || null;
+      let idSucursal = sucRes.rows[0]?.id_sucursal || null;
+
+      if (!idSucursal) {
+        const fallbackSuc = await client.query(
+          `SELECT id_sucursal, nombre FROM sucursales 
+           WHERE id_establecimiento = $1 
+           ORDER BY id_sucursal ASC LIMIT 1`,
+          [programa.id_establecimiento],
+        );
+        idSucursal = fallbackSuc.rows[0]?.id_sucursal || null;
+      }
+
+      if (!idSucursal) {
+        throw new ApiError(
+          400,
+          `El comercio ${programa.nombre_comercial} no tiene sucursales registradas`,
+        );
+      }
 
       // 4. Validar límite de sellos por día (evitar spam)
       const hoyCheck = await client.query(
         `SELECT COUNT(*)::int AS count_hoy
          FROM sellos_digitales sd
          JOIN visitas v ON v.id_visita = sd.id_visita
-         WHERE sd.id_programa = $1 
+         JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+         WHERE suc.id_establecimiento = $1 
            AND v.id_cliente = $2 
-           AND DATE(sd.fecha_otorgamiento AT TIME ZONE 'America/Lima') = DATE(CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')
+           AND (sd.fecha_otorgamiento AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
            AND sd.estado = 'OTORGADO'`,
-        [programa.id_programa, cliente.id_cliente],
+        [programa.id_establecimiento, cliente.id_cliente],
       );
 
       const countHoy = Number(hoyCheck.rows[0]?.count_hoy || 0);
@@ -1216,40 +1255,51 @@ export const NfcVisitController = {
         );
       }
 
-      // 5. Crear registro de visita
+      // 5. Crear registro de visita con estado CONFIRMADA y columna id_usuario_validador correcta
       const visitaRes = await client.query(
         `INSERT INTO visitas (
-          id_cliente, id_sucursal, id_validador, fecha_hora, estado, metodo_validacion, observacion
+          id_cliente, id_tarjeta, id_sucursal, id_usuario_validador, fecha_hora, estado, metodo_validacion, observacion
         ) VALUES (
-          $1, $2, $3, CURRENT_TIMESTAMP, 'COMPLETADA', 'NFC_SELLO_LOCAL', $4
+          $1, $2, $3, NULL, CURRENT_TIMESTAMP, 'CONFIRMADA', 'NFC_SELLO_LOCAL', $4
         ) RETURNING id_visita, fecha_hora`,
         [
           cliente.id_cliente,
+          idTarjeta,
           idSucursal,
-          idUsuario,
           `Estampado autónomo mediante Sello Físico NFC del local (${programa.nombre_comercial})`,
         ],
       );
       const visitaId = visitaRes.rows[0].id_visita;
 
-      // 6. Contar orden de sello
+      // 6. Contar orden de sello en el ciclo
+      const metaSellos = Number(programa.meta_sellos || 5);
       const totalPrevios = await client.query(
         `SELECT COUNT(*)::int AS total
          FROM sellos_digitales sd
-         WHERE sd.id_programa = $1 AND sd.estado = 'OTORGADO'
-           AND sd.id_visita IN (SELECT id_visita FROM visitas WHERE id_cliente = $2)`,
-        [programa.id_programa, cliente.id_cliente],
+         JOIN visitas v ON v.id_visita = sd.id_visita
+         JOIN sucursales suc ON suc.id_sucursal = v.id_sucursal
+         WHERE suc.id_establecimiento = $1 
+           AND sd.estado = 'OTORGADO'
+           AND v.id_cliente = $2`,
+        [programa.id_establecimiento, cliente.id_cliente],
       );
-      const ordenSello = (Number(totalPrevios.rows[0]?.total || 0) % Number(programa.meta_sellos || 8)) + 1;
+      const totalAcumulados = Number(totalPrevios.rows[0]?.total || 0);
+      const ordenSello = (totalAcumulados % metaSellos) + 1;
+      const esSelloMetaFinal = ordenSello === metaSellos;
+
+      const puntosBase = Number(programa.puntos_por_sello || 20);
+      const puntosBonus = esSelloMetaFinal ? Number(programa.puntos_bonus_meta || 50) : 0;
+      const puntosOtorgados = puntosBase + puntosBonus;
 
       // 7. Estampar sello digital
       const selloRes = await client.query(
         `INSERT INTO sellos_digitales (
           id_visita, id_programa, numero_sello, cantidad, fecha_otorgamiento, estado,
-          nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot, meta_sellos_snapshot, puntos_sello_snapshot
+          nombre_sello_snapshot, imagen_sello_snapshot, color_sello_snapshot, meta_sellos_snapshot, puntos_sello_snapshot,
+          es_sello_especial
         ) VALUES (
           $1, $2, $3, 1, CURRENT_TIMESTAMP, 'OTORGADO',
-          $4, $5, $6, $7, $8
+          $4, $5, $6, $7, $8, $9
         ) RETURNING id_sello`,
         [
           visitaId,
@@ -1258,14 +1308,14 @@ export const NfcVisitController = {
           programa.nombre_sello,
           programa.imagen_sello,
           programa.color_sello,
-          programa.meta_sellos,
-          programa.puntos_por_sello,
+          metaSellos,
+          puntosOtorgados,
+          esSelloMetaFinal,
         ],
       );
       const selloId = selloRes.rows[0].id_sello;
 
-      // 8. Acreditar puntos en ledger contable
-      const puntosOtorgados = Number(programa.puntos_por_sello || 20);
+      // 8. Acreditar puntos en ledger contable (tipo_movimiento GANANCIA_SELLO)
       const saldoPrev = await client.query(
         `SELECT COALESCE(SUM(cantidad), 0)::int AS saldo
          FROM movimientos_puntos
@@ -1277,34 +1327,50 @@ export const NfcVisitController = {
 
       await client.query(
         `INSERT INTO movimientos_puntos (
-          id_cliente, tipo_movimiento, cantidad, saldo_anterior, saldo_posterior,
-          motivo, referencia_tipo, referencia_id, id_validador
+          id_cliente, id_programa, id_visita, id_sello,
+          tipo_movimiento, cantidad, saldo_anterior, saldo_posterior,
+          descripcion, id_usuario_accion
         ) VALUES (
-          $1, 'INGRESO', $2, $3, $4,
-          $5, 'VISITA', $6, $7
+          $1, $2, $3, $4,
+          'GANANCIA_SELLO', $5, $6, $7,
+          $8, $9
         )`,
         [
           cliente.id_cliente,
+          programa.id_programa,
+          visitaId,
+          selloId,
           puntosOtorgados,
           saldoAnterior,
           saldoPosterior,
-          `Sello NFC físico en ${programa.nombre_comercial} (+${puntosOtorgados} pts)`,
-          visitaId,
+          `Sello NFC físico en ${programa.nombre_comercial} (+${puntosOtorgados} pts)${esSelloMetaFinal ? ' [¡Colección completada!]' : ''}`,
           idUsuario,
         ],
       );
 
-      // 9. Notificación
+      // 9. Notificación en la aplicación
       await client.query(
         `INSERT INTO notificaciones (
           id_usuario, tipo_notificacion, titulo, mensaje, canal, estado_envio, referencia_tipo, referencia_id
         ) VALUES (
-          $1, 'SELLO_OBTENIDO', '¡Sello NFC Estampado!', $2, 'APP', 'ENVIADA', 'VISITA', $3
+          $1, 'SELLO_OBTENIDO', $2, $3, 'APP', 'ENVIADA', 'VISITA', $4
         )`,
         [
           idUsuario,
+          esSelloMetaFinal ? '🏆 ¡Cartilla de sellos completada!' : '¡Sello NFC Estampado!',
           `Acercaste tu móvil al Sello NFC de ${programa.nombre_comercial} y recibiste el sello #${ordenSello} (+${puntosOtorgados} pts).`,
           visitaId,
+        ],
+      );
+
+      // 10. Auditoría
+      await client.query(
+        `INSERT INTO auditoria (id_usuario, modulo, accion, entidad, id_entidad, descripcion)
+         VALUES ($1, 'VISITAS', 'CONFIRMAR', 'visitas', $2, $3)`,
+        [
+          idUsuario,
+          visitaId,
+          `Estampado NFC autónomo para cliente ${cliente.id_cliente} en ${programa.nombre_comercial} (sello #${ordenSello}, puntos: +${puntosOtorgados})`,
         ],
       );
 
@@ -1314,6 +1380,18 @@ export const NfcVisitController = {
         res,
         201,
         {
+          programa: {
+            nombre_local: programa.nombre_comercial,
+            nombre: programa.nombre_sello,
+            id_programa: programa.id_programa,
+          },
+          progreso: {
+            sellos_actuales: ordenSello,
+            sellos_totales: metaSellos,
+          },
+          recompensa_desbloqueada: esSelloMetaFinal,
+          puntos_ganados: puntosOtorgados,
+          saldo_actual: saldoPosterior,
           visita: {
             id_visita: visitaId,
             fecha_hora: visitaRes.rows[0].fecha_hora,
@@ -1322,10 +1400,11 @@ export const NfcVisitController = {
           sello: {
             id_sello: selloId,
             numero_sello: ordenSello,
-            meta_sellos: programa.meta_sellos,
+            meta_sellos: metaSellos,
             nombre_sello: programa.nombre_sello,
             color_sello: programa.color_sello,
             imagen_sello: programa.imagen_sello,
+            es_sello_especial: esSelloMetaFinal,
           },
           puntos: {
             puntos_ganados: puntosOtorgados,

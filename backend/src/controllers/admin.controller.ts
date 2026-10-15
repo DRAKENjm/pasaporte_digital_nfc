@@ -142,14 +142,22 @@ export const AdminController = {
         query(
           `SELECT 
              TO_CHAR(d.fecha, 'YYYY-MM-DD') AS fecha,
-             TO_CHAR(d.fecha, 'Dy') AS dia_nombre,
+             CASE EXTRACT(ISODOW FROM d.fecha)
+               WHEN 1 THEN 'Lun'
+               WHEN 2 THEN 'Mar'
+               WHEN 3 THEN 'Mié'
+               WHEN 4 THEN 'Jue'
+               WHEN 5 THEN 'Vie'
+               WHEN 6 THEN 'Sáb'
+               WHEN 7 THEN 'Dom'
+             END AS dia_nombre,
              COUNT(v.id_visita)::int AS nuevos_clientes
            FROM generate_series(
-             DATE_TRUNC('week', CURRENT_DATE)::date,
-             (DATE_TRUNC('week', CURRENT_DATE) + INTERVAL '6 days')::date,
+             DATE_TRUNC('week', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima'))::date,
+             (DATE_TRUNC('week', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')) + INTERVAL '6 days')::date,
              '1 day'::interval
            ) d(fecha)
-           LEFT JOIN visitas v ON DATE(v.fecha_hora) = DATE(d.fecha)
+           LEFT JOIN visitas v ON (v.fecha_hora AT TIME ZONE 'America/Lima')::date = d.fecha AND v.estado = 'CONFIRMADA'
            GROUP BY d.fecha
            ORDER BY d.fecha ASC`,
         ),
@@ -160,11 +168,26 @@ export const AdminController = {
            GROUP BY r.nombre`,
         ),
         query(
-          `SELECT 'Explorador' AS nivel, '#C5A059' AS color_hex, COUNT(*)::int AS total
-           FROM clientes`,
+          `SELECT 
+             COALESCE(n.nombre, 'Explorador') AS nivel, 
+             COALESCE(n.color_hex, '#C5A059') AS color_hex, 
+             COUNT(c.id_cliente)::int AS total
+           FROM clientes c
+           LEFT JOIN niveles n ON n.id_nivel = c.nivel_id
+           GROUP BY COALESCE(n.nombre, 'Explorador'), COALESCE(n.color_hex, '#C5A059')`,
         ),
         query(
-          `SELECT 'NFC' AS metodo, COUNT(*)::int AS total FROM visitas`,
+          `SELECT 
+             CASE 
+               WHEN metodo_validacion = 'QR' THEN 'Código QR'
+               WHEN metodo_validacion = 'AUTOSELLADO' THEN 'Auto-sellado GPS'
+               WHEN metodo_validacion = 'NFC_SELLO_LOCAL' THEN 'Sello Físico NFC'
+               ELSE 'Tarjeta NFC'
+             END AS metodo, 
+             COUNT(*)::int AS total 
+           FROM visitas 
+           WHERE estado = 'CONFIRMADA'
+           GROUP BY metodo`,
         ),
         query(
           `SELECT 
@@ -186,8 +209,17 @@ export const AdminController = {
              COUNT(CASE WHEN estado = 'DISPONIBLE' THEN 1 END)::int AS en_stock,
              COUNT(CASE WHEN estado = 'ACTIVA' THEN 1 END)::int AS asignadas,
              COUNT(CASE WHEN estado = 'PERDIDA' THEN 1 END)::int AS extraviadas,
-             COUNT(CASE WHEN estado = 'BLOQUEADA' THEN 1 END)::int AS bloqueadas
-           FROM tarjetas_nfc`,
+            COUNT(CASE WHEN estado = 'BLOQUEADA' THEN 1 END)::int AS bloqueadas
+          FROM tarjetas_nfc`,
+        ),
+        query(
+          `SELECT 
+             (SELECT COUNT(*)::int FROM visitas WHERE estado = 'CONFIRMADA' AND fecha_hora >= CURRENT_DATE - INTERVAL '7 days') AS visitas_esta_semana,
+             (SELECT COUNT(*)::int FROM visitas WHERE estado = 'CONFIRMADA' AND fecha_hora >= CURRENT_DATE - INTERVAL '14 days' AND fecha_hora < CURRENT_DATE - INTERVAL '7 days') AS visitas_semana_anterior,
+             (SELECT COUNT(*)::int FROM usuarios WHERE fecha_creacion >= CURRENT_DATE - INTERVAL '7 days') AS clientes_esta_semana,
+             (SELECT COUNT(*)::int FROM usuarios WHERE fecha_creacion >= CURRENT_DATE - INTERVAL '14 days' AND fecha_creacion < CURRENT_DATE - INTERVAL '7 days') AS clientes_semana_anterior,
+             (SELECT COALESCE(SUM(cantidad), 0)::int FROM movimientos_puntos WHERE cantidad > 0 AND fecha_movimiento >= CURRENT_DATE - INTERVAL '7 days') AS puntos_esta_semana,
+             (SELECT COALESCE(SUM(cantidad), 0)::int FROM movimientos_puntos WHERE cantidad > 0 AND fecha_movimiento >= CURRENT_DATE - INTERVAL '14 days' AND fecha_movimiento < CURRENT_DATE - INTERVAL '7 days') AS puntos_semana_anterior`,
         ),
       ]);
 
@@ -212,6 +244,7 @@ export const AdminController = {
         distribucionMetodos,
         topEstablecimientos,
         resumenNfc,
+        comparativa,
       ] = batch2;
 
       sendResponse(
@@ -243,6 +276,14 @@ export const AdminController = {
             asignadas: 0,
             extraviadas: 0,
             bloqueadas: 0,
+          },
+          comparativa_semanal: comparativa.rows[0] ?? {
+            visitas_esta_semana: 0,
+            visitas_semana_anterior: 0,
+            clientes_esta_semana: 0,
+            clientes_semana_anterior: 0,
+            puntos_esta_semana: 0,
+            puntos_semana_anterior: 0,
           },
         },
         "Dashboard admin analítico",
@@ -1251,6 +1292,8 @@ export const AdminController = {
 
       const result = await query(`
         SELECT r.*, e.nombre_comercial AS establecimiento_nombre, e.razon_social,
+               COALESCE(e.tipo, 'LOCAL') AS establecimiento_tipo,
+               e.logo AS establecimiento_logo,
                COALESCE(r.tipo_reinicio, ps.tipo_reinicio, 'MENSUAL') AS tipo_reinicio,
                COALESCE(r.meta_sellos, ps.meta_sellos, 5) AS meta_sellos,
                COALESCE(r.puntos_completado_meta, ps.puntos_completado_meta, 50) AS puntos_completado_meta,
@@ -2873,15 +2916,17 @@ export const AdminController = {
       if (!prog.rows[0]) throw new ApiError(404, "Programa de sello no encontrado");
 
       const uidClean = sello_nfc_uid ? String(sello_nfc_uid).trim().toUpperCase() : null;
+      const uidSanitized = uidClean ? uidClean.replace(/:/g, "") : null;
 
       // Verificar que el UID no esté asignado a otro sello
-      if (uidClean) {
+      if (uidClean && uidSanitized) {
         const duplicado = await query(
           `SELECT ps.id_programa, ps.nombre_sello, e.nombre_comercial
            FROM programas_sellos ps
            JOIN establecimientos e ON e.id_establecimiento = ps.id_establecimiento
-           WHERE UPPER(ps.sello_nfc_uid) = $1 AND ps.id_programa != $2`,
-          [uidClean, id],
+           WHERE (UPPER(ps.sello_nfc_uid) = $1 OR UPPER(REPLACE(ps.sello_nfc_uid, ':', '')) = $2)
+             AND ps.id_programa != $3`,
+          [uidClean, uidSanitized, id],
         );
         if (duplicado.rows[0]) {
           throw new ApiError(
@@ -3047,15 +3092,23 @@ export const AdminController = {
       const [visitasSemana, canjesCat, resumen] = await Promise.all([
         query(`
           SELECT 
-            TO_CHAR(d.fecha, 'Dy') AS dia,
+            CASE EXTRACT(ISODOW FROM d.fecha)
+              WHEN 1 THEN 'Lun'
+              WHEN 2 THEN 'Mar'
+              WHEN 3 THEN 'Mié'
+              WHEN 4 THEN 'Jue'
+              WHEN 5 THEN 'Vie'
+              WHEN 6 THEN 'Sáb'
+              WHEN 7 THEN 'Dom'
+            END AS dia,
             TO_CHAR(d.fecha, 'DD/MM') AS fecha_corta,
             COUNT(v.id_visita)::int AS val
           FROM generate_series(
-            (CURRENT_DATE - INTERVAL '6 days')::date,
-            CURRENT_DATE::date,
+            ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima') - INTERVAL '6 days')::date,
+            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date,
             '1 day'::interval
           ) d(fecha)
-          LEFT JOIN visitas v ON DATE(v.fecha_hora) = DATE(d.fecha) AND v.estado = 'CONFIRMADA'
+          LEFT JOIN visitas v ON (v.fecha_hora AT TIME ZONE 'America/Lima')::date = d.fecha AND v.estado = 'CONFIRMADA'
           GROUP BY d.fecha
           ORDER BY d.fecha ASC
         `),

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Building2,
@@ -25,6 +25,7 @@ import {
   User as UserIcon,
   ChevronDown,
   Activity,
+  Coins,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useConfig } from "../context/ConfigContext";
@@ -39,6 +40,11 @@ export const AdminLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const location = useLocation();
+  const isSistemaRoute = ["/admin/control-apis", "/admin/legal", "/admin/auditoria", "/admin/configuracion"].some(
+    (p) => location.pathname.startsWith(p)
+  );
+  const [sistemaOpen, setSistemaOpen] = useState(isSistemaRoute);
 
   const handleLogout = () => {
     logout();
@@ -96,6 +102,7 @@ export const AdminLayout: React.FC = () => {
 
   const navGroups: Array<{
     group: string;
+    isCollapsible?: boolean;
     items: Array<{ to: string; end?: boolean; label: string; icon: any }>;
   }> = [
     {
@@ -117,7 +124,7 @@ export const AdminLayout: React.FC = () => {
       group: "Fidelización",
       items: [
         { to: "/admin/sellos", label: "Diseño de Sellos", icon: Stamp },
-        { to: "/admin/reglas", label: "Reglas de Sellos", icon: Award },
+        { to: "/admin/reglas", label: "Gestión de Puntos", icon: Coins },
         { to: "/admin/recompensas", label: "Recompensas", icon: Gift },
         { to: "/admin/categorias", label: "Categorías", icon: Tag },
       ],
@@ -126,8 +133,14 @@ export const AdminLayout: React.FC = () => {
       group: "Supervisión",
       items: [
         { to: "/admin/reportes", label: "Reportes", icon: BarChart3 },
-        { to: "/admin/control-apis", label: "Control de APIs", icon: Activity },
         { to: "/admin/reclamaciones", label: "Reclamaciones", icon: ShieldAlert },
+      ],
+    },
+    {
+      group: "Sistema",
+      isCollapsible: true,
+      items: [
+        { to: "/admin/control-apis", label: "Control de APIs", icon: Activity },
         { to: "/admin/legal", label: "Documentos", icon: FileText },
         { to: "/admin/auditoria", label: "Auditoría", icon: ShieldCheck },
         { to: "/admin/configuracion", label: "Configuración", icon: Settings },
@@ -194,92 +207,83 @@ export const AdminLayout: React.FC = () => {
 
         {/* Links de Navegación por Grupos */}
         <nav className="flex-1 p-2.5 space-y-3.5 overflow-y-auto custom-dark-scrollbar">
-          {navGroups.map((g, gIdx) => (
-            <div key={gIdx} className="space-y-1">
-              {!collapsed && (
-                <span className="text-[9px] font-black uppercase tracking-widest text-[#E8D3A2]/80 px-3 block">
-                  {g.group}
-                </span>
-              )}
-              {g.items.map((item) => (
-                <NavLink
-                  key={item.label + item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={() => setMobileOpen(false)}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-all duration-200 ${
-                      isActive
-                        ? "bg-[#580614] text-white shadow-inner border border-[#C5A059]/50"
-                        : "text-white/80 hover:text-white hover:bg-white/10"
-                    } ${collapsed ? "justify-center px-0 w-11 h-11 mx-auto" : ""}`
-                  }
-                  title={collapsed ? item.label : undefined}
-                >
-                  {({ isActive }) => (
-                    <>
-                      <item.icon
-                        className={`w-4 h-4 shrink-0 transition-colors ${
-                          isActive ? "text-[#C5A059]" : "text-white/70"
-                        }`}
-                      />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          ))}
+          {navGroups.map((g, gIdx) => {
+            const isCollapsible = g.isCollapsible;
+            const isOpen = isCollapsible ? (sistemaOpen || isSistemaRoute) : true;
+
+            return (
+              <div key={gIdx} className="space-y-1">
+                {!collapsed && (
+                  <div className="flex items-center justify-between px-3 py-1">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-[#F3E5C8] select-none">
+                      {g.group}
+                    </span>
+                    {isCollapsible && (
+                      <button
+                        type="button"
+                        onClick={() => setSistemaOpen(!sistemaOpen)}
+                        className="text-[#E8D3A2] hover:text-white p-0.5 rounded transition cursor-pointer"
+                        title={isOpen ? "Contraer sección" : "Expandir sección"}
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {isOpen && g.items.map((item) => (
+                  <NavLink
+                    key={item.label + item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-all duration-200 ${
+                        isActive
+                          ? "bg-[#580614] text-white shadow-inner border border-[#C5A059]/50 font-bold"
+                          : "text-white/80 hover:text-white hover:bg-white/10"
+                      } ${collapsed ? "justify-center px-0 w-11 h-11 mx-auto" : ""}`
+                    }
+                    title={collapsed ? item.label : undefined}
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <item.icon
+                          className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? "text-[#C5A059]" : "text-white/70"
+                          }`}
+                        />
+                        {!collapsed && <span className="truncate">{item.label}</span>}
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
-        {/* Footer & Toggle / Logout */}
-        <div className="p-2.5 border-t border-white/10 space-y-1 bg-black/15">
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className={`hidden lg:flex w-full items-center gap-3 px-3 py-2 rounded-2xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors ${
-              collapsed ? "justify-center px-0 w-11 h-11 mx-auto" : ""
-            }`}
-            title={collapsed ? "Expandir" : "Contraer"}
-          >
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            {!collapsed && <span>{collapsed ? "Expandir" : "Contraer menú"}</span>}
-          </button>
-
-          <button
-            onClick={handleLogout}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-xs font-medium text-white/80 hover:text-rose-200 hover:bg-rose-500/20 transition-colors ${
-              collapsed ? "justify-center px-0 w-11 h-11 mx-auto" : ""
-            }`}
-            title={collapsed ? "Cerrar sesión" : undefined}
-          >
-            <LogOut className="w-4 h-4 shrink-0 text-white/70" />
-            {!collapsed && <span>Cerrar sesión</span>}
-          </button>
-        </div>
       </aside>
 
       {/* Main Container Area with Rounded Canvas (Fondo Claro y Textos Nítidos) */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#FAF8F5] border border-[#E8DFD5] rounded-3xl shadow-xl overflow-hidden min-h-[calc(100vh-2rem)]">
         {/* Top Navbar */}
-        <header className="px-5 sm:px-8 py-4 bg-white/90 backdrop-blur-md border-b border-[#E8DFD5] flex items-center justify-between gap-4 sticky top-0 z-30">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setMobileOpen(true)}
-              className="lg:hidden p-2 rounded-2xl bg-[#FAF8F5] border border-[#E8DFD5] text-[#2D1A1E] hover:bg-[#F0ECE6]"
-            >
-              <Menu size={18} />
-            </button>
+        <header className="px-5 sm:px-8 py-3.5 bg-white/95 backdrop-blur-md border-b border-[#E8DFD5] sticky top-0 z-30">
+          <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setMobileOpen(true)}
+                className="lg:hidden p-2 rounded-2xl bg-[#FAF8F5] border border-[#E8DFD5] text-[#2D1A1E] hover:bg-[#F0ECE6]"
+              >
+                <Menu size={18} />
+              </button>
 
-            {/* Title / Brand Display */}
-            <div>
-              <h1 className="text-base sm:text-lg font-black text-[#2D1A1E] tracking-tight flex items-center gap-2">
-                Panel General
-                <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#7C0A1E]/10 text-[#7C0A1E] border border-[#7C0A1E]/20">
-                  En Vivo
-                </span>
-              </h1>
+              {/* Breadcrumb Contextual */}
+              <div>
+                <h1 className="text-base font-black text-[#2D1A1E] tracking-tight">
+                  Pasaporte Digital
+                </h1>
+              </div>
             </div>
-          </div>
 
           {/* Quick Search and Top Icons */}
           <div className="flex items-center gap-3">
@@ -534,11 +538,14 @@ export const AdminLayout: React.FC = () => {
               )}
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
         {/* Content Body */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          <Outlet />
+          <div className="max-w-7xl mx-auto w-full">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

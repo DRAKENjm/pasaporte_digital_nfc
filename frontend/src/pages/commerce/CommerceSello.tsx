@@ -134,8 +134,10 @@ export const CommerceSello: React.FC = () => {
       });
       showToast(res.data?.message || "Chip NFC físico actualizado con éxito", "success");
       setModalNfcLocal(false);
-      setSello((prev: any) => prev ? { ...prev, sello_nfc_uid: nfcUidInput.trim() || null } : prev);
-      setSellos((prev: any[]) => prev.map(s => String(s.id_programa) === selectedId ? { ...s, sello_nfc_uid: nfcUidInput.trim() || null } : s));
+      const updatedUid = nfcUidInput.trim() || null;
+      setSello((prev: any) => prev ? { ...prev, sello_nfc_uid: updatedUid } : prev);
+      setSellos((prev: any[]) => prev.map(s => String(s.id_programa) === selectedId ? { ...s, sello_nfc_uid: updatedUid } : s));
+      await loadSello(selectedSucursal || undefined, selectedId);
     } catch (err: any) {
       showToast(err.response?.data?.message || "Error al vincular el Sello NFC", "error");
     } finally {

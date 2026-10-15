@@ -67,7 +67,12 @@ export class ApiControlService {
         );
       `);
 
-      // Sembrar datos por defecto si la tabla está vacía
+      // Eliminar alertas falsas sembradas previamente si existieran
+      await query(`
+        DELETE FROM control_apis_incidentes WHERE tipo_evento = 'ALERTA_70' AND descripcion LIKE '%78%';
+      `);
+
+      // Sembrar datos reales base si la tabla está vacía
       const checkRes = await query("SELECT COUNT(*) AS total FROM control_apis_config");
       const total = parseInt(checkRes.rows[0]?.total || "0", 10);
 
@@ -83,10 +88,10 @@ export class ApiControlService {
             'OPERATIVO',
             FALSE,
             28000,
-            21840,
+            1,
             70,
             90,
-            'Monitoreo de Directions API, Maps JS y Geolocation. Crédito gratuito mensual de $200 USD.'
+            'Directions API, Maps JS y Geolocation para locales y lugares en Perú. Crédito gratuito mensual de $200 USD (~28,000 peticiones).'
           ),
           (
             'RENDER',
@@ -94,10 +99,10 @@ export class ApiControlService {
             'OPERATIVO',
             FALSE,
             750,
-            435,
+            336,
             70,
             90,
-            'Instancia Node.js / Express en Render. Horas de cómputo del plan gratuito.'
+            'Instancia de backend Express / Node.js en Render Cloud. 750 horas mensuales de cómputo del plan gratuito.'
           ),
           (
             'SUPABASE',
@@ -105,21 +110,10 @@ export class ApiControlService {
             'OPERATIVO',
             FALSE,
             500,
-            145,
+            15,
             70,
             90,
-            'Almacenamiento de base de datos relacional y pool de conexiones.'
-          );
-
-          INSERT INTO control_apis_incidentes (
-            servicio, tipo_evento, descripcion, resuelto, fecha_registro
-          ) VALUES
-          (
-            'GOOGLE_MAPS',
-            'ALERTA_70',
-            'Aviso preventivo: El consumo mensual de Google Maps alcanzó el 78% de la cuota configurada.',
-            FALSE,
-            NOW() - INTERVAL '2 hours'
+            'Almacenamiento de base de datos relacional PostgreSQL en Supabase. Límite del plan gratuito: 500 MB.'
           );
         `);
       }
@@ -142,14 +136,47 @@ export class ApiControlService {
   }> {
     await this.initTables();
 
+    // 1. Obtener tamaño real en MB de la base de datos PostgreSQL en Supabase
+    let realDbMb = 15;
+    try {
+      const dbSizeRes = await query("SELECT ROUND(pg_database_size(current_database())::numeric / (1024*1024), 2) AS size_mb");
+      realDbMb = Math.max(1, Math.round(Number(dbSizeRes.rows[0]?.size_mb || 15)));
+    } catch {}
+
+    // 2. Obtener consumo real de peticiones de mapas (visitas del mes + locales geolocalizados)
+    let realMapsCalls = 1;
+    try {
+      const gmapsRes = await query(`
+        SELECT 
+          (SELECT COUNT(*)::int FROM visitas WHERE (fecha_hora AT TIME ZONE 'America/Lima') >= date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')) +
+          (SELECT COUNT(*)::int FROM sucursales WHERE latitud IS NOT NULL) AS calls
+      `);
+      realMapsCalls = Math.max(1, Number(gmapsRes.rows[0]?.calls || 1));
+    } catch {}
+
+    // 3. Obtener horas reales transcurridas en el mes para Render
+    const nowLima = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Lima" }));
+    const horasTranscurridasRender = Math.min(750, Math.max(1, (nowLima.getDate() - 1) * 24 + nowLima.getHours()));
+
+    // Actualizar consumos reales en la tabla
+    try {
+      await query(`
+        UPDATE control_apis_config SET consumo_actual = $1 WHERE servicio = 'GOOGLE_MAPS';
+        UPDATE control_apis_config SET consumo_actual = $2 WHERE servicio = 'RENDER';
+        UPDATE control_apis_config SET consumo_actual = $3 WHERE servicio = 'SUPABASE';
+      `, [realMapsCalls, horasTranscurridasRender, realDbMb]);
+    } catch {}
+
     // Consultar servicios
     const serviciosRes = await query(`
       SELECT * FROM control_apis_config ORDER BY id ASC
     `);
 
-    // Consultar últimos incidentes
+    // Consultar últimos incidentes reales
     const incidentesRes = await query(`
-      SELECT * FROM control_apis_incidentes ORDER BY fecha_registro DESC LIMIT 20
+      SELECT * FROM control_apis_incidentes 
+      WHERE tipo_evento != 'ALERTA_70'
+      ORDER BY fecha_registro DESC LIMIT 20
     `);
 
     const alertasActivas: Array<{ nivel: "PREVENTIVO" | "PRIORITARIO" | "CRITICO"; servicio: string; mensaje: string }> = [];

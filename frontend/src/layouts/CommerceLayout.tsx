@@ -136,19 +136,6 @@ export const CommerceLayout: React.FC = () => {
           ))}
         </nav>
 
-        {/* User Footer & Logout */}
-        <div className="p-3 border-t border-white/10">
-          <button
-            onClick={handleLogout}
-            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-white/80 hover:bg-white/10 hover:text-rose-300 transition-colors ${
-              collapsed ? "justify-center px-0" : ""
-            }`}
-            title={collapsed ? "Cerrar sesión" : undefined}
-          >
-            <LogOut className="w-4 h-4 shrink-0" />
-            {!collapsed && <span>Cerrar sesión</span>}
-          </button>
-        </div>
       </aside>
 
       {/* Main Content Area */}

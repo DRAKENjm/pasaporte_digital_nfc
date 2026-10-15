@@ -96,11 +96,9 @@ export const AdminSellos: React.FC = () => {
   const [editColorSello, setEditColorSello] = useState("#7C0A1E");
   const [editDescripcion, setEditDescripcion] = useState("");
   const [editMetaSellos, setEditMetaSellos] = useState(5);
-  const [editPuntosPorVisita, setEditPuntosPorVisita] = useState(20);
   const [editTipoReinicio, setEditTipoReinicio] = useState("MENSUAL");
   const [editFechaInicioTemp, setEditFechaInicioTemp] = useState("");
   const [editFechaFinTemp, setEditFechaFinTemp] = useState("");
-  const [editPuntosCompletadoMeta, setEditPuntosCompletadoMeta] = useState(50);
   const [editEstado, setEditEstado] = useState("ACTIVO");
   const [customIconModeEdit, setCustomIconModeEdit] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -253,11 +251,9 @@ export const AdminSellos: React.FC = () => {
     setEditColorSello(item.color_sello || "#7C0A1E");
     setEditDescripcion(item.descripcion || "");
     setEditMetaSellos(Math.min(28, Math.max(1, Number(item.meta_sellos ?? 5))));
-    setEditPuntosPorVisita(Number(item.puntos_por_visita ?? 20));
     setEditTipoReinicio(item.tipo_reinicio || "MENSUAL");
     setEditFechaInicioTemp(item.fecha_inicio_temporada ? item.fecha_inicio_temporada.slice(0, 10) : "");
     setEditFechaFinTemp(item.fecha_fin_temporada ? item.fecha_fin_temporada.slice(0, 10) : "");
-    setEditPuntosCompletadoMeta(Number(item.puntos_completado_meta ?? 50));
     setEditEstado(item.estado || "ACTIVO");
     setCustomIconModeEdit(
       !TOURISM_EXPERIENCE_ICONS.some((p) => p.id === item.imagen_sello) &&
@@ -337,14 +333,12 @@ export const AdminSellos: React.FC = () => {
         color_sello: editColorSello,
         descripcion: editDescripcion.trim(),
         meta_sellos: editMetaSellos,
-        puntos_por_visita: editPuntosPorVisita,
         tipo_reinicio: editTipoReinicio,
         fecha_inicio_temporada: editTipoReinicio === "TEMPORADA" && editFechaInicioTemp ? editFechaInicioTemp : null,
         fecha_fin_temporada: editTipoReinicio === "TEMPORADA" && editFechaFinTemp ? editFechaFinTemp : null,
-        puntos_completado_meta: editPuntosCompletadoMeta,
         estado: editEstado,
       });
-      showToast("Diseño y reglas de sello actualizados con éxito", "success");
+      showToast("Diseño visual de sello actualizado con éxito", "success");
       setModalEditar(false);
       await loadSellos();
     } catch (err: any) {
@@ -617,15 +611,29 @@ export const AdminSellos: React.FC = () => {
                           </div>
                         </div>
 
-                        <span
-                          className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
-                            item.estado === "ACTIVO"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : "bg-amber-50 text-amber-700 border border-amber-200"
-                          }`}
-                        >
-                          {item.estado}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              item.establecimiento_tipo === "LUGAR_TURISTICO" || item.establecimiento_tipo === "LUGAR"
+                                ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                : "bg-amber-50 text-amber-800 border border-amber-200"
+                            }`}
+                          >
+                            {item.establecimiento_tipo === "LUGAR_TURISTICO" || item.establecimiento_tipo === "LUGAR"
+                              ? "Lugar"
+                              : "Local"}
+                          </span>
+
+                          <span
+                            className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              item.estado === "ACTIVO"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-slate-100 text-slate-600 border border-slate-200"
+                            }`}
+                          >
+                            {item.estado}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Sello Badge Visual Centrado */}
@@ -696,9 +704,13 @@ export const AdminSellos: React.FC = () => {
                       </div>
 
                       <div className="mt-2 pt-1.5 border-t border-[#EFE7DE] flex items-center justify-between text-[11px]">
-                        <span className="text-[#8E7D7D] font-medium">Ciclo / Bono:</span>
-                        <span className="font-bold text-[10px] text-[#2D1A1E]">
-                          {item.tipo_reinicio || "MENSUAL"} · <span className="text-emerald-700">+{item.puntos_completado_meta ?? 50} bonus</span>
+                        <span className="text-[#8E7D7D] font-medium">Tinta Notarial:</span>
+                        <span className="flex items-center gap-1.5 font-bold text-[10px] text-[#2D1A1E]">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full inline-block border border-black/10 shadow-2xs"
+                            style={{ backgroundColor: item.color_sello || "#7C0A1E" }}
+                          />
+                          {INK_PALETTE.find((i) => i.hex === item.color_sello)?.name || "Borgoña"}
                         </span>
                       </div>
                     </div>
@@ -727,14 +739,30 @@ export const AdminSellos: React.FC = () => {
                         <span>{item.sello_nfc_uid ? "Sello NFC" : "Vincular NFC"}</span>
                       </button>
 
-                      <button
-                        onClick={() => openEditar(item)}
-                        className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
-                        title="Editar diseño y reglas del sello"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        <span>Editar</span>
-                      </button>
+                      {item.establecimiento_tipo === "LUGAR_TURISTICO" || item.establecimiento_tipo === "LUGAR" ? (
+                        <button
+                          onClick={() => openEditar(item)}
+                          className="py-2 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1 transition active:scale-95 shadow-2xs"
+                          title="Editar diseño y reglas del sello del lugar turístico (administrado por el sistema)"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            showToast(
+                              `"${item.establecimiento_nombre}" es un local comercial afiliado. El diseño de sus sellos, logo y reglas es administrado directamente por el comercio desde su propio panel de control.`,
+                              "info",
+                            )
+                          }
+                          className="py-2 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1 transition shadow-2xs cursor-pointer"
+                          title="Este sello es administrado por el propio local comercial desde su portal"
+                        >
+                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="text-[11px]">Panel Local</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => openRestablecer(item)}
@@ -1173,12 +1201,21 @@ export const AdminSellos: React.FC = () => {
 
               <div className="w-full mt-3 pt-2.5 border-t border-[#EFE7DE] space-y-1.5 text-[10px] text-left">
                 <div className="flex items-center justify-between">
-                  <span className="text-[#8E7D7D]">Meta ciclo:</span>
+                  <span className="text-[#8E7D7D]">Meta de Cartilla:</span>
                   <strong className="text-[#2D1A1E]">{editMetaSellos} sellos</strong>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[#8E7D7D]">Puntos por visita:</span>
-                  <strong className="text-[#7C0A1E]">+{editPuntosPorVisita} pts</strong>
+                  <span className="text-[#8E7D7D]">Tinta Oficial:</span>
+                  <span className="flex items-center gap-1 font-bold text-[#2D1A1E]">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: editColorSello }} />
+                    {INK_PALETTE.find((i) => i.hex === editColorSello)?.name || "Personalizado"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#8E7D7D]">Sello NFC Físico:</span>
+                  <span className="font-mono text-[9px] font-bold text-slate-700">
+                    {selloSeleccionado?.sello_nfc_uid ? `UID: ${selloSeleccionado.sello_nfc_uid}` : "Sin vincular"}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[#8E7D7D]">Estado:</span>
@@ -1420,38 +1457,10 @@ export const AdminSellos: React.FC = () => {
                   </div>
                 )}
 
-                {/* Puntos y Bonos */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                {/* Estado y enlace a Gestión de Puntos */}
+                <div className="pt-1 space-y-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
-                      Puntos por Visita
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={1000}
-                      value={editPuntosPorVisita}
-                      onChange={(e) => setEditPuntosPorVisita(Number(e.target.value))}
-                      className="input-base w-full text-xs font-semibold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
-                      Bono Fin de Cartilla
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={5000}
-                      value={editPuntosCompletadoMeta}
-                      onChange={(e) => setEditPuntosCompletadoMeta(Number(e.target.value))}
-                      className="input-base w-full text-xs font-semibold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#2D1A1E] mb-1">
+                    <label className="block text-[11px] font-bold text-[#2D1A1E] mb-1">
                       Estado del Sello
                     </label>
                     <select
@@ -1459,10 +1468,17 @@ export const AdminSellos: React.FC = () => {
                       onChange={(e) => setEditEstado(e.target.value)}
                       className="input-base w-full text-xs font-semibold"
                     >
-                      <option value="ACTIVO">Activo</option>
-                      <option value="INACTIVO">Inactivo</option>
-                      <option value="MODERADO">Moderado</option>
+                      <option value="ACTIVO">ACTIVO (Disponible para estampar)</option>
+                      <option value="INACTIVO">INACTIVO (Pausado temporalmente)</option>
+                      <option value="MODERADO">MODERADO (En revisión)</option>
                     </select>
+                  </div>
+
+                  <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start gap-2.5">
+                    <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                    <div className="text-[11px] text-amber-900 leading-snug">
+                      <strong>Gestión de Puntos y Beneficios:</strong> Los puntos por sello, puntos por visita, límites diarios y bono por llenar la cartilla se administran de manera independiente en el módulo <strong>Gestión de Puntos</strong>, separando los locales comerciales de los lugares turísticos.
+                    </div>
                   </div>
                 </div>
               </div>

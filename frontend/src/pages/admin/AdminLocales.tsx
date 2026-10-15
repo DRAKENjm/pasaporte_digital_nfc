@@ -726,46 +726,24 @@ export const AdminLocales = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5 w-full text-left">
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
-              Categoría *
-            </label>
-            <select
-              className="input-base"
-              value={form.categoria_id}
-              onChange={(e) =>
-                setForm({ ...form, categoria_id: e.target.value })
-              }
-            >
-              <option value="">Selecciona una categoría...</option>
-              {categorias.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icono_url ? `${c.icono_url} ` : "🏛️ "}{c.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5 w-full text-left">
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
-              Puntos por Visita / Sello *
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="500"
-              className="input-base font-black text-[#7C0A1E] dark:text-[#C5A059]"
-              value={form.puntos_por_visita || 20}
-              onChange={(e) =>
-                setForm({ ...form, puntos_por_visita: Math.max(1, Number(e.target.value)) })
-              }
-              required
-            />
-            <span className="text-[10px] text-muted block">
-              Puntos acreditados al sellar visita (por defecto 20 pts).
-            </span>
-          </div>
+        <div className="space-y-1.5 w-full text-left">
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-[#736868] dark:text-slate-400">
+            Categoría *
+          </label>
+          <select
+            className="input-base"
+            value={form.categoria_id}
+            onChange={(e) =>
+              setForm({ ...form, categoria_id: e.target.value })
+            }
+          >
+            <option value="">Selecciona una categoría...</option>
+            {categorias.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.icono_url ? `${c.icono_url} ` : "🏛️ "}{c.nombre}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Solo mostrar asignación de encargado si es LOCAL comercial */}
@@ -859,20 +837,11 @@ export const AdminLocales = () => {
           }}
         />
 
-        <div className={form.tipo === "LUGAR_TURISTICO" ? "grid grid-cols-1" : "grid grid-cols-1 sm:grid-cols-2 gap-4"}>
-          {form.tipo === "LOCAL" && (
-            <Input
-              label="Horario de Atención"
-              placeholder="Ej: Lun a Sáb: 8:00 AM - 10:00 PM"
-              value={form.horario}
-              onChange={(e) => setForm({ ...form, horario: e.target.value })}
-            />
-          )}
-          <div className="space-y-1">
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
-              Enlace Google Maps (Recomendado para GPS)
-            </label>
-            <div className="relative flex items-center">
+        <div className="space-y-1">
+          <label className="block text-xs font-bold uppercase tracking-wider text-[#736868] dark:text-slate-300">
+            Enlace Google Maps (Recomendado para GPS)
+          </label>
+          <div className="relative flex items-center">
               <input
                 type="text"
                 placeholder="https://maps.app.goo.gl/... o https://maps.google.com/..."
@@ -918,7 +887,6 @@ export const AdminLocales = () => {
               <p className="text-[11px] text-red-600 font-semibold">{errors.google_maps_url}</p>
             )}
           </div>
-        </div>
 
         {/* Panel de Validación de Ubicación / Google Maps con Check Visual */}
         <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-[#EFE7DE] dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
@@ -983,57 +951,59 @@ export const AdminLocales = () => {
           </div>
         </div>
 
-        {/* Configuración de Auto-sellado para Lugares Turísticos */}
-        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📍</span>
-              <div>
-                <h5 className="text-xs font-bold text-[#2D1A1E] dark:text-white">
-                  Lugar Turístico / Auto-sellado por GPS
-                </h5>
-                <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400">
-                  Permite a los turistas sellar su pasaporte con su ubicación física sin requerir personal validador.
-                </p>
+        {/* Configuración de Auto-sellado solo para Lugares Turísticos (oculto en locales comerciales) */}
+        {form.tipo === "LUGAR_TURISTICO" && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📍</span>
+                <div>
+                  <h5 className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                    Lugar Turístico / Auto-sellado por GPS
+                  </h5>
+                  <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400">
+                    Permite a los turistas sellar su pasaporte con su ubicación física sin requerir personal validador.
+                  </p>
+                </div>
               </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.permite_autosellado}
-                onChange={(e) =>
-                  setForm({ ...form, permite_autosellado: e.target.checked })
-                }
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7C0A1E]"></div>
-            </label>
-          </div>
-
-          {form.permite_autosellado && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-500/20">
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-[#736868] dark:text-slate-400 mb-1">
-                  Radio de tolerancia (metros)
-                </label>
+              <label className="relative inline-flex items-center cursor-pointer">
                 <input
-                  type="number"
-                  min="50"
-                  max="1000"
-                  value={form.radio_tolerancia_metros}
+                  type="checkbox"
+                  checked={form.permite_autosellado}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      radio_tolerancia_metros: Math.max(50, Number(e.target.value)),
-                    })
+                    setForm({ ...form, permite_autosellado: e.target.checked })
                   }
-                  className="input-base font-bold text-xs"
+                  className="sr-only peer"
                 />
-                <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
-              </div>
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7C0A1E]"></div>
+              </label>
             </div>
-          )}
-        </div>
+
+            {form.permite_autosellado && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-500/20">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-[#736868] dark:text-slate-400 mb-1">
+                    Radio de tolerancia (metros)
+                  </label>
+                  <input
+                    type="number"
+                    min="50"
+                    max="1000"
+                    value={form.radio_tolerancia_metros}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        radio_tolerancia_metros: Math.max(50, Number(e.target.value)),
+                      })
+                    }
+                    className="input-base font-bold text-xs"
+                  />
+                  <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 3. Foto / Portada del Local */}
@@ -1531,57 +1501,59 @@ export const AdminLocales = () => {
           </div>
         </div>
 
-        {/* Configuración de Auto-sellado para Lugares Turísticos */}
-        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📍</span>
-              <div>
-                <h5 className="text-xs font-bold text-[#2D1A1E] dark:text-white">
-                  Lugar Turístico / Auto-sellado por GPS
-                </h5>
-                <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400">
-                  Permite a los turistas sellar su pasaporte con su ubicación física sin requerir personal validador.
-                </p>
+        {/* Configuración de Auto-sellado solo para Lugares Turísticos (oculto en locales comerciales) */}
+        {form.tipo === "LUGAR_TURISTICO" && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📍</span>
+                <div>
+                  <h5 className="text-xs font-bold text-[#2D1A1E] dark:text-white">
+                    Lugar Turístico / Auto-sellado por GPS
+                  </h5>
+                  <p className="text-[11px] text-[#8E7D7D] dark:text-slate-400">
+                    Permite a los turistas sellar su pasaporte con su ubicación física sin requerir personal validador.
+                  </p>
+                </div>
               </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.permite_autosellado}
-                onChange={(e) =>
-                  setForm({ ...form, permite_autosellado: e.target.checked })
-                }
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7C0A1E]"></div>
-            </label>
-          </div>
-
-          {form.permite_autosellado && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-500/20">
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-[#736868] dark:text-slate-400 mb-1">
-                  Radio de tolerancia (metros)
-                </label>
+              <label className="relative inline-flex items-center cursor-pointer">
                 <input
-                  type="number"
-                  min="50"
-                  max="1000"
-                  value={form.radio_tolerancia_metros}
+                  type="checkbox"
+                  checked={form.permite_autosellado}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      radio_tolerancia_metros: Math.max(50, Number(e.target.value)),
-                    })
+                    setForm({ ...form, permite_autosellado: e.target.checked })
                   }
-                  className="input-base font-bold text-xs"
+                  className="sr-only peer"
                 />
-                <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
-              </div>
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7C0A1E]"></div>
+              </label>
             </div>
-          )}
-        </div>
+
+            {form.permite_autosellado && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-500/20">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-[#736868] dark:text-slate-400 mb-1">
+                    Radio de tolerancia (metros)
+                  </label>
+                  <input
+                    type="number"
+                    min="50"
+                    max="1000"
+                    value={form.radio_tolerancia_metros}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        radio_tolerancia_metros: Math.max(50, Number(e.target.value)),
+                      })
+                    }
+                    className="input-base font-bold text-xs"
+                  />
+                  <span className="text-[10px] text-muted block mt-0.5">Distancia máxima permitida (ej. 150m)</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 3. Foto / Portada */}
