@@ -169,14 +169,14 @@ export const FriendsPage: React.FC = () => {
     }
   };
 
-  const handleEnviarSolicitud = async (targetId: string) => {
+  const handleEnviarSolicitud = async (targetId: string | number) => {
     setEnviando(true);
     try {
       await api.post("/friends/solicitudes", { receptor_id: targetId });
       showToast("Solicitud de amistad enviada", "success");
       setUsuariosEncontrados((prev) =>
         prev.map((u) =>
-          (u.id_usuario === targetId || u.id === targetId)
+          (String(u.id_usuario) === String(targetId) || String(u.id) === String(targetId))
             ? { ...u, relacion_estado: "PENDIENTE" }
             : u
         )
@@ -575,7 +575,7 @@ export const FriendsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      const codeToCopy = user?.codigo_cliente || String(user?.id || "");
+                      const codeToCopy = user?.codigo_cliente || (user?.id ? `CLI-${user.id}` : "");
                       navigator.clipboard.writeText(codeToCopy);
                       setCodigoPropioCopiado(true);
                       showToast("¡Tu código fue copiado al portapapeles!", "success");
@@ -684,9 +684,24 @@ export const FriendsPage: React.FC = () => {
                   })}
                 </div>
               ) : busquedaQuery && !buscandoUsuarios ? (
-                <div className="text-center py-8 text-xs text-[#8E7D7D] bg-white rounded-2xl border border-[#EFE7DE] p-6">
-                  No se encontraron viajeros con ese código de cliente, ID o nombre.
-                </div>
+                (() => {
+                  const queryNorm = busquedaQuery.trim().toLowerCase();
+                  const isSelf = Boolean(
+                    (user?.codigo_cliente && queryNorm === user.codigo_cliente.toLowerCase()) ||
+                    (user?.id && busquedaQuery.trim().replace(/^(id:?\s*#?|#)/i, "") === String(user.id)) ||
+                    (user?.id && queryNorm === `cli-${user.id}`)
+                  );
+                  return isSelf ? (
+                    <div className="text-center py-6 text-xs text-[#8E7D7D] bg-[#FAF8F5] rounded-2xl border border-[#E5DACD] p-5">
+                      <p className="font-bold text-[#7C0A1E] text-sm mb-1">¡Ese es tu propio identificador!</p>
+                      <p>Compártelo con tus amigos para que te busquen y te agreguen a su lista de pasaporte.</p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-xs text-[#8E7D7D] bg-white rounded-2xl border border-[#EFE7DE] p-6">
+                      No se encontraron viajeros con ese código de cliente, ID o nombre.
+                    </div>
+                  );
+                })()
               ) : null}
             </div>
           )}

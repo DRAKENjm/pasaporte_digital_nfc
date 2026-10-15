@@ -84,10 +84,10 @@ export class FriendsController {
     next: NextFunction,
   ) {
     try {
-      const solicitanteId = req.user!.id;
-      const { receptor_id } = req.body;
+      const solicitanteId = Number(req.user!.id);
+      const receptor_id = Number(req.body.receptor_id);
 
-      if (!receptor_id) {
+      if (!receptor_id || isNaN(receptor_id)) {
         throw new ApiError(400, "Debe especificar el usuario destinatario.");
       }
 
@@ -287,18 +287,24 @@ export class FriendsController {
   // 6. Buscar usuarios para agregar (por nombre, código de cliente o ID)
   static async buscarUsuarios(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const userId = req.user!.id;
-      const q = String(req.query.q || "").trim();
+      const userId = Number(req.user!.id);
+      const rawQ = String(req.query.q || "").trim();
 
-      if (!q || q.length < 1) {
+      if (!rawQ || rawQ.length < 1) {
         return sendResponse(res, 200, []);
       }
 
-      const cleanQ = q.replace(/^#/, "");
+      // Limpieza exhaustiva de la consulta de búsqueda:
+      // Maneja: "#14", "ID: #14", "ID 14", "CLI-123456", "cli123456", "14"
+      const cleanQ = rawQ.replace(/^(id:?\s*#?|#)/i, "").trim();
+      const digitsOnly = rawQ.replace(/\D/g, ""); // Extrae sólo dígitos si los hay
       const searchTerm = `%${cleanQ}%`;
+      const searchNormalized = `%${cleanQ.replace(/[\s-_]/g, "")}%`;
+
       const result = await query(
-        `SELECT u.id_usuario, u.nombres, u.apellidos, u.foto_perfil,
-                c.id_cliente, c.codigo_cliente,
+        `SELECT u.id_usuario, u.nombres, u.apellidos, u.foto_perfil, u.email,
+                c.id_cliente,
+                COALESCE(c.codigo_cliente, 'CLI-' || LPAD(u.id_usuario::text, 6, '0')) AS codigo_cliente,
                 (
                   SELECT estado FROM amistades
                   WHERE (usuario_solicitante_id = $1 AND usuario_receptor_id = u.id_usuario)
@@ -306,16 +312,30 @@ export class FriendsController {
                   LIMIT 1
                 ) AS relacion_estado
          FROM usuarios u
-         JOIN clientes c ON c.id_usuario = u.id_usuario
+         LEFT JOIN clientes c ON c.id_usuario = u.id_usuario
          WHERE u.id_usuario != $1
-           AND u.estado = 1
+           AND (u.estado = 1 OR u.estado::text = '1' OR u.estado::text = 'ACTIVO')
            AND (
-             LOWER(u.nombres || ' ' || u.apellidos) ILIKE LOWER($2)
-             OR UPPER(c.codigo_cliente) ILIKE UPPER($2)
-             OR u.id_usuario::text = $3
+             -- Búsqueda por nombres / apellidos (robusto ante NULL en apellidos)
+             CONCAT(COALESCE(u.nombres, ''), ' ', COALESCE(u.apellidos, '')) ILIKE $2
+             OR u.nombres ILIKE $2
+             OR COALESCE(u.apellidos, '') ILIKE $2
+             OR u.email ILIKE $2
+             -- Búsqueda por código de cliente con y sin guiones
+             OR UPPER(COALESCE(c.codigo_cliente, '')) ILIKE UPPER($2)
+             OR REPLACE(REPLACE(UPPER(COALESCE(c.codigo_cliente, '')), '-', ''), ' ', '') ILIKE UPPER($3)
+             -- Búsqueda por ID de usuario
+             OR u.id_usuario::text = $4
+             -- Búsqueda por ID de cliente
+             OR c.id_cliente::text = $4
+             -- Si el usuario buscó "CLI-14" o "ID: #14", digitsOnly será "14"
+             OR ($5 <> '' AND (u.id_usuario::text = $5 OR c.id_cliente::text = $5))
+             -- Coincidencia con código de cliente generado dinámico tipo CLI-{id}
+             OR ('CLI-' || u.id_usuario::text) ILIKE UPPER($2)
+             OR ('CLI-' || LPAD(u.id_usuario::text, 6, '0')) ILIKE UPPER($2)
            )
-         LIMIT 20`,
-        [userId, searchTerm, cleanQ],
+         LIMIT 25`,
+        [userId, searchTerm, searchNormalized, cleanQ, digitsOnly],
       );
 
       return sendResponse(res, 200, result.rows);

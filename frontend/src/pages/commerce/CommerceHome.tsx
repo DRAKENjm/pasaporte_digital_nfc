@@ -65,12 +65,54 @@ export const CommerceHome: React.FC = () => {
   const puntosHoy = stats?.puntos_hoy ?? 0;
   const clientesAtendidos = stats?.clientes_unicos ?? 0;
   const ultimasVisitas = stats?.ultimas_visitas ?? [];
-  const tendencia7Dias = stats?.visitas_ultimos_dias ?? [];
+  const tendenciaRaw = stats?.visitas_ultimos_dias ?? [];
   const recurrencia = stats?.recurrencia_clientes ?? {};
+
+  // Orden estricto de semana iniciando el Lunes (Lun)
+  const DIAS_BASE = [
+    { dia: "Lun", nombreLargo: "Lunes", diaNum: 1 },
+    { dia: "Mar", nombreLargo: "Martes", diaNum: 2 },
+    { dia: "Mié", nombreLargo: "Miércoles", diaNum: 3 },
+    { dia: "Jue", nombreLargo: "Jueves", diaNum: 4 },
+    { dia: "Vie", nombreLargo: "Viernes", diaNum: 5 },
+    { dia: "Sáb", nombreLargo: "Sábado", diaNum: 6 },
+    { dia: "Dom", nombreLargo: "Domingo", diaNum: 7 },
+  ];
+
+  // Índice del día actual (0 = Lun, ..., 6 = Dom)
+  const diaSemanaHoyIdx = (new Date().getDay() + 6) % 7;
+
+  // Unificar días de la semana actual garantizando orden Lun -> Dom y nombres en español
+  const tendenciaSemana = DIAS_BASE.map((item, idx) => {
+    const match = tendenciaRaw.find((t: any) => {
+      const d = String(t.dia || "").toLowerCase().trim();
+      if (d === item.dia.toLowerCase()) return true;
+      if (item.dia === "Lun" && (d === "mon" || d === "lunes")) return true;
+      if (item.dia === "Mar" && (d === "tue" || d === "martes")) return true;
+      if (item.dia === "Mié" && (d === "wed" || d === "mie" || d === "miércoles")) return true;
+      if (item.dia === "Jue" && (d === "thu" || d === "jueves")) return true;
+      if (item.dia === "Vie" && (d === "fri" || d === "viernes")) return true;
+      if (item.dia === "Sáb" && (d === "sat" || d === "sab" || d === "sábado")) return true;
+      if (item.dia === "Dom" && (d === "sun" || d === "domingo")) return true;
+      return Number(t.dia_num) === item.diaNum;
+    });
+
+    return {
+      dia: item.dia,
+      nombreLargo: item.nombreLargo,
+      total: Number(match?.total) || 0,
+      fecha: match?.fecha || "",
+      isHoy: idx === diaSemanaHoyIdx,
+    };
+  });
+
+  const maxVisitasSemana = Math.max(...tendenciaSemana.map((d) => d.total), 1);
+  const totalVisitasSemana = tendenciaSemana.reduce((acc, curr) => acc + curr.total, 0);
+
   const segmentosRecurrencia = [
     { label: "1 visita", cantidad: Number(recurrencia.una_visita) || 0, color: "bg-[#7C0A1E]" },
-    { label: "2-4 visitas", cantidad: Number(recurrencia.dos_a_cuatro) || 0, color: "bg-[#C5A059]" },
-    { label: "5 o más visitas", cantidad: Number(recurrencia.cinco_o_mas) || 0, color: "bg-emerald-500" },
+    { label: "2 a 4 visitas", cantidad: Number(recurrencia.dos_a_cuatro) || 0, color: "bg-[#C5A059]" },
+    { label: "5 o más visitas", cantidad: Number(recurrencia.cinco_o_mas) || 0, color: "bg-[#0D7A57]" },
   ];
 
   return (
@@ -167,67 +209,124 @@ export const CommerceHome: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Tres Gráficos Esenciales y Limpios */}
+      {/* 3. Dos Gráficos Formales y de Alto Contraste */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Gráfico 1: Visitas Últimos 7 Días */}
+        {/* Gráfico 1: Visitas de la Semana Actual (Lunes a Domingo) */}
         <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-[#EFE7DE] shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-bold text-[#2D1A1E]">Visitas (Últimos 7 días)</h3>
-              <p className="text-[11px] text-[#8E7D7D]">Afluencia de clientes en esta sucursal</p>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#7C0A1E]" />
+                <h3 className="text-base font-bold text-[#2D1A1E]">Afluencia Semanal de Visitas</h3>
+              </div>
+              <p className="text-xs font-medium text-[#6E5D53] mt-0.5">
+                Total de clientes por día (Lunes a Domingo)
+              </p>
             </div>
-            <span className="text-[10px] font-bold bg-[#FAF8F5] border border-[#EFE7DE] px-2 py-1 rounded-lg text-[#8E7D7D]">
-              Semana actual
+            <span className="text-[11px] font-bold bg-[#FAF8F5] border border-[#E5DACD] px-2.5 py-1 rounded-xl text-[#7C0A1E]">
+              Semana en curso
             </span>
           </div>
 
-          <div className="h-44 flex items-end justify-between gap-3 pt-4 px-2">
-            {(tendencia7Dias.length > 0 ? tendencia7Dias : [
-              { dia: "Lun", total: 0 },
-              { dia: "Mar", total: 0 },
-              { dia: "Mié", total: 0 },
-              { dia: "Jue", total: 0 },
-              { dia: "Vie", total: 0 },
-              { dia: "Sáb", total: 0 },
-              { dia: "Dom", total: 0 },
-            ]).map((b: any, idx: number) => {
-              const maxV = Math.max(...tendencia7Dias.map((t: any) => Number(t.total) || 0), 1);
-              const heightPct = (Number(b.total) || 0) === 0 ? 0 : Math.max(10, Math.round(((Number(b.total) || 0) / maxV) * 100));
+          <div className="h-52 flex items-end justify-between gap-2.5 sm:gap-3 pt-6 px-2 border-b border-[#EFE7DE] pb-3">
+            {tendenciaSemana.map((b, idx) => {
+              const totalVal = Number(b.total) || 0;
+              const heightPct = totalVal === 0 ? 0 : Math.max(12, Math.round((totalVal / maxVisitasSemana) * 100));
+
               return (
-                <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                  <span className="text-[9px] font-bold text-[#7C0A1E]">{b.total || 0}</span>
+                <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                  {/* Cifra destacada en negrita visible */}
+                  <span
+                    className={`text-xs font-black transition-colors ${
+                      totalVal > 0 ? "text-[#7C0A1E]" : "text-[#A8988F]"
+                    }`}
+                  >
+                    {totalVal}
+                  </span>
+
+                  {/* Barra con acabado formal institucional */}
                   <div
                     style={{ height: `${heightPct}%` }}
-                    className="w-full bg-[#7C0A1E] hover:bg-[#600616] rounded-t-lg transition-all opacity-90"
-                  />
-                  <span className="text-[10px] text-[#8E7D7D] font-semibold">{b.dia || "Día"}</span>
+                    className={`w-full max-w-[44px] rounded-t-xl transition-all duration-300 relative group cursor-pointer ${
+                      b.isHoy
+                        ? "bg-gradient-to-t from-[#7C0A1E] to-[#9E1B32] shadow-sm ring-2 ring-[#C5A059]"
+                        : totalVal > 0
+                        ? "bg-gradient-to-t from-[#8E283B] to-[#7C0A1E] hover:from-[#7C0A1E] hover:to-[#600616]"
+                        : "bg-[#EFE7DE]/80 hover:bg-[#E5DACD]"
+                    }`}
+                  >
+                    {totalVal > 0 && (
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-[#C5A059] rounded-t-xl" />
+                    )}
+                  </div>
+
+                  {/* Etiqueta del día en negrita visible */}
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span
+                      className={`text-xs font-black ${
+                        b.isHoy ? "text-[#7C0A1E]" : "text-[#2D1A1E]"
+                      }`}
+                    >
+                      {b.dia}
+                    </span>
+                    {b.isHoy && (
+                      <span className="text-[9px] font-black uppercase text-[#C5A059] bg-[#C5A059]/15 px-1.5 py-0.2 rounded-md">
+                        Hoy
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
+
+          <div className="pt-3.5 flex items-center justify-between text-xs text-[#6E5D53]">
+            <span className="font-semibold">Inicio de semana: <strong className="text-[#2D1A1E] font-bold">Lunes (Lun)</strong></span>
+            <span className="font-semibold">Total acumulado: <strong className="text-[#7C0A1E] font-black">{totalVisitasSemana} visitas</strong></span>
+          </div>
         </div>
 
-        {/* Gráfico 2: Recurrencia y Fidelización */}
+        {/* Gráfico 2: Fidelización y Recurrencia */}
         <div className="bg-white p-6 rounded-3xl border border-[#EFE7DE] shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-bold text-[#2D1A1E]">Recurrencia de Clientes</h3>
-            <Link to="/commerce/clientes" className="text-[11px] font-bold text-[#7C0A1E] hover:underline flex items-center gap-0.5">
-              Ver clientes <ArrowUpRight size={12} />
+            <div>
+              <h3 className="text-base font-bold text-[#2D1A1E]">Fidelización de Clientes</h3>
+              <p className="text-xs font-medium text-[#6E5D53]">Frecuencia de retorno en el mes</p>
+            </div>
+            <Link
+              to="/commerce/clientes"
+              className="text-xs font-bold text-[#7C0A1E] hover:underline flex items-center gap-0.5"
+            >
+              Ver clientes <ArrowUpRight size={13} />
             </Link>
           </div>
 
-          <div className="flex items-center justify-around py-3">
-            <div className="w-full space-y-3">
+          <div className="flex items-center justify-around py-4">
+            <div className="w-full space-y-4">
               {segmentosRecurrencia.map((segmento) => {
-                const porcentaje = clientesAtendidos > 0 ? Math.round(segmento.cantidad / clientesAtendidos * 100) : 0;
+                const porcentaje =
+                  clientesAtendidos > 0
+                    ? Math.round((segmento.cantidad / clientesAtendidos) * 100)
+                    : 0;
                 return (
-                  <div key={segmento.label} className="space-y-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-[#8E7D7D]">{segmento.label}</span>
-                      <span className="font-bold text-[#2D1A1E]">{segmento.cantidad} ({porcentaje}%)</span>
+                  <div key={segmento.label} className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-[#2D1A1E] flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full ${segmento.color} shrink-0`} />
+                        {segmento.label}
+                      </span>
+                      <span className="font-black text-xs text-[#2D1A1E]">
+                        {segmento.cantidad}{" "}
+                        <span className="font-bold text-[11px] text-[#7C0A1E]">
+                          ({porcentaje}%)
+                        </span>
+                      </span>
                     </div>
-                    <div className="h-2 rounded-full bg-[#FAF8F5] overflow-hidden">
-                      <div className={`h-full ${segmento.color}`} style={{ width: `${porcentaje}%` }} />
+                    <div className="h-3 rounded-full bg-[#FAF8F5] border border-[#EFE7DE] overflow-hidden p-0.5">
+                      <div
+                        className={`h-full rounded-full ${segmento.color} transition-all duration-500`}
+                        style={{ width: `${porcentaje}%` }}
+                      />
                     </div>
                   </div>
                 );
@@ -235,9 +334,13 @@ export const CommerceHome: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-2 text-[10px] text-[#8E7D7D] border-t border-[#EFE7DE] flex items-center justify-between">
-            <span>Tasa de retorno</span>
-            <span className="font-bold text-emerald-600">Clientes del mes en curso</span>
+          <div className="pt-3 text-xs text-[#6E5D53] border-t border-[#EFE7DE] flex items-center justify-between">
+            <span className="font-semibold">Tasa promedio de retorno</span>
+            <span className="font-black text-xs text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+              {clientesAtendidos > 0
+                ? `${Math.round((visitasTotales / clientesAtendidos) * 10) / 10}x por cliente`
+                : "0x"}
+            </span>
           </div>
         </div>
       </div>

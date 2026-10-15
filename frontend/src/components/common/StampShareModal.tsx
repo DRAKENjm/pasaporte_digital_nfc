@@ -22,22 +22,16 @@ interface StampShareModalProps {
 
 const THEME_OPTIONS: { id: StampCardTheme; name: string; desc: string; color: string }[] = [
   {
-    id: "dark",
-    name: "Edición Noche",
-    desc: "Carbón Obsidiana y Oro",
-    color: "#0F0F12",
+    id: "heritage",
+    name: "Pasaporte Clásico",
+    desc: "Crema Marfil y Borgoña",
+    color: "#FAF8F5",
   },
   {
     id: "blush",
     name: "Rosa Boutique",
     desc: "Rubí y Oro Champán",
     color: "#FFE4E8",
-  },
-  {
-    id: "heritage",
-    name: "Pasaporte Clásico",
-    desc: "Crema Marfil y Borgoña",
-    color: "#FAF8F5",
   },
 ];
 
@@ -47,7 +41,7 @@ export const StampShareModal: React.FC<StampShareModalProps> = ({
   data,
 }) => {
   const { showToast } = useUI();
-  const [selectedTheme, setSelectedTheme] = useState<StampCardTheme>("dark");
+  const [selectedTheme, setSelectedTheme] = useState<StampCardTheme>("heritage");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [sharing, setSharing] = useState(false);

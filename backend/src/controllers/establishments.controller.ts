@@ -317,6 +317,7 @@ export const EstablishmentsController = {
           e.telefono,
           e.email,
           e.estado,
+          COALESCE(e.tipo, 'LOCAL') AS tipo,
           -- Programa de sellos activo
           ps.id_programa,
           ps.nombre AS programa_nombre,
@@ -543,11 +544,11 @@ export const EstablishmentsController = {
       );
 
       const visitasPorDiaRes = await query(
-        `SELECT EXTRACT(DOW FROM fecha_hora)::int AS dia_semana, COUNT(*)::int AS total
+        `SELECT EXTRACT(ISODOW FROM fecha_hora)::int AS dia_semana, COUNT(*)::int AS total
          FROM visitas
          WHERE id_sucursal = ANY($1) AND estado = 'CONFIRMADA'
-         GROUP BY EXTRACT(DOW FROM fecha_hora)
-         ORDER BY dia_semana`,
+         GROUP BY EXTRACT(ISODOW FROM fecha_hora)
+         ORDER BY dia_semana ASC`,
         [sucursalIds],
       );
 
@@ -580,15 +581,24 @@ export const EstablishmentsController = {
         [sucursalIds],
       );
 
-      // Histórico de visitas últimos 7 días
+      // Histórico de visitas semana en curso (Lunes a Domingo)
       const tendenciaRes = await query(
         `SELECT 
-           TO_CHAR(d.fecha, 'Dy') AS dia,
+           CASE EXTRACT(ISODOW FROM d.fecha)
+             WHEN 1 THEN 'Lun'
+             WHEN 2 THEN 'Mar'
+             WHEN 3 THEN 'Mié'
+             WHEN 4 THEN 'Jue'
+             WHEN 5 THEN 'Vie'
+             WHEN 6 THEN 'Sáb'
+             WHEN 7 THEN 'Dom'
+           END AS dia,
            TO_CHAR(d.fecha, 'YYYY-MM-DD') AS fecha,
+           EXTRACT(ISODOW FROM d.fecha)::int AS dia_num,
            COUNT(v.id_visita)::int AS total
          FROM generate_series(
-           CURRENT_DATE - INTERVAL '6 days',
-           CURRENT_DATE,
+           DATE_TRUNC('week', CURRENT_DATE)::date,
+           (DATE_TRUNC('week', CURRENT_DATE)::date + INTERVAL '6 days')::date,
            '1 day'::interval
          ) d(fecha)
          LEFT JOIN visitas v ON DATE(v.fecha_hora) = DATE(d.fecha) AND v.id_sucursal = ANY($1) AND v.estado = 'CONFIRMADA'

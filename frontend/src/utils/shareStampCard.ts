@@ -194,7 +194,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  */
 export async function generatePassportCardBlob(
   data: StampShareData,
-  themeKey: StampCardTheme = "dark"
+  themeKey: StampCardTheme = "heritage"
 ): Promise<Blob> {
   const canvas = document.createElement("canvas");
   const width = 1080;
@@ -205,7 +205,7 @@ export async function generatePassportCardBlob(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No se pudo obtener el contexto 2D");
 
-  const theme = THEMES[themeKey] || THEMES.dark;
+  const theme = THEMES[themeKey] || THEMES.heritage;
 
   // 1. Fondo exterior general
   ctx.fillStyle = theme.bgOuter;
@@ -528,8 +528,8 @@ export async function generatePassportCardBlob(
 
   // 9. Puntos de paginación del diseño
   const dotsY = cardY + cardH - 34;
-  const dotCount = 5;
-  const activeDot = themeKey === "dark" ? 0 : themeKey === "blush" ? 1 : 2;
+  const dotCount = 4;
+  const activeDot = themeKey === "blush" ? 1 : 0;
   const dotGap = 16;
   const startDotsX = width / 2 - ((dotCount - 1) * dotGap) / 2;
 
@@ -554,7 +554,7 @@ export async function generatePassportCardBlob(
  */
 export async function sharePassportCard(
   data: StampShareData,
-  themeKey: StampCardTheme = "dark"
+  themeKey: StampCardTheme = "heritage"
 ): Promise<{ shared: boolean; blob: Blob; url: string }> {
   const blob = await generatePassportCardBlob(data, themeKey);
   const fileName = `tarjeta-pasaporte-${data.nombreEstablecimiento.replace(/\s+/g, "-").toLowerCase()}.png`;

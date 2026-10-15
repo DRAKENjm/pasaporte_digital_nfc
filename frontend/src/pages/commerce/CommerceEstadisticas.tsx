@@ -39,9 +39,29 @@ export const CommerceEstadisticas: React.FC = () => {
   const clientesUnicos = stats?.clientes_unicos ?? 0;
   const visitasTotales = stats?.visitas_mes ?? 0;
   const puntosTotales = stats?.puntos_mes ?? 0;
-  const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
+  // Días de la semana iniciando siempre el Lunes (Lun)
+  const diasSemanaOrden = [
+    { num: 1, nombre: "Lunes", corto: "Lun" },
+    { num: 2, nombre: "Martes", corto: "Mar" },
+    { num: 3, nombre: "Miércoles", corto: "Mié" },
+    { num: 4, nombre: "Jueves", corto: "Jue" },
+    { num: 5, nombre: "Viernes", corto: "Vie" },
+    { num: 6, nombre: "Sábado", corto: "Sáb" },
+    { num: 7, nombre: "Domingo", corto: "Dom" },
+  ];
   const visitasPorDia = (stats?.visitas_por_dia ?? []) as Array<{ dia_semana: number; total: number }>;
-  const maxVisitasDia = Math.max(0, ...visitasPorDia.map((dia) => Number(dia.total) || 0));
+  const diasConVisitas = diasSemanaOrden.map((dia) => {
+    const match = visitasPorDia.find(
+      (d) => Number(d.dia_semana) === dia.num || (dia.num === 7 && Number(d.dia_semana) === 0)
+    );
+    return {
+      ...dia,
+      total: Number(match?.total) || 0,
+    };
+  });
+  const maxVisitasDia = Math.max(1, ...diasConVisitas.map((dia) => dia.total));
+
   const franjas = [
     { id: "manana", nombre: "08:00 AM - 11:00 AM (Mañana)" },
     { id: "mediodia", nombre: "11:00 AM - 03:00 PM (Mediodía)" },
@@ -50,7 +70,7 @@ export const CommerceEstadisticas: React.FC = () => {
     { id: "otros", nombre: "Otros horarios" },
   ];
   const visitasPorHora = (stats?.visitas_por_hora ?? []) as Array<{ franja: string; total: number }>;
-  const maxVisitasHora = Math.max(0, ...visitasPorHora.map((franja) => Number(franja.total) || 0));
+  const maxVisitasHora = Math.max(1, ...visitasPorHora.map((franja) => Number(franja.total) || 0));
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-fadeIn pb-12">
@@ -106,20 +126,23 @@ export const CommerceEstadisticas: React.FC = () => {
           </div>
 
           <div className="space-y-3 pt-1">
-            {visitasPorDia.length ? visitasPorDia.map((d) => (
-              <div key={d.dia_semana} className="space-y-1">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-[#2D1A1E]">{diasSemana[Number(d.dia_semana)] ?? "Día"}</span>
-                  <span className="text-[#7C0A1E] font-bold">{Number(d.total) || 0} visitas</span>
+            {diasConVisitas.map((d) => {
+              const pct = maxVisitasDia > 0 ? (d.total / maxVisitasDia) * 100 : 0;
+              return (
+                <div key={d.num} className="space-y-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-[#2D1A1E]">{d.nombre}</span>
+                    <span className="font-black text-[#7C0A1E]">{d.total} visitas</span>
+                  </div>
+                  <div className="w-full bg-[#FAF8F5] h-3 rounded-full border border-[#EFE7DE] overflow-hidden p-0.5">
+                    <div
+                      style={{ width: `${d.total > 0 ? Math.max(6, pct) : 0}%` }}
+                      className="bg-gradient-to-r from-[#8E283B] to-[#7C0A1E] h-full rounded-full transition-all duration-500"
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-[#FAF8F5] h-2.5 rounded-full overflow-hidden">
-                  <div
-                    style={{ width: `${maxVisitasDia ? ((Number(d.total) || 0) / maxVisitasDia) * 100 : 0}%` }}
-                    className="bg-[#7C0A1E] h-full rounded-full"
-                  />
-                </div>
-              </div>
-            )) : <p className="text-xs text-[#8E7D7D]">Aún no hay visitas registradas.</p>}
+              );
+            })}
           </div>
         </div>
 
@@ -138,19 +161,20 @@ export const CommerceEstadisticas: React.FC = () => {
           <div className="space-y-3 pt-1">
             {franjas.map((f) => {
               const visitas = Number(visitasPorHora.find((v) => v.franja === f.id)?.total) || 0;
+              const pct = maxVisitasHora > 0 ? (visitas / maxVisitasHora) * 100 : 0;
               return (
-              <div key={f.id} className="space-y-1">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-[#2D1A1E] truncate max-w-[240px]">{f.nombre}</span>
-                  <span className="text-[#C5A059] font-bold">{visitas} visitas</span>
+                <div key={f.id} className="space-y-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-[#2D1A1E] truncate max-w-[240px]">{f.nombre}</span>
+                    <span className="font-black text-[#C5A059]">{visitas} visitas</span>
+                  </div>
+                  <div className="w-full bg-[#FAF8F5] h-3 rounded-full border border-[#EFE7DE] overflow-hidden p-0.5">
+                    <div
+                      style={{ width: `${visitas > 0 ? Math.max(6, pct) : 0}%` }}
+                      className="bg-gradient-to-r from-[#D4AF37] to-[#C5A059] h-full rounded-full transition-all duration-500"
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-[#FAF8F5] h-2.5 rounded-full overflow-hidden">
-                  <div
-                    style={{ width: `${maxVisitasHora ? (visitas / maxVisitasHora) * 100 : 0}%` }}
-                    className="bg-[#C5A059] h-full rounded-full"
-                  />
-                </div>
-              </div>
               );
             })}
           </div>

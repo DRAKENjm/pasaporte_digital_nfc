@@ -141,8 +141,19 @@ export const HomePage: React.FC = () => {
   const nivelActual = data?.nivel?.nombre || "Nivel Iniciador";
   const unreadNotifs = notificaciones.filter((n) => !n.leida).length;
 
-  // Local actual para el banner "Descubre nuevas experiencias"
+  // Local o lugar actual para el banner "Descubre nuevas experiencias"
   const currentLocal = locales[activeSlide] || locales[0] || null;
+  const isLugar = Boolean(
+    currentLocal &&
+      (currentLocal.tipo === "LUGAR_TURISTICO" ||
+        currentLocal.tipo === "LUGAR" ||
+        /turismo|monumento|cultura|patrimonio|historia|museo|parque|naturaleza|aventura|atractivo|iglesia|plaza|sitio|lugar/i.test(
+          currentLocal.categoria_nombre || ""
+        ) ||
+        /plaza|catedral|museo|monumento|huaca|complejo|reserva|santuario|bosque|ruinas|mirador|templo|convento/i.test(
+          currentLocal.nombre_comercial || currentLocal.razon_social || ""
+        ))
+  );
 
   return (
     <div className="w-full flex flex-col pb-8 animate-fadeIn relative">
@@ -459,20 +470,11 @@ export const HomePage: React.FC = () => {
             <div className="relative h-full flex flex-col justify-between p-4 sm:p-5 z-10 text-white">
               <div>
                 <span className="inline-block bg-[#C5A059]/25 text-[#E8D3A2] border border-[#C5A059]/60 text-[10px] font-bold tracking-wider px-2.5 py-0.5 rounded-full uppercase backdrop-blur-xs">
-                  LOCAL DESTACADO
+                  {isLugar ? "LUGAR DESTACADO" : "LOCAL DESTACADO"}
                 </span>
                 <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white mt-1.5 drop-shadow-sm">
                   {currentLocal.nombre_comercial || currentLocal.razon_social}
                 </h3>
-                <p className="text-xs text-white/90 line-clamp-1 max-w-[80%] mt-0.5">
-                  {currentLocal.descripcion ||
-                    "Disfruta un ambiente único y suma un sello exclusivo con tu pasaporte."}
-                </p>
-                <p className="text-xs font-semibold text-[#E8D3A2] mt-0.5">
-                  {currentLocal.programa_nombre
-                    ? `Programa: ${currentLocal.programa_nombre}`
-                    : "Suma sellos y acumula puntos con tu NFC"}
-                </p>
               </div>
 
               {/* Fila Inferior: Botón de acción + Ubicación */}
@@ -486,7 +488,7 @@ export const HomePage: React.FC = () => {
                   }
                   className="bg-white text-[#2D1A1E] hover:bg-white/90 font-bold text-xs px-3.5 py-1.5 rounded-full shadow-sm flex items-center gap-1.5 transition-transform active:scale-95"
                 >
-                  <span>Conocer local</span>
+                  <span>{isLugar ? "Conocer lugar" : "Conocer local"}</span>
                   <ArrowRight size={14} className="text-[#7C0A1E]" />
                 </button>
 
@@ -502,9 +504,9 @@ export const HomePage: React.FC = () => {
         ) : (
           <div className="w-full h-44 rounded-[1.75rem] bg-[#EFE7DE]/50 border border-dashed border-[#C5A059]/40 flex flex-col items-center justify-center p-5 text-center">
             <Store className="w-10 h-10 text-[#C5A059] mb-2" />
-            <h4 className="text-sm font-bold text-[#2D1A1E]">Pronto nuevos locales</h4>
+            <h4 className="text-sm font-bold text-[#2D1A1E]">Pronto nuevos destinos y locales</h4>
             <p className="text-xs text-[#8E7D7D] mt-1 max-w-xs">
-              Estamos afiliando nuevos establecimientos para que disfrutes y colecciones sellos.
+              Estamos afiliando nuevos establecimientos y destinos para que disfrutes y colecciones sellos.
             </p>
           </div>
         )}
