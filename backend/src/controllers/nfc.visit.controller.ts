@@ -422,8 +422,8 @@ export const NfcVisitController = {
       // Condición: NO tiene sello hoy Y aún NO tiene este diseño en este periodo Y no ha superado el ciclo
       const otorgarSello = !yaTieneSelloHoy && !yaTieneEsteDiseno && !cicloMetaCompletada;
       const ordenSello = otorgarSello ? (totalSellosEnCiclo + 1) : totalSellosEnCiclo;
-      // Es sello especial si con este completa todos los diseños del local o alcanza la meta
-      const esSelloMetaFinal = otorgarSello && ((disenosDistintosGanados + 1 >= disenosTotalesLocal) || (ordenSello >= metaSellos));
+      // Es sello especial SOLO cuando completa la meta de la cartilla configurada (ej. sello 8 de 8)
+      const esSelloMetaFinal = otorgarSello && (ordenSello >= metaSellos);
 
       const puntosBaseVisita = Number(programa.puntos_por_sello) || 20;
 
@@ -431,19 +431,20 @@ export const NfcVisitController = {
       let tagPuntos = "";
 
       if (otorgarSello) {
-        // Primera visita con nuevo diseño disponible: puntos de sello (+ bonus si completa la colección)
-        puntosOtorgados = puntosBaseVisita + (esSelloMetaFinal ? puntosBonusMeta : 0) + bonoConsumo;
+        // Primera visita del día con sello: SOLO puntos por sello (+ bono si y solo si completa la meta de la cartilla)
+        puntosOtorgados = puntosBaseVisita + (esSelloMetaFinal ? puntosBonusMeta : 0);
         if (esSelloMetaFinal) {
-          tagPuntos = ` (+${puntosBonusMeta} pts BONUS por completar colección de ${disenosTotalesLocal} sellos)`;
+          tagPuntos = ` (+${puntosBonusMeta} pts BONUS por completar cartilla de ${metaSellos} sellos)`;
         }
-      } else if (!yaTieneSelloHoy) {
-        // Ya tiene el sello de esta temporada/mes o completó el cupo: ¡Gana puntos por su visita!
-        puntosOtorgados = puntosBaseVisita + bonoConsumo;
-        tagPuntos = yaTieneEsteDiseno
-          ? ` (Ya cuentas con el diseño de sello de este periodo: ¡sumas ${puntosBaseVisita} pts por visita!)`
-          : ` (Ciclo de sellos completado: ¡sumas ${puntosBaseVisita} pts por visita!)`;
+      } else if (yaTieneSelloHoy) {
+        // Visita adicional del mismo día: ya no recibe sello, pero SÍ gana puntos por consumo
+        puntosOtorgados = bonoConsumo;
+        tagPuntos = tagConsumo ? tagConsumo : " (Segunda visita del día: solo puntos por consumo)";
+      } else if (cicloMetaCompletada) {
+        // Ya completó su cartilla de este período y vuelve otro día: acumula puntos por consumo
+        puntosOtorgados = bonoConsumo;
+        tagPuntos = ` (Cartilla de ${metaSellos} sellos ya completada: suma puntos por consumo)${tagConsumo}`;
       } else {
-        // Visita adicional del mismo día: acumula solo bono de consumo
         puntosOtorgados = bonoConsumo;
       }
 
@@ -947,7 +948,7 @@ export const NfcVisitController = {
       const cicloMetaCompletada = totalSellosEnCiclo >= metaSellos;
       const otorgarSello = !yaTieneEsteDiseno && !cicloMetaCompletada;
       const ordenSello = otorgarSello ? (totalSellosEnCiclo + 1) : totalSellosEnCiclo;
-      const esSelloMetaFinal = otorgarSello && ((disenosDistintosGanados + 1 >= disenosTotalesLocal) || (ordenSello >= metaSellos));
+      const esSelloMetaFinal = otorgarSello && (ordenSello >= metaSellos);
 
       // 1. Crear Visita con método AUTOSELLADO
       const visitaRes = await client.query(
